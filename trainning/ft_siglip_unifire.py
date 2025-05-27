@@ -3,12 +3,21 @@ from PIL import Image
 import torch
 from datasets import Dataset, load_dataset
 from transformers import (
-    CLIPProcessor,
-    CLIPModel,
+    SiglipProcessor,
+    SiglipModel,
     Trainer,
     TrainingArguments,
 )
 import torch.nn.functional as F
+import torch.distributed as dist
+def is_main_process():
+    return not dist.is_initialized() or dist.get_rank() == 0
+
+# 非主进程立即禁用 Wandb（在导入wandb之前）
+if not is_main_process():
+    os.environ["WANDB_DISABLED"] = "true"
+    print("已禁用非主进程的 Wandb")
+
 import wandb
 import argparse
 from PIL import Image
@@ -21,11 +30,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
     # Training parameters
     
-    parser.add_argument("--model_name", type=str, default="openai/clip-vit-large-patch14", 
+    parser.add_argument("--model_name", type=str, default="google/siglip-so400m-patch14-384", 
                         help="Pre-trained model name")
-    parser.add_argument("--output_dir", type=str, default="./weights/unifire_clip_finetune", 
+    parser.add_argument("--output_dir", type=str, default="./weights/unifire_siglip_finetune", 
                         help="Output directory")
-    parser.add_argument("--best_model_dir", type=str, default="./weights/unifire_clip_best_model", 
+    parser.add_argument("--best_model_dir", type=str, default="./weights/unifire_siglip_best_model", 
                         help="Directory to save the best model")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Training batch size per device")
@@ -43,12 +52,14 @@ def parse_args():
                         help="Steps to save checkpoints")
     parser.add_argument("--eval_steps", type=int, default=250, 
                         help="Evaluation steps")
-    parser.add_argument("--run_name", type=str, default="clip-finetune-unifire", 
+    parser.add_argument("--run_name", type=str, default="siglip-finetune-unifire", 
                         help="Experiment name")
     parser.add_argument("--warmup_ratio", type=float, default=0.1,
                         help="Warmup ratio for learning rate scheduler")
     parser.add_argument("--weight_decay", type=float, default=0.01,
                         help="Weight decay for optimizer")
+    parser.add_argument("--max_grad_norm", type=float, default=1.0,
+                   help="Max gradient norm for gradient clipping")
     # parser.add_argument("--early_stopping_patience", type=int, default=3,
     #                     help="Patience for early stopping")
     
@@ -57,7 +68,7 @@ def parse_args():
                         help="Whether to push to HuggingFace Hub")
     parser.add_argument("--hub_username", type=str, default="fesvhtr", 
                         help="HuggingFace username")
-    parser.add_argument("--hub_model_name", type=str, default="clip-iferniu-L14", 
+    parser.add_argument("--hub_model_name", type=str, default="siglip-iferniu-L14-10epoch", 
                         help="Model name on the Hub")
     
     # Dataset parameters
@@ -65,7 +76,7 @@ def parse_args():
                       help="Dataset name on HuggingFace Hub")
 
     # wandb parameters
-    parser.add_argument("--wandb_project", type=str, default="clip-unifire",
+    parser.add_argument("--wandb_project", type=str, default="siglip-unifire",
                         help="wandb project name")
     parser.add_argument("--wandb_entity", type=str, default=None,
                         help="wandb entity name (team or username)")
@@ -83,7 +94,6 @@ class BestModelCallback(TrainerCallback):
         if metrics and "eval_loss" in metrics:
             eval_loss = metrics["eval_loss"]
 
-            import torch.distributed as dist
             is_main_process = not dist.is_initialized() or dist.get_rank() == 0
             
             # 手动记录到 Wandb
@@ -99,7 +109,7 @@ class BestModelCallback(TrainerCallback):
                 self.best_eval_loss = eval_loss
                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
-class CLIPTrainer(Trainer):
+class SiglipTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         # 调用模型，不传 labels
         outputs = model(
@@ -212,8 +222,8 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = CLIPModel.from_pretrained(model_name)
-    processor = CLIPProcessor.from_pretrained(model_name)
+    model = SiglipModel.from_pretrained(model_name)
+    processor = SiglipProcessor.from_pretrained(model_name)
 
     # Download dataset if specified
     if hasattr(args, 'dataset_name') and args.dataset_name:
@@ -255,19 +265,20 @@ def train_clip(args):
         save_steps=args.save_steps if is_main_process else 999999,
         evaluation_strategy="steps",
         eval_steps=args.eval_steps,
-        save_total_limit=3,  # 保留更多检查点
+        save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
         run_name=args.run_name,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",  # 使用验证损失作为指标
-        greater_is_better=False,       # 损失越小越好
+        max_grad_norm=args.max_grad_norm
+        # load_best_model_at_end=True,
+        # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
+        # greater_is_better=False,       # 损失越小越好
     )
     
 
-    trainer = CLIPTrainer(
+    trainer = SiglipTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
@@ -301,8 +312,8 @@ def push_to_hub(best_model_path, repo_name):
         from huggingface_hub import HfApi
         
         # 自动上传 best model 到 hub
-        model = CLIPModel.from_pretrained(best_model_path)
-        processor = CLIPProcessor.from_pretrained(best_model_path)
+        model = SiglipModel.from_pretrained(best_model_path)
+        processor = SiglipProcessor.from_pretrained(best_model_path)
 
         model.push_to_hub(repo_name)
         processor.push_to_hub(repo_name)
@@ -324,7 +335,7 @@ if __name__ == "__main__":
         repo_name = f"{args.hub_username}/{args.hub_model_name}"
         push_to_hub(best_model_path, repo_name)
 
-    import torch.distributed as dist
+
     if dist.is_initialized():
         dist.barrier()
         if dist.get_rank() == 0:

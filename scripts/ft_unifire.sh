@@ -4,7 +4,7 @@
 export CUDA_VISIBLE_DEVICES=1,3
 
 # 使用accelerate启动
-accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_unifire.py \
+accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_clip_unifire.py \
   --batch_size 64 \
   --gradient_accumulation_steps 2 \
   --epochs 10 \
