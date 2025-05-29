@@ -120,14 +120,15 @@ class SiglipTrainer(Trainer):
         logits_per_image = outputs.logits_per_image
         logits_per_text  = outputs.logits_per_text
 
-        # 构造正确的 labels：0..batch_size-1
-        bs = logits_per_image.size(0)
-        labels = torch.arange(bs, device=logits_per_image.device)
 
-        # 计算两边对比损失
-        loss_i = F.cross_entropy(logits_per_image, labels)
-        loss_t = F.cross_entropy(logits_per_text, labels)
-        loss   = (loss_i + loss_t) / 2
+        # 构造矩阵形式标签，而非索引
+        bs = logits_per_image.size(0)
+        labels = torch.eye(bs, device=logits_per_image.device)
+
+        # 使用 binary_cross_entropy_with_logits
+        loss_i = F.binary_cross_entropy_with_logits(logits_per_image, labels)
+        loss_t = F.binary_cross_entropy_with_logits(logits_per_text, labels)
+        loss = (loss_i + loss_t) / 2
 
         return (loss, outputs) if return_outputs else loss
     
