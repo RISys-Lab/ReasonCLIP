@@ -187,7 +187,9 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
         else:
             image = item["image"]
             
-        text = item["caption"]  # 确认字段名是否正确
+        label = item["label"] 
+        caption = item["caption"]
+        text = f"A photo of {label}, where {caption}"
         
         # 使用CLIP处理器处理图像和文本
         encoding = self.processor(
