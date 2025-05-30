@@ -2,13 +2,14 @@
 
 # 配置环境
 export CUDA_VISIBLE_DEVICES=1,3
+export TOKENIZERS_PARALLELISM=false
 
 # 使用accelerate启动
 accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_siglip_unifire.py \
-  --model_name google/siglip-so400m-patch14-384 \
+  --model_name google/siglip2-so400m-patch14-384 \
   --output_dir ./weights/unifire_siglip_finetune \
   --best_model_dir ./weights/unifire_siglip_best_model \
-  --batch_size 64 \
+  --batch_size 32 \
   --gradient_accumulation_steps 2 \
   --epochs 10 \
   --learning_rate 2e-5 \
@@ -22,7 +23,8 @@ accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_proces
   --max_grad_norm 1.0 \
   --push_to_hub \
   --hub_username fesvhtr \
-  --hub_model_name siglip-iferniu-L14-10epoch \
+  --hub_model_name siglip2-iferniu-L14-10epoch \
   --dataset_name fesvhtr/iferniu \
-  --wandb_project siglip-unifire \
+  --num_workers 0 \
+  --wandb_project siglip \
   --wandb_log

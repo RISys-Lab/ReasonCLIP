@@ -2,9 +2,7 @@
 
 # 配置环境
 export CUDA_VISIBLE_DEVICES=1,3
-
-# 使用accelerate启动
-#!/bin/bash
+export TOKENIZERS_PARALLELISM=false
 
 # 使用accelerate启动
 accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_clip_unifire.py \
@@ -27,6 +25,7 @@ accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_proces
   --hub_username fesvhtr \
   --hub_model_name clip-iferniu-L14-10epoch-label \
   --dataset_name fesvhtr/iferniu \
-  --wandb_project clip-unifire \
+  --num_workers 0 \
+  --wandb_project clip \
   --wandb_log
 

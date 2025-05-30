@@ -74,7 +74,11 @@ def parse_args():
     # Dataset parameters
     parser.add_argument("--dataset_name", type=str, default="fesvhtr/iferniu",
                       help="Dataset name on HuggingFace Hub")
+    default_workers = min(8, os.cpu_count() // 2)
+    parser.add_argument("--num_workers", type=int, default=default_workers,
+                        help="Number of workers for data loading")
 
+                        
     # wandb parameters
     parser.add_argument("--wandb_project", type=str, default="siglip-unifire",
                         help="wandb project name")
@@ -114,21 +118,24 @@ class SiglipTrainer(Trainer):
         # 调用模型，不传 labels
         outputs = model(
             input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            pixel_values=inputs["pixel_values"]
+            # attention_mask=inputs["attention_mask"],
+            pixel_values=inputs["pixel_values"],
+            return_loss=True,
         )
-        logits_per_image = outputs.logits_per_image
-        logits_per_text  = outputs.logits_per_text
+        # logits_per_image = outputs.logits_per_image
+        # logits_per_text  = outputs.logits_per_text
 
 
-        # 构造矩阵形式标签，而非索引
-        bs = logits_per_image.size(0)
-        labels = torch.eye(bs, device=logits_per_image.device)
+        # # 构造矩阵形式标签，而非索引
+        # bs = logits_per_image.size(0)
+        # labels = torch.eye(bs, device=logits_per_image.device)
 
-        # 使用 binary_cross_entropy_with_logits
-        loss_i = F.binary_cross_entropy_with_logits(logits_per_image, labels)
-        loss_t = F.binary_cross_entropy_with_logits(logits_per_text, labels)
-        loss = (loss_i + loss_t) / 2
+        # # 使用 binary_cross_entropy_with_logits
+        # loss_i = F.binary_cross_entropy_with_logits(logits_per_image, labels)
+        # loss_t = F.binary_cross_entropy_with_logits(logits_per_text, labels)
+        # loss = (loss_i + loss_t) / 2
+
+        loss = outputs.loss
 
         return (loss, outputs) if return_outputs else loss
     
@@ -197,7 +204,9 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
             images=image, 
             return_tensors="pt",
             padding="max_length",
-            truncation=True
+            max_length=64,
+            truncation=True,
+            # return_attention_mask=True,  
         )
         
         # 移除批次维度
@@ -266,7 +275,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
@@ -274,10 +283,12 @@ def train_clip(args):
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
-        max_grad_norm=args.max_grad_norm
+        max_grad_norm=args.max_grad_norm,
         # load_best_model_at_end=True,
         # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
         # greater_is_better=False,       # 损失越小越好
+        dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
+        dataloader_pin_memory=True,         # 默认: True
     )
     
 

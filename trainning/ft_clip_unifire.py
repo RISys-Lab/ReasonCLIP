@@ -74,6 +74,9 @@ def parse_args():
     # Dataset parameters
     parser.add_argument("--dataset_name", type=str, default="fesvhtr/iferniu",
                       help="Dataset name on HuggingFace Hub")
+    default_workers = min(8, os.cpu_count() // 2)
+    parser.add_argument("--num_workers", type=int, default=default_workers,
+                        help="Number of workers for data loading")
 
     # wandb parameters
     parser.add_argument("--wandb_project", type=str, default="clip-unifire",
@@ -265,7 +268,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
@@ -273,10 +276,12 @@ def train_clip(args):
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
-        max_grad_norm=args.max_grad_norm
+        max_grad_norm=args.max_grad_norm,
         # load_best_model_at_end=True,
         # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
         # greater_is_better=False,       # 损失越小越好
+        dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
+        dataloader_pin_memory=True,         # 默认: True
     )
     
 
