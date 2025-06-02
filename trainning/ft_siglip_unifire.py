@@ -26,6 +26,10 @@ from transformers import TrainerCallback
 from datetime import datetime
 
 
+MODEL_LOCAL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/my_hf_cache/transformers/google/siglip2-so400m-patch14-384"
+DATASET_LOCAL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/my_hf_cache/datasets/fesvhtr/iferniu"
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
     # Training parameters
@@ -234,15 +238,25 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = SiglipModel.from_pretrained(model_name)
-    processor = SiglipProcessor.from_pretrained(model_name)
-
+    model = SiglipModel.from_pretrained("/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3")
+    processor = SiglipProcessor.from_pretrained("/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3")
     # Download dataset if specified
     if hasattr(args, 'dataset_name') and args.dataset_name:
         try:
             # 尝试加载数据集
-            raw_ds = load_dataset(args.dataset_name)
+            parquet_dir = "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/" \
+              "datasets--fesvhtr--iferniu/snapshots/b99cc1e97af8d03107548ca16feb35fab91bd1b1/data"
+            parquet_files = [
+                os.path.join(parquet_dir, fname)
+                for fname in os.listdir(parquet_dir)
+                if fname.endswith(".parquet")
+            ]
+            raw_ds = load_dataset(
+    "parquet",                      # 告诉 datasets 这是一个本地 Parquet 文件集
+    data_files={"train": parquet_files},  # 把所有的 parquet 放在 train 里
+)
             print(f"Dataset structure: {raw_ds}")
+
             print(f"Column names: {raw_ds['train'].column_names}")
             raw_ds = raw_ds['train']
             # take 1000 for demo test
@@ -275,7 +289,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        eval_strategy="steps",
+        evaluation_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",

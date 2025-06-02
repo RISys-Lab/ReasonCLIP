@@ -1,15 +1,17 @@
 #!/bin/bash
 
 # 配置环境
-export CUDA_VISIBLE_DEVICES=1,3
+# export CUDA_VISIBLE_DEVICES=0, 1
 export TOKENIZERS_PARALLELISM=false
+export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
+export WANDB_MODE=offline
 
 # 使用accelerate启动
 accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_siglip_unifire.py \
   --model_name google/siglip2-so400m-patch14-384 \
   --output_dir ./weights/unifire_siglip_finetune \
   --best_model_dir ./weights/unifire_siglip_best_model \
-  --batch_size 32 \
+  --batch_size 16 \
   --gradient_accumulation_steps 2 \
   --epochs 10 \
   --learning_rate 2e-5 \
