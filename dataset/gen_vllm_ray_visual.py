@@ -195,7 +195,7 @@ def visual_preprocess(row):
                 },
                 {
                     "type": "image",
-                    "image": Image.open(BytesIO(row["image"]))  # 直接传递字节数据
+                    "image": Image.open(BytesIO(row["image"]["bytes"]))  # 直接传递字节数据
                 }
             ]
         },

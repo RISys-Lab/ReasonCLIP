@@ -98,36 +98,10 @@ def ray_prepare_data_parquet(parquet_dir: str):
         ds = ray.data.from_pandas(df)
 
     def _extract_fields(row):
-        # 调试：检查输入类型
-        original_type = type(row["image"]).__name__
-        
-        if isinstance(row["image"], dict) and "bytes" in row["image"]:
-            image_bytes = row["image"]["bytes"]
-        elif isinstance(row["image"], bytes):
-            image_bytes = row["image"]
-        else:
-            # 如果是其他格式，先转换为PIL再转为bytes
-            if hasattr(row["image"], 'save'):  # PIL Image
-                import io as temp_io
-                buffer = temp_io.BytesIO()
-                row["image"].save(buffer, format='JPEG')
-                image_bytes = buffer.getvalue()
-            else:
-                # 假设是路径字符串
-                with open(row["image"], 'rb') as f:
-                    image_bytes = f.read()
-
-        
-        # 调试：确认输出类型
-        output_type = type(image_bytes).__name__
-        if output_type != "bytes":
-            print(f"WARNING: Expected bytes, got {output_type} from {original_type}")
-        
-        # 
         return {
             "data_id": row["data_id"],
             "image_name": row["image_name"],
-            "image": image_bytes,
+            "image": row["image"],
             "label": row["label"],
         }
 
