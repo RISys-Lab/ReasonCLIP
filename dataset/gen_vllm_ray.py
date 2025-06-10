@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import io
 import ray
@@ -7,7 +8,6 @@ from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
 from dataset.dataset_utils import ray_prepare_data_llavacot, SYSTEM_PROMPT_LLAVACOT
 import argparse
-import os
 from PIL import Image
 import logging
 import time
