@@ -294,7 +294,8 @@ if __name__ == "__main__":
         print("="*60)
         print("Outputting results...")
         for sample in result_ds.iter_rows():
-            print(f"Image ID: {sample['image_id']}")
+            print(f"data_id: {sample['data_id']}")
+            print(f"image_name: {sample['image_name']}")
             print(f"Generated Text: {sample['generated_text']!r}")
             print("-" * 60)
 
