@@ -175,7 +175,8 @@ def load_model(
 
     return handle_dataset
 
-def visual_preprocess(row, system_prompt):
+def visual_preprocess(row):
+    system_prompt = "Give a short description of the image."
     # 获取字节数据 (你的数据格式现在是直接的bytes)
     image_bytes = row["image"]  # 现在是直接的字节数据
     
@@ -283,8 +284,8 @@ if __name__ == "__main__":
         # 6. 调用处理函数，启动并行多模态推理
         print("="*60)
         print("Model loaded, Start to generate...")
-        system_prompt = "Give a short description of the image."
-        result_ds = vlm_handler(limited_ds, visual_preprocess(system_prompt), visual_postprocess)
+        
+        result_ds = vlm_handler(limited_ds, visual_preprocess, visual_postprocess)
 
         # 7. 输出所有结果到控制台
         print("="*60)
