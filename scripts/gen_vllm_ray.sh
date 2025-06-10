@@ -24,10 +24,10 @@ python dataset/gen_vllm_ray.py \
     --num_workers 8 \
     --ray_address None \
     --log_level INFO \
+    --dtype auto \
 
 
-# 72b awq
-# --model_name '/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--Qwen--Qwen2.5-VL-72B-Instruct-AWQ/snapshots/c8b87d4b81f34b6a147577a310d7e75f0698f6c2'
-
-# 72b
-# --model_name
+# 32b
+# --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-32B \
+# --data_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
+# --output_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/train_data_vllm.parquet \

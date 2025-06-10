@@ -25,6 +25,7 @@ python dataset/gen_vllm_ray_visual.py \
     --ray_address None \
     --log_level INFO \
     --quantization awq \
+    --dtype float16 \
 
 
 # 72b awq

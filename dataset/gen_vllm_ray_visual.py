@@ -67,6 +67,8 @@ def parse_args():
     # vLLM Engine parameters
     parser.add_argument("--quantization", type=str, default=None,
                        help="Quantization method (e.g., awq, gptq, fp8, None)")
+    parser.add_argument("--dtype", type=str, default="auto",
+                       help="Data type for model weights (e.g., float16, bfloat16, auto)")
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.9,
                        help="GPU memory utilization ratio (default: 0.6)")
     parser.add_argument("--enable_chunked_prefill", action="store_true", default=True,
@@ -129,6 +131,7 @@ def load_model(
     tensor_parallel_size: int = 1,
     pipeline_parallel_size: int = 1,
     quantization: str = None,
+    dtype: str = "auto",
     gpu_memory_utilization: float = 0.6,
 ):
 
@@ -141,6 +144,7 @@ def load_model(
         "max_model_len": max_model_len,
         "gpu_memory_utilization": gpu_memory_utilization,
         "trust_remote_code": trust_remote_code,
+        "dtype": dtype,
     }
     
     # 只有在quantization不为None时才添加到engine_kwargs
@@ -274,6 +278,7 @@ if __name__ == "__main__":
             tensor_parallel_size=args.tensor_parallel_size,
             pipeline_parallel_size=args.pipeline_parallel_size,
             quantization=args.quantization,
+            dtype=args.dtype,
             gpu_memory_utilization=args.gpu_memory_utilization,
         )
 
