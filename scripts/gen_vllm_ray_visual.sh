@@ -5,7 +5,7 @@ export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
 python dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
     --data_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
     --output_path $WORK/fmohamma/CLIP-R/outputs/ReasonLite/train_data_vllm_visual.parquet \
     --batch_size 4 \
