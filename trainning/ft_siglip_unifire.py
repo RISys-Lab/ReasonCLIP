@@ -238,45 +238,42 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = SiglipModel.from_pretrained("/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3")
-    processor = SiglipProcessor.from_pretrained("/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3")
+    model = SiglipModel.from_pretrained(model_name)
+    processor = SiglipProcessor.from_pretrained(model_name)
     # Download dataset if specified
     if hasattr(args, 'dataset_name') and args.dataset_name:
-        try:
-            # 尝试加载数据集
-            parquet_dir = "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/" \
-              "datasets--fesvhtr--iferniu/snapshots/b99cc1e97af8d03107548ca16feb35fab91bd1b1/data"
-            parquet_files = [
-                os.path.join(parquet_dir, fname)
-                for fname in os.listdir(parquet_dir)
-                if fname.endswith(".parquet")
-            ]
-            raw_ds = load_dataset(
-    "parquet",                      # 告诉 datasets 这是一个本地 Parquet 文件集
-    data_files={"train": parquet_files},  # 把所有的 parquet 放在 train 里
-)
-            print(f"Dataset structure: {raw_ds}")
-
-            print(f"Column names: {raw_ds['train'].column_names}")
-            raw_ds = raw_ds['train']
-            # take 1000 for demo test
-            # raw_ds = raw_ds.shuffle(seed=42).select(range(1000))  # 仅用于演示测试
-            
-            # 如果数据集没有预定义分割，则手动分割
-            split_ds = raw_ds.train_test_split(test_size=0.02, seed=42)
-            train_dataset = split_ds["train"]
-            eval_dataset = split_ds["test"]
-                
-            # 包装为CLIP可用的数据集
-            train_dataset = UniFireDataset(train_dataset, processor)
-            eval_dataset = UniFireDataset(eval_dataset, processor)
-                
-        except Exception as e:
-            print(f"Error loading dataset: {e}")
-            raise ValueError(f"Failed to load dataset {args.dataset_name}: {e}")
+        # 尝试加载数据集
+        dataset_name = args.dataset_name
+        raw_ds = load_dataset(dataset_name)
+    elif hasattr(args, 'dataset_path') and args.dataset_path:
+                # 尝试加载数据集
+        parquet_dir = args.dataset_path
+        parquet_files = [
+            os.path.join(parquet_dir, fname)
+            for fname in os.listdir(parquet_dir)
+            if fname.endswith(".parquet")
+        ]
+        raw_ds = load_dataset(
+            "parquet",                      # 告诉 datasets 这是一个本地 Parquet 文件集
+            data_files={"train": parquet_files},  # 把所有的 parquet 放在 train 里
+        )
     else:
         raise ValueError("Please specify a dataset name using --dataset_name argument.")
 
+    print(f"Dataset structure: {raw_ds}")
+    print(f"Column names: {raw_ds['train'].column_names}")
+    raw_ds = raw_ds['train']
+    # take 1000 for demo test
+    # raw_ds = raw_ds.shuffle(seed=42).select(range(1000))  # 仅用于演示测试
+    
+    # 如果数据集没有预定义分割，则手动分割
+    split_ds = raw_ds.train_test_split(test_size=0.02, seed=42)
+    train_dataset = split_ds["train"]
+    eval_dataset = split_ds["test"]
+        
+    # 包装为CLIP可用的数据集
+    train_dataset = UniFireDataset(train_dataset, processor)
+    eval_dataset = UniFireDataset(eval_dataset, processor)
 
 
     # 训练参数
@@ -289,7 +286,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",

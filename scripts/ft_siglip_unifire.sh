@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # 配置环境
-# export CUDA_VISIBLE_DEVICES=0, 1
+# export CUDA_VISIBLE_DEVICES=1,2
 export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
 
 # 使用accelerate启动
-accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_processes=2 trainning/ft_siglip_unifire.py \
-  --model_name google/siglip2-so400m-patch14-384 \
+accelerate launch --config_file scripts/accelerate.yaml trainning/ft_siglip_unifire.py \
+  --model_name "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3" \
   --output_dir ./weights/unifire_siglip_finetune \
   --best_model_dir ./weights/unifire_siglip_best_model \
-  --batch_size 16 \
+  --batch_size 2 \
   --gradient_accumulation_steps 2 \
   --epochs 10 \
   --learning_rate 2e-5 \
@@ -26,7 +26,11 @@ accelerate launch --config_file scripts/accelerate.yaml --multi_gpu --num_proces
   --push_to_hub \
   --hub_username fesvhtr \
   --hub_model_name siglip2-iferniu-L14-10epoch \
-  --dataset_name fesvhtr/iferniu \
+  --dataset-path "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/datasets--fesvhtr--iferniu/snapshots/b99cc1e97af8d03107548ca16feb35fab91bd1b1/data" \
   --num_workers 0 \
   --wandb_project siglip \
   --wandb_log
+
+# 如果需要使用本地路径，可以替换上面对应的参数：
+# --model_name "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3" \
+# --dataset-path "/leonardo/home/userexternal/fmohamma/.cache/huggingface/hub/datasets--fesvhtr--iferniu/snapshots/b99cc1e97af8d03107548ca16feb35fab91bd1b1/data" \
