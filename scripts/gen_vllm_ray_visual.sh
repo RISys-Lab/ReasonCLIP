@@ -28,8 +28,10 @@ python dataset/gen_vllm_ray_visual.py \
     --dtype float16 \
 
 
-# 72b awq
-# --model_name $WORK/CLIP-R/CLIP-R/data/Qwen3-32B
+# remote
+# --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
+# --data_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
 
-# 72b
-# --model_name
+# local
+# --model_source Qwen2.5-VL-7B-Instruct\
+# --data_path /fesvhtr-iferniu/data \

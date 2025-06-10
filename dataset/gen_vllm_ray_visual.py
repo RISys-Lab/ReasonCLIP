@@ -181,11 +181,8 @@ def load_model(
 
 def visual_preprocess(row):
     system_prompt = "Give a short description of the image."
-    # 获取字节数据 (你的数据格式现在是直接的bytes)
-    image_bytes = row["image"]  # 现在是直接的字节数据
-    
-    # 将字节数据转换为PIL图像对象
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    # 直接使用字节数据，不转换为PIL对象
+    image_bytes = row["image"]  # 保持为字节数据
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -198,7 +195,7 @@ def visual_preprocess(row):
                 },
                 {
                     "type": "image",
-                    "image": image
+                    "image": image_bytes  # 直接传递字节数据
                 }
             ]
         },
