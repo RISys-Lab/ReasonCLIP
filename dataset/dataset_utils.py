@@ -125,10 +125,10 @@ def ray_prepare_data_parquet(parquet_dir: str):
         
         # 
         return {
-            "image_id": row["image_id"],
+            "data_id": row["data_id"],
+            "image_name": row["image_name"],
             "image": image_bytes,
             "label": row["label"],
-            "caption": row["caption"],
         }
 
     ds = ds.map(_extract_fields)

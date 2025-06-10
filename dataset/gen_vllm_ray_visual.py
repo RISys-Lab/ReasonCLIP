@@ -214,7 +214,8 @@ def visual_preprocess(row):
 
 def visual_postprocess(row):
     return {
-        "image_id": row["image_id"],
+        "data_id": row["data_id"],
+        "image_name": row["image_name"],
         "generated_text": row["generated_text"],
     }
 
