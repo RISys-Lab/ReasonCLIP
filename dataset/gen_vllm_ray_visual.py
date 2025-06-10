@@ -1,4 +1,5 @@
-# multimodal_pipeline.py
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import io
 import ray
 from packaging.version import Version
@@ -7,7 +8,6 @@ from datasets import load_dataset
 import argparse
 from dataset.dataset_utils import ray_prepare_data_CC12M, ray_prepare_data_parquet
 import os
-import io
 from PIL import Image
 import logging
 
