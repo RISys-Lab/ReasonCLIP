@@ -10,6 +10,7 @@ import argparse
 from dataset.dataset_utils import ray_prepare_data_CC12M, ray_prepare_data_parquet
 from PIL import Image
 import logging
+from io import BytesIO
 
 def setup_logging(log_level: str = "INFO", disable_vllm_logs: bool = False, disable_ray_logs: bool = False):
     """Setup logging configuration based on arguments"""
@@ -182,7 +183,6 @@ def load_model(
 def visual_preprocess(row):
     system_prompt = "Give a short description of the image."
     # 直接使用字节数据，不转换为PIL对象
-    image_bytes = row["image"]  # 保持为字节数据
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -195,7 +195,7 @@ def visual_preprocess(row):
                 },
                 {
                     "type": "image",
-                    "image": image_bytes  # 直接传递字节数据
+                    "image": Image.open(BytesIO(row["image"]))  # 直接传递字节数据
                 }
             ]
         },
