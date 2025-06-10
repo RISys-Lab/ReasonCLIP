@@ -117,9 +117,6 @@ def ray_prepare_data_parquet(parquet_dir: str):
                 with open(row["image"], 'rb') as f:
                     image_bytes = f.read()
 
-        label = row["label"]
-        caption = row["caption"]
-        text = f"A photo of {label}, where {caption}"
         
         # 调试：确认输出类型
         output_type = type(image_bytes).__name__
@@ -128,10 +125,10 @@ def ray_prepare_data_parquet(parquet_dir: str):
         
         # 
         return {
+            "image_id": row["image_id"],
             "image": image_bytes,
-            "label": label,
-            "caption": caption,
-            "answer": text
+            "label": row["label"],
+            "caption": row["caption"],
         }
 
     ds = ds.map(_extract_fields)
