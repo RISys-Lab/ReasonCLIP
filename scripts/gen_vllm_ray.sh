@@ -5,9 +5,9 @@ export TOKENIZERS_PARALLELISM=false
 export CUDA_VISIBLE_DEVICES=2
 
 python dataset/gen_vllm_ray.py \
-    --model_source $WORK/CLIP-R/data/Qwen3-32B \
-    --data_path $WORK/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
-    --output_path $WORK/CLIP-R/outputs/ReasonPro/train_data_vllm.parquet \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-32B \
+    --data_path $WORK/fmohamma/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
+    --output_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/train_data_vllm.parquet \
     --batch_size 4 \
     --max_model_len 8192 \
     --max_num_batched_tokens 8192 \
@@ -23,7 +23,7 @@ python dataset/gen_vllm_ray.py \
     --concurrency 1 \
     --num_workers 8 \
     --ray_address None \
-    --log_level WARNING \
+    --log_level INFO \
 
 
 # 72b awq
