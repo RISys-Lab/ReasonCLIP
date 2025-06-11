@@ -89,7 +89,7 @@ def ray_prepare_data_llavacot(parquet_dir: str):
     def _extract_fields(row):
         return {
             "id": row["id"],
-            "image_path": row["image_path"],
+            "image_path": row["image"],
             "conversations": str(row["conversations"]),
         }
     

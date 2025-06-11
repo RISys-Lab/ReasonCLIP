@@ -226,22 +226,6 @@ def process_dataset_with_checkpoints(
     show_sample_output=True,
     max_sample_display=5
 ):
-    """
-    分批处理数据集并保存checkpoint
-    
-    Args:
-        dataset: Ray dataset to process
-        vlm_handler: VLM processing function
-        preprocess_fn: Preprocessing function
-        postprocess_fn: Postprocessing function
-        checkpoint_interval: Number of samples per checkpoint
-        output_dir_path: Directory to save checkpoints and final results
-        show_sample_output: Whether to display sample outputs
-        max_sample_display: Maximum number of samples to display per batch
-    
-    Returns:
-        List of all processed results
-    """
     import os
     
     total_samples = dataset.count()
@@ -251,23 +235,17 @@ def process_dataset_with_checkpoints(
     # 创建输出目录
     os.makedirs(output_dir_path, exist_ok=True)
     
-    # 分批处理
-    batch_num = 0
+    if total_samples <= checkpoint_interval:          # 只有一批
+        batches = [dataset]                           # 直接把完整数据集当作第一批
+    else:                                             # 多批
+        indices = list(range(checkpoint_interval, total_samples, checkpoint_interval))
+        batches = dataset.split_at_indices(indices)   # 顺序切分
+
     processed_count = 0
     all_results = []
     
-    # 将数据集分成批次
-    num_batches = (total_samples + checkpoint_interval - 1) // checkpoint_interval
-    
-    for i in range(0, total_samples, checkpoint_interval):
-        batch_num += 1
-        print(f"\n{'='*60}")
-        print(f"Processing batch {batch_num}/{num_batches} (samples {i+1}-{min(i+checkpoint_interval, total_samples)})")
-        
-        # 获取当前批次的数据
-        batch_ds = dataset.limit(checkpoint_interval, offset=i)
-        
-        # 处理当前批次
+    for batch_idx, batch_ds in enumerate(batches, 1):
+        print(f"\n==== Batch {batch_idx}/{len(batches)} ====")
         result_ds = vlm_handler(batch_ds, preprocess_fn, postprocess_fn)
         batch_results = list(result_ds.iter_rows())
         all_results.extend(batch_results)
@@ -275,15 +253,17 @@ def process_dataset_with_checkpoints(
         
         # 输出当前批次结果（可选）
         if show_sample_output:
-            print(f"Batch {batch_num} results:")
+            print(f"Batch {batch_idx} results:")
             for sample in batch_results[:max_sample_display]:
                 print(f"Generated Text: {sample['generated_text']!r}")
                 print("-" * 40)
         
         # 保存当前批次的checkpoint
-        checkpoint_path = f"{output_dir_path}/checkpoint_batch_{batch_num}.parquet"
+        checkpoint_path = f"{output_dir_path}/checkpoint_batch_{batch_idx}"
         batch_result_ds = ray.data.from_items(batch_results)
-        batch_result_ds.write_parquet(checkpoint_path)
+        # 强制合并为单个文件
+        batch_result_ds = batch_result_ds.repartition(1)
+        batch_result_ds.write_parquet(checkpoint_path, try_create_dir=False, num_rows_per_file=None)
         print(f"Saved checkpoint: {checkpoint_path}")
         print(f"Processed: {processed_count}/{total_samples} samples")
     
@@ -291,8 +271,10 @@ def process_dataset_with_checkpoints(
     print(f"\n{'='*60}")
     print("Saving final complete results...")
     final_result_ds = ray.data.from_items(all_results)
-    final_output_path = f"{output_dir_path}/final_complete_results.parquet"
-    final_result_ds.write_parquet(final_output_path)
+    # 强制合并为单个文件
+    final_result_ds = final_result_ds.repartition(1)
+    final_output_path = f"{output_dir_path}/final_complete_results"
+    final_result_ds.write_parquet(final_output_path, try_create_dir=False, num_rows_per_file=None)
     print(f"Final results saved to: {final_output_path}")
     print(f"Total processed samples: {len(all_results)}")
     
