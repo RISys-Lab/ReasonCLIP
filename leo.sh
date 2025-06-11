@@ -20,9 +20,9 @@ export WANDB_MODE=offline
 # activate env 
 module load profile/deeplrn
 module load openmpi
-source $WORK/venvs/llm/bin/activate
+source $WORK/fmohamma/venvs/llm/bin/activate
 # source $WORK/venvs/clipr/bin/activate
-cd $WORK/CLIP-R/
+cd $WORK/fmohamma/CLIP-R/
 
 # run python
 ./scripts/gen_vllm_ray.sh
