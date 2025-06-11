@@ -101,14 +101,15 @@ def ray_prepare_data_llavacot(parquet_dir: str):
 
 SYSTEM_PROMPT_LLAVACOT_VISUAL = """
 You are an image annotation assistant. For each image I provide, you need to generate a concise description. No reasoning is required—just briefly describe the objects and events present in the image.
-For each image, generate two captions. They can differ in detail, but must not omit the main subject of the image.
+For each image, generate three captions. They can differ in detail, but must not omit the main subject of the image.
 Each caption must be within 70 words.
 """
 
 USER_PROMPT_LLAVACOT_VISUAL = """
-Now give me these two captions about the image as the request. The format should be as follows — only output the two captions in this structure:
+Now give me these three captions about the image as the request. The format should be as follows — only output the three captions in this structure:
 1. caption1
 2. caption2
+3. caption3
 """
 
 def ray_prepare_data_llavacot_visual(parquet_dir: str, image_dir: str):
@@ -133,7 +134,7 @@ def ray_prepare_data_llavacot_visual(parquet_dir: str, image_dir: str):
 
         # 先过滤数据，更高效
     def should_keep_sample(row):
-        filter_keywords = ["chartqa",]
+        filter_keywords = ["chartqa", "geoqa+", "docvqa", "ocr_vqa"]
         image_filename = str(row.get("image", "")).lower()
         
         # 如果文件名包含过滤关键词，则不保留

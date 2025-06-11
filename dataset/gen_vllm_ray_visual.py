@@ -267,8 +267,10 @@ def process_dataset_with_checkpoints(
                 print("-" * 40)
         
         # 保存当前批次的checkpoint
-        checkpoint_path = f"{output_dir_path}/checkpoint_batch_{batch_idx}.parquet"
+        checkpoint_path = os.path.join(output_dir_path, f"llavacot_tb_checkpoint_batch_{batch_idx}")
         batch_result_ds = ray.data.from_items(batch_results)
+        # 强制合并为单个文件
+        batch_result_ds = batch_result_ds.repartition(1)
         batch_result_ds.write_parquet(checkpoint_path)
         print(f"Saved checkpoint: {checkpoint_path}")
         print(f"Processed: {processed_count}/{total_samples} samples")
@@ -277,7 +279,9 @@ def process_dataset_with_checkpoints(
     print(f"\n{'='*60}")
     print("Saving final complete results...")
     final_result_ds = ray.data.from_items(all_results)
-    final_output_path = f"{output_dir_path}/final_complete_results.parquet"
+    # 强制合并为单个文件
+    final_result_ds = final_result_ds.repartition(1)
+    final_output_path = os.path.join(output_dir_path, "llavacot_tb_results")
     final_result_ds.write_parquet(final_output_path)
     print(f"Final results saved to: {final_output_path}")
     print(f"Total processed samples: {len(all_results)}")
