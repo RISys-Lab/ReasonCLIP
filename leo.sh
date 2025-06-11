@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_vllm_ray
+#SBATCH --job-name=gen_llavacot_tb
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,10 +7,10 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_vllm_ray.out
-#SBATCH --error=gen_vllm_ray.err
+#SBATCH --output=gen_llavacot_tb.out
+#SBATCH --error=gen_llavacot_tb.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=256G
+#SBATCH --mem=250G
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  
 export NCCL_DEBUG=WARN

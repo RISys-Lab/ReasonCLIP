@@ -6,7 +6,7 @@ import ray
 from packaging.version import Version
 from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
-from dataset.dataset_utils import ray_prepare_data_llavacot, SYSTEM_PROMPT_LLAVACOT
+from dataset.dataset_utils import *
 import argparse
 from PIL import Image
 import logging
@@ -193,11 +193,13 @@ def load_model(
     return handle_dataset
 
 def preprocess(row):
+    system_prompt = SYSTEM_PROMPT_LLAVACOT
+    user_prompt = USER_PROMPT_LLAVACOT
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_LLAVACOT},
+        {"role": "system", "content": system_prompt},
         {
             "role": "user", 
-            "content": row["conversations"]
+            "content": user_prompt + "\n" + row["conversations"]
         },
     ]
     return {

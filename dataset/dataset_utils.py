@@ -36,16 +36,15 @@ Tips:
 3. The captions should be short, declarative sentences that directly express the basic image information and the inferred information.
 
 You must generate **three** captions. Keep them concise but meaningful, and **each should be no longer than 80 English words**.
+Your output must consist of exactly three captions, with no additional text or output:
+<caption1> the first one <caption1>
+<caption2> the second one <caption2>
+<caption3> the third one <caption3>
 """
 
 USER_PROMPT_LLAVACOT = """
 Please provide **three reasoning captions** derived from the conversation that contain **moderate-level reasoning information**.
-
-The format should be as follows — only output the three captions in this structure:
-
-<caption1> the first one <caption1>
-<caption2> the second one <caption2>
-<caption3> the third one <caption3>
+Please output the three captions following the format in the system prompt.
 """
 
 def ray_prepare_data_llavacot(parquet_dir: str):
