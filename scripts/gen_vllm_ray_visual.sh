@@ -16,7 +16,7 @@ python dataset/gen_vllm_ray_visual.py \
     --max_tokens 100 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
