@@ -80,7 +80,7 @@ def parse_args():
                        help="Trust remote code in model loading")
     
     # Input data parameters
-    parser.add_argument("--task", type=str, default="parquet", choices=["CC12M", "parquet"],
+    parser.add_argument("--task", type=str, default="parquet", choices=["CC12M", "parquet", "llavacot"],
                        help="Type of dataset to process")
     parser.add_argument("--parquet_dir_path", type=str, default=None,
                        help="Path to input data (file pattern or directory)")
