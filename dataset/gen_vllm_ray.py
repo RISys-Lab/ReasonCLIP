@@ -44,8 +44,10 @@ def parse_args():
     # Model parameters
     parser.add_argument("--model_source", type=str, default="Qwen/Qwen3-32B", 
                        help="Model name or path")
-    parser.add_argument("--output_path", type=str, default="./outputs/",
+    parser.add_argument("--output_dir_path", type=str, default="./outputs/",
                        help="Output directory for processed results")
+    parser.add_argument("--checkpoint_interval", type=int, default=100,
+                       help="Save checkpoint every N samples (default: 100)")
     parser.add_argument("--batch_size", type=int, default=8,
                        help="Batch size for inference")
     parser.add_argument("--max_model_len", type=int, default=4096,
@@ -58,7 +60,8 @@ def parse_args():
                        help="Sampling temperature")
     parser.add_argument("--top_p", type=float, default=0.95,
                        help="Top-p sampling parameter")
-    
+    parser.add_argument("--top_k", type=int, default=20,
+                       help="Top-k sampling parameter")
     # vLLM Parallel parameters
     parser.add_argument("--tensor_parallel_size", type=int, default=1,
                        help="Number of GPUs to use for tensor parallelism")
@@ -76,11 +79,15 @@ def parse_args():
                        help="Enable chunked prefill")
     parser.add_argument("--trust_remote_code", action="store_true", default=True,
                        help="Trust remote code in model loading")
+    parser.add_argument("--enable_reasoning", action="store_true", default=False,
+                       help="Enable reasoning parser (default: False)")
+    parser.add_argument("--reasoning_parser", type=str, default="deepseek_r1",
+                       help="Reasoning parser method")
     
     # Input data parameters
     parser.add_argument("--task", type=str, default="llavacot", choices=["llavacot"],
                        help="Type of dataset to process")
-    parser.add_argument("--data_path", type=str, required=True,
+    parser.add_argument("--parquet_dir_path", type=str, required=True,
                        help="Path to input data (file pattern or directory)")
     parser.add_argument("--concurrency", type=int, default=2,
                        help="Number of vLLM instances to run in parallel")
@@ -105,7 +112,7 @@ def parse_args():
     args = parser.parse_args()
     
     # Create output directory if it doesn't exist
-    os.makedirs(args.output_path, exist_ok=True)
+    os.makedirs(args.output_dir_path, exist_ok=True)
     
     return args
 
@@ -134,6 +141,8 @@ def load_model(
     quantization: str = None,
     dtype: str = "auto",
     gpu_memory_utilization: float = 0.6,
+    enable_reasoning: bool = False,
+    reasoning_parser: str = "deepseek_r1",
 ):
 
     # Build engine_kwargs, only include non-None parameters
@@ -151,6 +160,11 @@ def load_model(
     # Only add to engine_kwargs if quantization is not None
     if quantization is not None:
         engine_kwargs["quantization"] = quantization
+        
+    # Add reasoning parser parameters
+    if enable_reasoning:
+        engine_kwargs["enable_reasoning"] = enable_reasoning
+        engine_kwargs["reasoning_parser"] = reasoning_parser
 
     config = vLLMEngineProcessorConfig(
         model_source=model_source,
@@ -165,7 +179,7 @@ def load_model(
         batch_size=batch_size,
         accelerator_type=None,
         apply_chat_template=True,
-        has_image=True,
+        chat_template_kwargs={"enable_thinking": True},  # 启用思维模式
     )
 
     def handle_dataset(dataset, preprocess_fn, postprocess_fn):
@@ -192,17 +206,97 @@ def preprocess(row):
             "temperature": args.temperature,
             "max_tokens": args.max_tokens,
             "top_p": args.top_p,
+            "top_k": args.top_k,
         },
     }
 def postprocess(row):
     return {
         "id": row["id"],
-        "image": row["image"],
+        "image_path": row["image_path"],
         "generated_text": row["generated_text"],
     }
 
-
-
+def process_dataset_with_checkpoints(
+    dataset, 
+    vlm_handler, 
+    preprocess_fn, 
+    postprocess_fn, 
+    checkpoint_interval, 
+    output_dir_path,
+    show_sample_output=True,
+    max_sample_display=5
+):
+    """
+    分批处理数据集并保存checkpoint
+    
+    Args:
+        dataset: Ray dataset to process
+        vlm_handler: VLM processing function
+        preprocess_fn: Preprocessing function
+        postprocess_fn: Postprocessing function
+        checkpoint_interval: Number of samples per checkpoint
+        output_dir_path: Directory to save checkpoints and final results
+        show_sample_output: Whether to display sample outputs
+        max_sample_display: Maximum number of samples to display per batch
+    
+    Returns:
+        List of all processed results
+    """
+    import os
+    
+    total_samples = dataset.count()
+    print(f"Total samples to process: {total_samples}")
+    print(f"Checkpoint interval: {checkpoint_interval}")
+    
+    # 创建输出目录
+    os.makedirs(output_dir_path, exist_ok=True)
+    
+    # 分批处理
+    batch_num = 0
+    processed_count = 0
+    all_results = []
+    
+    # 将数据集分成批次
+    num_batches = (total_samples + checkpoint_interval - 1) // checkpoint_interval
+    
+    for i in range(0, total_samples, checkpoint_interval):
+        batch_num += 1
+        print(f"\n{'='*60}")
+        print(f"Processing batch {batch_num}/{num_batches} (samples {i+1}-{min(i+checkpoint_interval, total_samples)})")
+        
+        # 获取当前批次的数据
+        batch_ds = dataset.limit(checkpoint_interval, offset=i)
+        
+        # 处理当前批次
+        result_ds = vlm_handler(batch_ds, preprocess_fn, postprocess_fn)
+        batch_results = list(result_ds.iter_rows())
+        all_results.extend(batch_results)
+        processed_count += len(batch_results)
+        
+        # 输出当前批次结果（可选）
+        if show_sample_output:
+            print(f"Batch {batch_num} results:")
+            for sample in batch_results[:max_sample_display]:
+                print(f"Generated Text: {sample['generated_text']!r}")
+                print("-" * 40)
+        
+        # 保存当前批次的checkpoint
+        checkpoint_path = f"{output_dir_path}/checkpoint_batch_{batch_num}.parquet"
+        batch_result_ds = ray.data.from_items(batch_results)
+        batch_result_ds.write_parquet(checkpoint_path)
+        print(f"Saved checkpoint: {checkpoint_path}")
+        print(f"Processed: {processed_count}/{total_samples} samples")
+    
+    # 保存最终完整结果
+    print(f"\n{'='*60}")
+    print("Saving final complete results...")
+    final_result_ds = ray.data.from_items(all_results)
+    final_output_path = f"{output_dir_path}/final_complete_results.parquet"
+    final_result_ds.write_parquet(final_output_path)
+    print(f"Final results saved to: {final_output_path}")
+    print(f"Total processed samples: {len(all_results)}")
+    
+    return all_results
 
 if __name__ == "__main__":
     args = parse_args()
@@ -214,67 +308,98 @@ if __name__ == "__main__":
         log_level=args.log_level,
     )
 
-    # 1. Force clean up and initialize Ray (single-node mode)
-    print("="*60)
-    print("Cleaning up and initializing Ray...")
-    
-    # Force close any existing Ray instances
     try:
-        import ray
-        if ray.is_initialized():
-            ray.shutdown()
-    except:
-        pass
+        # 1. Force clean up and initialize Ray (single-node mode)
+        print("="*60)
+        print("Cleaning up and initializing Ray...")
+        
+        # Force close any existing Ray instances
+        try:
+            import ray
+            if ray.is_initialized():
+                ray.shutdown()
+        except:
+            pass
+        
+        # 短暂等待确保清理完成
+        time.sleep(2)
+        
+        init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
+        task = args.task
+        parquet_dir_path = args.parquet_dir_path
+
+        # 2. Read and prepare Dataset
+        print("="*60)
+        print("Reading dataset...")
+        if task == "llavacot":
+            ds = ray_prepare_data_llavacot(parquet_dir_path)
+        else:
+            raise ValueError(f"Invalid task: {task}")
+
+        print("Dataset schema:", ds.schema())   # {'image': binary, 'image_id': str}
+        print("Dataset Size:", ds.count())
+
+        # TODO: 限制数据集大小（如果只想处理少量数据）
+        limited_ds = ds.limit(20)
+
+        print("="*60)
+        print("Loading model:", args.model_source)
+        vlm_handler = load_model(
+            model_source=args.model_source,  
+            concurrency=args.concurrency, 
+            batch_size=args.batch_size,                 
+            enable_chunked_prefill=args.enable_chunked_prefill,
+            max_num_batched_tokens=args.max_num_batched_tokens,
+            max_model_len=args.max_model_len,
+            trust_remote_code=args.trust_remote_code,
+            tensor_parallel_size=args.tensor_parallel_size,
+            pipeline_parallel_size=args.pipeline_parallel_size,
+            quantization=args.quantization,
+            dtype=args.dtype,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            enable_reasoning=args.enable_reasoning,
+            reasoning_parser=args.reasoning_parser,
+        )
+
+        
+        # 5. Call processing function, start parallel multimodal inference
+        print("="*60)
+        print("Model loaded, Start to generate...")
+        
+        # 使用函数进行分批处理
+        checkpoint_interval = args.checkpoint_interval
+        output_dir_path = args.output_dir_path
+        process_dataset_with_checkpoints(
+            limited_ds,
+            vlm_handler,
+            preprocess,
+            postprocess,
+            checkpoint_interval,
+            output_dir_path
+        )
+
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"ERROR: {e}")
+        print("Cleaning up due to error...")
     
-    time.sleep(2)
-    
-    init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
-    task = args.task
-    data_path = args.data_path
-
-    # 2. Read and prepare Dataset
-    print("="*60)
-    print("Reading dataset...")
-    if task == "llavacot":
-        ds = ray_prepare_data_llavacot(data_path)
-    else:
-        raise ValueError(f"Invalid task: {task}")
-
-    print("Dataset schema:", ds.schema())   # {'image': binary, 'image_id': str}
-    print("Dataset Size:", ds.count())
-
-    print("="*60)
-    print("Loading model:", args.model_source)
-    vlm_handler = load_model(
-        model_source=args.model_source,  
-        concurrency=args.concurrency, 
-        batch_size=args.batch_size,                 
-        enable_chunked_prefill=args.enable_chunked_prefill,
-        max_num_batched_tokens=args.max_num_batched_tokens,
-        max_model_len=args.max_model_len,
-        trust_remote_code=args.trust_remote_code,
-        tensor_parallel_size=args.tensor_parallel_size,
-        pipeline_parallel_size=args.pipeline_parallel_size,
-        quantization=args.quantization,
-        dtype=args.dtype,
-        gpu_memory_utilization=args.gpu_memory_utilization,
-    )
-
-    
-    # 5. Call processing function, start parallel multimodal inference
-    print("="*60)
-    print("Model loaded, Start to generate...")
-    result_ds = vlm_handler(ds, preprocess, postprocess)
-
-    # 6. Output the first 5 rows to the console (local debug)
-    print("="*60)
-    print("Outputting results...")
-    for sample in result_ds.take(20):
-        print(f"Answer: {sample['answer']!r}")
-        print("-" * 60)
-
-    # 7. Write complete results back to S3 (Parquet format)
-    result_ds.write_parquet(args.output_path)
-
-    # 8. Close Ray
-    ray.shutdown()
+    finally:
+        # 8. 无论如何都要清理资源
+        print("="*60)
+        print("Shutting down Ray and cleaning up...")
+        try:
+            if ray.is_initialized():
+                ray.shutdown()
+            print("Ray shutdown completed")
+        except:
+            pass
+        
+        # 清理 CUDA 缓存
+        try:
+            import torch
+            torch.cuda.empty_cache()
+            print("CUDA cache cleared")
+        except:
+            pass
+        
+        print("Cleanup completed.")

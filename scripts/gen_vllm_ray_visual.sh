@@ -5,9 +5,11 @@ export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
 python dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
-    --data_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
-    --output_path $WORK/fmohamma/CLIP-R/outputs/ReasonLite/train_data_vllm_visual.parquet \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
+    --parquet_dir_path /home/muzammal/Projects/CLIP-R/data/Xkev-LLaVA-CoT-100k/default/train \
+    --image_dir_path /home/muzammal/Projects/CLIP-R/data/Xkev-LLaVA-CoT-100k/default/train \
+    --output_dir_path /home/muzammal/Projects/CLIP-R/outputs/ReasonPro/ \
+    --checkpoint_interval 10000 \
     --batch_size 4 \
     --max_model_len 4096 \
     --max_num_batched_tokens 4096 \
@@ -24,14 +26,15 @@ python dataset/gen_vllm_ray_visual.py \
     --num_workers 8 \
     --ray_address None \
     --log_level INFO \
-    --quantization awq \
-    --dtype float16 \
+    --dtype auto \
 
 
 # remote
 # --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
-# --data_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
+# --parquet_dir_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
+# --image_dir_path $WORK/fmohamma/CLIP-R/data/fesvhtr-iferniu/data \
 
 # local
 # --model_source Qwen2.5-VL-7B-Instruct\
-# --data_path /fesvhtr-iferniu/data \
+# --parquet_dir_path /fesvhtr-iferniu/data \
+# --image_dir_path /fesvhtr-iferniu/data \

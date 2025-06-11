@@ -7,7 +7,7 @@ from packaging.version import Version
 from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
 import argparse
-from dataset.dataset_utils import ray_prepare_data_CC12M, ray_prepare_data_parquet
+from dataset.dataset_utils import *
 from PIL import Image
 import logging
 from io import BytesIO
@@ -44,8 +44,10 @@ def parse_args():
     # Model parameters
     parser.add_argument("--model_source", type=str, default="Qwen/Qwen2.5-VL-7B-Instruct", 
                        help="Model name or path")
-    parser.add_argument("--output_path", type=str, default="./outputs/",
+    parser.add_argument("--output_dir_path", type=str, default="./outputs/",
                        help="Output directory for processed results")
+    parser.add_argument("--checkpoint_interval", type=int, default=100,
+                       help="Save checkpoint every N samples (default: 100)")
     parser.add_argument("--batch_size", type=int, default=8,
                        help="Batch size for inference")
     parser.add_argument("--max_model_len", type=int, default=4096,
@@ -80,7 +82,9 @@ def parse_args():
     # Input data parameters
     parser.add_argument("--task", type=str, default="parquet", choices=["CC12M", "parquet"],
                        help="Type of dataset to process")
-    parser.add_argument("--data_path", type=str, required=True,
+    parser.add_argument("--parquet_dir_path", type=str, default=None,
+                       help="Path to input data (file pattern or directory)")
+    parser.add_argument("--image_dir_path", type=str, default=None,
                        help="Path to input data (file pattern or directory)")
     parser.add_argument("--concurrency", type=int, default=2,
                        help="Number of vLLM instances to run in parallel")
@@ -105,7 +109,7 @@ def parse_args():
     args = parser.parse_args()
     
     # Create output directory if it doesn't exist
-    os.makedirs(args.output_path, exist_ok=True)
+    os.makedirs(args.output_dir_path, exist_ok=True)
     
     return args
 
@@ -181,9 +185,13 @@ def load_model(
     return handle_dataset
 
 def visual_preprocess(row):
-    system_prompt = "Give a short description of the image."
-    # 直接使用字节数据，不转换为PIL对象
+    system_prompt = SYSTEM_PROMPT_LLAVACOT_VISUAL
+    user_prompt = USER_PROMPT_LLAVACOT_VISUAL
 
+    # if bytes, convert to PIL image
+    # image = Image.open(BytesIO(row["image"]["bytes"]))
+    # if image_path, convert to PIL image
+    image = Image.open(row["image_path"])
     messages = [
         {"role": "system", "content": system_prompt},
         {
@@ -191,11 +199,11 @@ def visual_preprocess(row):
             "content": [
                 {
                     "type": "text",
-                    "text": "Now give me these reasoning caption about the image as the request."
+                    "text": user_prompt
                 },
                 {
                     "type": "image",
-                    "image": Image.open(BytesIO(row["image"]["bytes"]))  # 直接传递字节数据
+                    "image": image
                 }
             ]
         },
@@ -211,12 +219,78 @@ def visual_preprocess(row):
 
 def visual_postprocess(row):
     return {
-        "data_id": row["data_id"],
-        "image_name": row["image_name"],
+        "id": row["id"],
+        "image_path": row["image_path"],
         "generated_text": row["generated_text"],
     }
 
-
+def process_dataset_with_checkpoints(
+    dataset, 
+    vlm_handler, 
+    preprocess_fn, 
+    postprocess_fn, 
+    checkpoint_interval, 
+    output_dir_path,
+    show_sample_output=True,
+    max_sample_display=5
+):
+    import os
+    
+    total_samples = dataset.count()
+    print(f"Total samples to process: {total_samples}")
+    print(f"Checkpoint interval: {checkpoint_interval}")
+    
+    # 创建输出目录
+    os.makedirs(output_dir_path, exist_ok=True)
+    
+    # 分批处理
+    batch_num = 0
+    processed_count = 0
+    all_results = []
+    
+    # 将数据集分成批次
+    num_batches = (total_samples + checkpoint_interval - 1) // checkpoint_interval
+    
+    for i in range(0, total_samples, checkpoint_interval):
+        batch_num += 1
+        print(f"\n{'='*60}")
+        print(f"Processing batch {batch_num}/{num_batches} (samples {i+1}-{min(i+checkpoint_interval, total_samples)})")
+        
+        # 获取当前批次的数据
+        batch_ds = dataset.limit(checkpoint_interval, offset=i)
+        
+        # 处理当前批次
+        result_ds = vlm_handler(batch_ds, preprocess_fn, postprocess_fn)
+        batch_results = list(result_ds.iter_rows())
+        all_results.extend(batch_results)
+        processed_count += len(batch_results)
+        
+        # 输出当前批次结果（可选）
+        if show_sample_output:
+            print(f"Batch {batch_num} results:")
+            for sample in batch_results[:max_sample_display]:
+                print(f"id: {sample['id']}")
+                print(f"image_path: {sample['image_path']}")
+                print(f"Generated Text: {sample['generated_text']!r}")
+                print("-" * 40)
+        
+        # 保存当前批次的checkpoint
+        checkpoint_path = f"{output_dir_path}/checkpoint_batch_{batch_num}.parquet"
+        batch_result_ds = ray.data.from_items(batch_results)
+        batch_result_ds.write_parquet(checkpoint_path)
+        print(f"Saved checkpoint: {checkpoint_path}")
+        print(f"Processed: {processed_count}/{total_samples} samples")
+    
+    # 保存最终完整结果
+    print(f"\n{'='*60}")
+    print("Saving final complete results...")
+    final_result_ds = ray.data.from_items(all_results)
+    final_output_path = f"{output_dir_path}/final_complete_results.parquet"
+    final_result_ds.write_parquet(final_output_path)
+    print(f"Final results saved to: {final_output_path}")
+    print(f"Total processed samples: {len(all_results)}")
+    
+    return all_results
 
 if __name__ == "__main__":
     args = parse_args()
@@ -248,16 +322,21 @@ if __name__ == "__main__":
         time.sleep(2)
         
         init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
+        ray.data.DataContext.get_current().execution_options.preserve_order = True
+
         task = args.task
-        data_path = args.data_path
+        parquet_dir_path = args.parquet_dir_path
+        image_dir_path = args.image_dir_path
 
         # 2. 读取并准备 Dataset
         print("="*60)
         print("Reading dataset...")
         if task == "CC12M": 
-            ds = ray_prepare_data_CC12M(data_path)
+            ds = ray_prepare_data_CC12M_visual(parquet_dir_path)
         elif task == "parquet":
-            ds = ray_prepare_data_parquet(data_path)
+            ds = ray_prepare_data_parquet_visual(parquet_dir_path)
+        elif task == "llavacot":
+            ds = ray_prepare_data_llavacot_visual(parquet_dir_path, image_dir_path)
         # TODO: add more dataset
 
         print("Dataset schema:", ds.schema())   # {'image': binary, 'image_id': str}
@@ -282,25 +361,23 @@ if __name__ == "__main__":
 
         
         # 5. 限制数据集大小（如果只想处理少量数据）
-        limited_ds = ds.limit(8)  # 先限制到20个样本
+        ds = ds.limit(8)  # 先限制到8个样本
         
         # 6. 调用处理函数，启动并行多模态推理
         print("="*60)
         print("Model loaded, Start to generate...")
         
-        result_ds = vlm_handler(limited_ds, visual_preprocess, visual_postprocess)
-
-        # 7. 输出所有结果到控制台
-        print("="*60)
-        print("Outputting results...")
-        for sample in result_ds.iter_rows():
-            print(f"data_id: {sample['data_id']}")
-            print(f"image_name: {sample['image_name']}")
-            print(f"Generated Text: {sample['generated_text']!r}")
-            print("-" * 60)
-
-        # 7. 将完整结果写回
-        # result_ds.write_parquet(OUTPUT_PATH)
+        # 分批处理数据
+        checkpoint_interval = args.checkpoint_interval
+        output_dir_path = args.output_dir_path
+        process_dataset_with_checkpoints(
+            ds,
+            vlm_handler,
+            visual_preprocess,
+            visual_postprocess,
+            checkpoint_interval,
+            output_dir_path
+        )
 
     except Exception as e:
         print(f"\n{'='*60}")
