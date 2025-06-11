@@ -37,9 +37,9 @@ Tips:
 
 You must generate **three** captions. Keep them concise but meaningful, and **each should be no longer than 80 English words**.
 Your output must consist of exactly three captions, with no additional text or output:
-<caption1> the first one <caption1>
-<caption2> the second one <caption2>
-<caption3> the third one <caption3>
+1. caption1
+2. caption2
+3. caption3
 """
 
 USER_PROMPT_LLAVACOT = """
@@ -69,7 +69,7 @@ def ray_prepare_data_llavacot(parquet_dir: str):
 
         # 先过滤数据，更高效
     def should_keep_sample(row):
-        filter_keywords = ["chartqa",]
+        filter_keywords = ["chartqa", "geoqa+", "docvqa", "ocr_vqa"]
         image_filename = str(row.get("image", "")).lower()
         
         # 如果文件名包含过滤关键词，则不保留
@@ -107,9 +107,8 @@ Each caption must be within 70 words.
 
 USER_PROMPT_LLAVACOT_VISUAL = """
 Now give me these two captions about the image as the request. The format should be as follows — only output the two captions in this structure:
-
-<caption1> the first one <caption1>
-<caption2> the second one <caption2>
+1. caption1
+2. caption2
 """
 
 def ray_prepare_data_llavacot_visual(parquet_dir: str, image_dir: str):

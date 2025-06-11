@@ -8,16 +8,17 @@ python dataset/gen_vllm_ray.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-32B \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
     --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
-    --checkpoint_interval 10 \
-    --batch_size 8 \
+    --checkpoint_interval 10000 \
+    --batch_size 48 \
     --max_model_len 4096 \
-    --max_num_batched_tokens 16384\
-    --max_tokens 1024 \
-    --temperature 0.5 \
+    --max_num_batched_tokens 65536 \
+    --max_tokens 2048 \
+    --temperature 0.6 \
     --top_p 0.95 \
-    --tensor_parallel_size 2 \
+    --top_k 20 \
+    --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
-    --gpu_memory_utilization 0.65 \
+    --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task llavacot \
