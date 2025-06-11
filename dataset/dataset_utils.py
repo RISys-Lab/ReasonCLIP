@@ -29,22 +29,23 @@ You are a data generation agent. I need you to generate captions for some images
 
 I will give you a dialogue between a model and a user. This entire conversation revolves around reasoning about a single image.
 
-Your task is to extract the basic information about the image from this dialogue and summarize this long conversation into a few standalone captions.
+Your task is to extract the basic information about the image from this dialogue and summarize the reasoning process. Then, generate several captions that reflect this inferred information.
+Tips:
+1. You don’t need to perfectly summarize the entire dialogue I provide. Instead, focus on identifying the reasoning present in the conversation, and combine it with the basic content of the image to generate the captions. These captions can differ in their reasoning content and direction.
+2. Each caption should reflect higher-level inference based on the conversation, but the level of reasoning should be slightly lower than the full dialogue—more abstract than a literal description, but less complex than the entire reasoning chain.
+3. The captions should be short, declarative sentences that directly express the basic image information and the inferred information.
 
-Each caption should reflect higher-level inference based on the conversation, but the level of reasoning should be slightly lower than the full dialogue—more abstract than a literal description, but less complex than the entire reasoning chain.
-
-The captions should be short, declarative sentences that directly express the inferred information.
-
-You must generate **two** captions. Keep them concise but meaningful, and **each should be no longer than 80 English words**.
+You must generate **three** captions. Keep them concise but meaningful, and **each should be no longer than 80 English words**.
 """
 
 USER_PROMPT_LLAVACOT = """
-Please provide **two reasoning captions** derived from the conversation that contain **moderate-level reasoning information**.
+Please provide **three reasoning captions** derived from the conversation that contain **moderate-level reasoning information**.
 
-The format should be as follows — only output the two captions in this structure:
+The format should be as follows — only output the three captions in this structure:
 
 <caption1> the first one <caption1>
 <caption2> the second one <caption2>
+<caption3> the third one <caption3>
 """
 
 def ray_prepare_data_llavacot(parquet_dir: str):

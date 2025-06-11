@@ -5,11 +5,11 @@ export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
 python dataset/gen_vllm_ray.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-1.7B \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-32B \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
     --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 10 \
-    --batch_size 2 \
+    --batch_size 4 \
     --max_model_len 4096 \
     --max_num_batched_tokens 4096\
     --max_tokens 1024 \
