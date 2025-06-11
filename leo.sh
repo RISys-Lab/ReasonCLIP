@@ -25,5 +25,5 @@ source $WORK/fmohamma/venvs/llm/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # run python
-./scripts/gen_vllm_ray.sh
+bash ./scripts/gen_vllm_ray.sh
 # srun ./scripts/gen_vllm_ray_visual.sh
