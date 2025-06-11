@@ -9,14 +9,14 @@ python dataset/gen_vllm_ray.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
     --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 10000 \
-    --batch_size 48 \
+    --batch_size 16 \
     --max_model_len 4096 \
-    --max_num_batched_tokens 65536 \
+    --max_num_batched_tokens 32768 \
     --max_tokens 2048 \
     --temperature 0.6 \
     --top_p 0.95 \
     --top_k 20 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
