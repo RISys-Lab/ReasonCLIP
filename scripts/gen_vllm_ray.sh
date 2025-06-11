@@ -2,7 +2,7 @@
 
 # 配置环境
 export TOKENIZERS_PARALLELISM=false
-export CUDA_VISIBLE_DEVICES=2
+# export CUDA_VISIBLE_DEVICES=2
 
 python dataset/gen_vllm_ray.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-1.3B \
@@ -12,10 +12,10 @@ python dataset/gen_vllm_ray.py \
     --batch_size 2 \
     --max_model_len 4096 \
     --max_num_batched_tokens 4096\
-    --max_tokens 100 \
+    --max_tokens 1024 \
     --temperature 0.5 \
     --top_p 0.95 \
-    --tensor_parallel_size 1 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.65 \
     --enable_chunked_prefill \
