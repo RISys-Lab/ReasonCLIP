@@ -9,8 +9,8 @@ python dataset/gen_vllm_ray.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
     --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 10000 \
-    --batch_size 32 \
-    --max_model_len 4096 \
+    --batch_size 16 \
+    --max_model_len 8192 \
     --max_num_batched_tokens 65536 \
     --max_tokens 2048 \
     --temperature 0.6 \
