@@ -324,7 +324,7 @@ if __name__ == "__main__":
         print("Dataset Size:", ds.count())
 
         # TODO: 限制数据集大小（如果只想处理少量数据）
-        limited_ds = ds.limit(20)
+        limited_ds = ds
 
         print("="*60)
         print("Loading model:", args.model_source)
