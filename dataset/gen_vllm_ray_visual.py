@@ -205,7 +205,9 @@ def visual_preprocess(row):
                 },
                 {
                     "type": "image",
-                    "image": image
+                    "image": image,
+                    "min_pixels": 256 * 28 * 28,  # 200,704 pixels
+                    "max_pixels": 1280 * 28 * 28  # 1,003,520 pixels
                 }
             ]
         },
