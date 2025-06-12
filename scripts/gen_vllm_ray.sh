@@ -4,7 +4,7 @@
 export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
-python dataset/gen_vllm_ray.py \
+python -udataset/gen_vllm_ray.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-32B \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train/ \
     --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \

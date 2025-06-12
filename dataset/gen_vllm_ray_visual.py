@@ -190,8 +190,12 @@ def visual_preprocess(row):
 
     # if bytes, convert to PIL image
     # image = Image.open(BytesIO(row["image"]["bytes"]))
+
     # if image_path, convert to PIL image
     image = Image.open(row["image_path"])
+    # 统一转换为RGB格式的PIL.Image.Image对象
+    
+    image = image.convert('RGB')
     messages = [
         {"role": "system", "content": system_prompt},
         {

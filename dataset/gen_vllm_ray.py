@@ -124,8 +124,10 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
         ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
     else:
         ray.init(ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
-    if not show_progress:
-        ray.data.DataContext.get_current().enable_progress_bars = False
+    
+    # 强制启用进度条，即使在非交互式环境中
+    ray.data.DataContext.get_current().enable_progress_bars = True
+    print("✅ Ray Data progress bars forcefully enabled")
 
 
 def load_model(
