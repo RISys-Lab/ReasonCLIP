@@ -2,6 +2,8 @@
 
 # 配置环境
 export TOKENIZERS_PARALLELISM=false
+export RAY_LOG_TO_STDERR=1       # 把 worker 日志转发到 driver
+export RAY_LOG_TO_DRIVER=1
 # export CUDA_VISIBLE_DEVICES=2
 
 python -u dataset/gen_vllm_ray_visual.py \
@@ -10,7 +12,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 10000 \
-    --batch_size 16 \
+    --batch_size 8 \
     --max_model_len 4096 \
     --max_num_batched_tokens 8192 \
     --max_tokens 1024 \
@@ -18,7 +20,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --top_p 0.95 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
-    --gpu_memory_utilization 0.9 \
+    --gpu_memory_utilization 0.85 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task llavacot \

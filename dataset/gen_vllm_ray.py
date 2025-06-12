@@ -132,6 +132,8 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
 
 def load_model(
     model_source: str,
+    preprocess_fn=None,
+    postprocess_fn=None,
     concurrency: int = 1,
     batch_size: int = 8,
     enable_chunked_prefill: bool = True,
@@ -184,12 +186,15 @@ def load_model(
         chat_template_kwargs={"enable_thinking": True},  # 启用思维模式
     )
 
-    def handle_dataset(dataset, preprocess_fn, postprocess_fn):
-        processor = build_llm_processor(
-            config,
-            preprocess=preprocess_fn,
-            postprocess=postprocess_fn,
-        )
+    # Build processor ONCE so the heavy model loads only once.
+    processor = build_llm_processor(
+        config,
+        preprocess=preprocess_fn,
+        postprocess=postprocess_fn,
+    )
+
+    # Return lightweight handler that simply feeds datasets to the same processor.
+    def handle_dataset(dataset):
         return processor(dataset)
 
     return handle_dataset
@@ -223,8 +228,6 @@ def postprocess(row):
 def process_dataset_with_checkpoints(
     dataset, 
     vlm_handler, 
-    preprocess_fn, 
-    postprocess_fn, 
     checkpoint_interval, 
     output_dir_path,
     show_sample_output=True,
@@ -250,7 +253,7 @@ def process_dataset_with_checkpoints(
     
     for batch_idx, batch_ds in enumerate(batches, 1):
         print(f"\n==== Batch {batch_idx}/{len(batches)} ====")
-        result_ds = vlm_handler(batch_ds, preprocess_fn, postprocess_fn)
+        result_ds = vlm_handler(batch_ds)
         batch_results = list(result_ds.iter_rows())
         all_results.extend(batch_results)
         processed_count += len(batch_results)
@@ -311,6 +314,13 @@ if __name__ == "__main__":
         time.sleep(2)
         
         init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
+        ctx = ray.data.DataContext.get_current()
+
+        ctx.execution_options.preserve_order = True
+        # NOTE: Increase the time Ray waits for vLLM GPU actors to start. Model loading of large checkpoints can take >10 min.
+        # Formula: 10 min per tensor-parallel shard.
+        ctx.wait_for_min_actors_s = 60 * 10 * args.tensor_parallel_size
+        
         task = args.task
         parquet_dir_path = args.parquet_dir_path
 
@@ -331,9 +341,11 @@ if __name__ == "__main__":
         print("="*60)
         print("Loading model:", args.model_source)
         vlm_handler = load_model(
-            model_source=args.model_source,  
-            concurrency=args.concurrency, 
-            batch_size=args.batch_size,                 
+            model_source=args.model_source,
+            preprocess_fn=preprocess,
+            postprocess_fn=postprocess,
+            concurrency=args.concurrency,
+            batch_size=args.batch_size,
             enable_chunked_prefill=args.enable_chunked_prefill,
             max_num_batched_tokens=args.max_num_batched_tokens,
             max_model_len=args.max_model_len,

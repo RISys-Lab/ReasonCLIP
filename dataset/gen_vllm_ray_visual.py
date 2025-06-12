@@ -138,6 +138,8 @@ def load_model(
     quantization: str = None,
     dtype: str = "auto",
     gpu_memory_utilization: float = 0.6,
+    preprocess_fn=None,
+    postprocess_fn=None,
 ):
 
     # 构建 engine_kwargs，只包含非None的参数
@@ -156,33 +158,29 @@ def load_model(
     if quantization is not None:
         engine_kwargs["quantization"] = quantization
 
-    config = vLLMEngineProcessorConfig(
-        model_source=model_source,
-        # The kwargs to pass to the vLLM engine. https://docs.vllm.ai/en/v0.7.3/serving/engine_args.html
-        engine_kwargs=engine_kwargs,
-        runtime_env={
-            "env_vars": {
-                "VLLM_USE_V1": "1",  # 使用vLLM v1引擎
-            }
-        },
-        concurrency=concurrency,
-        batch_size=batch_size,
-        accelerator_type=None,
-        apply_chat_template=True,
-        has_image=True,
-        # 避免保留不必要的中间数据
-        keep_original_batch=False,
+    print("Loading model …")
+
+    # 把 preprocess / postprocess 直接传进来
+    processor = build_llm_processor(
+        vLLMEngineProcessorConfig(
+            model_source=model_source,
+            engine_kwargs=engine_kwargs,
+            runtime_env={"env_vars": {"VLLM_USE_V1": "1"}},
+            concurrency=concurrency,
+            batch_size=batch_size,
+            apply_chat_template=True,
+            has_image=True,
+            keep_original_batch=False,
+        ),
+        preprocess=preprocess_fn,
+        postprocess=postprocess_fn,
     )
 
-    def handle_dataset(dataset, preprocess_fn, postprocess_fn):
-        processor = build_llm_processor(
-            config,
-            preprocess=preprocess_fn,
-            postprocess=postprocess_fn,
-        )
+    # 返回一个"轻量"闭包——后面只复用同一 processor
+    def handle(dataset):
         return processor(dataset)
 
-    return handle_dataset
+    return handle
 
 def visual_preprocess(row):
     system_prompt = SYSTEM_PROMPT_LLAVACOT_VISUAL
@@ -230,9 +228,7 @@ def visual_postprocess(row):
 
 def process_dataset_with_checkpoints(
     dataset, 
-    vlm_handler, 
-    preprocess_fn, 
-    postprocess_fn, 
+    processor, 
     checkpoint_interval, 
     output_dir_path,
     show_sample_output=True,
@@ -257,8 +253,8 @@ def process_dataset_with_checkpoints(
     all_results = []
     
     for batch_idx, batch_ds in enumerate(batches, 1):
-        print(f"\n==== Batch {batch_idx}/{len(batches)} ====")
-        result_ds = vlm_handler(batch_ds, preprocess_fn, postprocess_fn)
+        print(f"==== Batch {batch_idx}/{len(batches)} ====")
+        result_ds = processor(batch_ds)
         batch_results = list(result_ds.iter_rows())
         all_results.extend(batch_results)
         processed_count += len(batch_results)
@@ -322,7 +318,12 @@ if __name__ == "__main__":
         time.sleep(2)
         
         init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
-        ray.data.DataContext.get_current().execution_options.preserve_order = True
+        ctx = ray.data.DataContext.get_current()
+
+        ctx.execution_options.preserve_order = True
+        # NOTE: Increase the time Ray waits for vLLM GPU actors to start. Model loading of large checkpoints can take >10 min.
+        # Formula: 10 min per tensor-parallel shard.
+        ctx.wait_for_min_actors_s = 60 * 10 * args.tensor_parallel_size
 
         task = args.task
         parquet_dir_path = args.parquet_dir_path
@@ -344,7 +345,7 @@ if __name__ == "__main__":
 
         print("="*60)
         print("Loading model:", args.model_source)
-        vlm_handler = load_model(
+        processor = load_model(
             model_source=args.model_source,  
             concurrency=args.concurrency, 
             batch_size=args.batch_size,                 
@@ -357,11 +358,13 @@ if __name__ == "__main__":
             quantization=args.quantization,
             dtype=args.dtype,
             gpu_memory_utilization=args.gpu_memory_utilization,
+            preprocess_fn=visual_preprocess,
+            postprocess_fn=visual_postprocess,
         )
 
         
         # 5. 限制数据集大小（如果只想处理少量数据）
-        # ds = ds.limit(20)
+        ds = ds.limit(100)
         
         # 6. 调用处理函数，启动并行多模态推理
         print("="*60)
@@ -372,9 +375,7 @@ if __name__ == "__main__":
         output_dir_path = args.output_dir_path
         process_dataset_with_checkpoints(
             ds,
-            vlm_handler,
-            visual_preprocess,
-            visual_postprocess,
+            processor,
             checkpoint_interval,
             output_dir_path
         )
