@@ -2,13 +2,13 @@
 
 # 配置环境
 export TOKENIZERS_PARALLELISM=false
-# 只在 SLURM 环境下开启 Ray 日志转发
-if [ ! -z "$SLURM_JOB_ID" ]; then
-    echo "SLURM environment detected, enabling Ray log forwarding..."
-    export RAY_LOG_TO_STDERR=1
-else
-    echo "Interactive environment detected, using default Ray logging..."
-fi
+# FIXME: add ray log forwarding
+# if [ ! -z "$SLURM_JOB_ID" ]; then
+#     echo "SLURM environment detected, enabling Ray log forwarding..."
+#     export RAY_LOG_TO_STDERR=1
+# else
+#     echo "Interactive environment detected, using default Ray logging..."
+# fi
 # export CUDA_VISIBLE_DEVICES=2
 
 python -u dataset/gen_vllm_ray_visual.py \
