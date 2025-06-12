@@ -54,6 +54,8 @@ def parse_args():
                        help="Maximum model sequence length")
     parser.add_argument("--max_num_batched_tokens", type=int, default=4096,
                        help="Maximum number of batched tokens")
+    parser.add_argument("--max_num_seqs", type=int, default=None,
+                       help="Maximum number of sequences to process in parallel")
     parser.add_argument("--max_tokens", type=int, default=100,
                        help="Maximum tokens to generate")
     parser.add_argument("--temperature", type=float, default=0.8,
@@ -131,6 +133,7 @@ def load_model(
     batch_size: int = 8,
     enable_chunked_prefill: bool = True,
     max_num_batched_tokens: int = 4096,
+    max_num_seqs: int = None,
     max_model_len: int = 4096,
     trust_remote_code: bool = True,
     tensor_parallel_size: int = 1,
@@ -157,6 +160,10 @@ def load_model(
             "max_pixels": 1280 * 28 * 28,  # 1,003,520 pixels (最大)
         },
     }
+    
+    # 只有在max_num_seqs不为None时才添加到engine_kwargs
+    if max_num_seqs is not None:
+        engine_kwargs["max_num_seqs"] = max_num_seqs
     
     # 只有在quantization不为None时才添加到engine_kwargs
     if quantization is not None:
@@ -356,6 +363,7 @@ if __name__ == "__main__":
             batch_size=args.batch_size,                 
             enable_chunked_prefill=args.enable_chunked_prefill,
             max_num_batched_tokens=args.max_num_batched_tokens,
+            max_num_seqs=args.max_num_seqs,
             max_model_len=args.max_model_len,
             trust_remote_code=args.trust_remote_code,
             tensor_parallel_size=args.tensor_parallel_size,
