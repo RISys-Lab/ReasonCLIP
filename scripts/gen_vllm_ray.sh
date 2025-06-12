@@ -2,8 +2,12 @@
 
 # 配置环境
 export TOKENIZERS_PARALLELISM=false
-export RAY_LOG_TO_STDERR=1       # 把 worker 日志转发到 driver
-export RAY_LOG_TO_DRIVER=1
+if [ ! -z "$SLURM_JOB_ID" ]; then
+    echo "SLURM environment detected, enabling Ray log forwarding..."
+    export RAY_LOG_TO_STDERR=1
+else
+    echo "Interactive environment detected, using default Ray logging..."
+fi
 # export CUDA_VISIBLE_DEVICES=2
 
 python -udataset/gen_vllm_ray.py \

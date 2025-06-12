@@ -2,8 +2,13 @@
 
 # 配置环境
 export TOKENIZERS_PARALLELISM=false
-export RAY_LOG_TO_STDERR=1       # 把 worker 日志转发到 driver
-export RAY_LOG_TO_DRIVER=1
+# 只在 SLURM 环境下开启 Ray 日志转发
+if [ ! -z "$SLURM_JOB_ID" ]; then
+    echo "SLURM environment detected, enabling Ray log forwarding..."
+    export RAY_LOG_TO_STDERR=1
+else
+    echo "Interactive environment detected, using default Ray logging..."
+fi
 # export CUDA_VISIBLE_DEVICES=2
 
 python -u dataset/gen_vllm_ray_visual.py \
@@ -11,10 +16,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
-    --checkpoint_interval 10000 \
-    --batch_size 8 \
+    --checkpoint_interval 50 \
+    --batch_size 16 \
     --max_model_len 4096 \
-    --max_num_batched_tokens 8192 \
+    --max_num_batched_tokens 32768 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \

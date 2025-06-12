@@ -30,8 +30,14 @@ def setup_logging(log_level: str = "INFO", disable_vllm_logs: bool = False, disa
     print(f"vLLM detailed logging enabled at {log_level} level")
 
     ray_logger = logging.getLogger('ray.data')
-    ray_logger.setLevel(level)
-    print(f"Ray Data detailed logging enabled at {log_level} level")
+    # Reduce Ray Data verbosity to avoid excessive pipeline logs
+    ray_logger.setLevel(logging.WARNING)
+    print(f"Ray Data logging set to WARNING level to reduce verbosity")
+    
+    # Keep ray.data.llm logs for vLLM progress
+    ray_llm_logger = logging.getLogger('ray.data.llm')
+    ray_llm_logger.setLevel(level)
+    print(f"Ray Data LLM logging enabled at {log_level} level")
 
 
 assert Version(ray.__version__) >= Version("2.44.1"), "Need Ray 2.44.1 or higher for vLLM support"
