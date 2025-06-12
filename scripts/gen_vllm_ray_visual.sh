@@ -18,8 +18,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 12000 \
     --batch_size 32 \
-    --max_model_len 2048 \
-    --max_num_batched_tokens 65536 \
+    --max_model_len 4096 \
+    --max_num_batched_tokens 98304 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
