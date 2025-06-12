@@ -29,7 +29,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task llavacot \
-    --concurrency 2 \
+    --concurrency 1 \
     --num_workers 8 \
     --ray_address None \
     --log_level INFO \

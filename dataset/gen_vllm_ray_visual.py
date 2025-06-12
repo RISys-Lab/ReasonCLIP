@@ -253,6 +253,7 @@ def process_dataset_with_checkpoints(
     all_results = []
     
     for batch_idx, batch_ds in enumerate(batches, 1):
+        print("="*60)
         print(f"==== Batch {batch_idx}/{len(batches)} ====")
         result_ds = processor(batch_ds)
         batch_results = list(result_ds.iter_rows())
@@ -364,7 +365,7 @@ if __name__ == "__main__":
 
         
         # 5. 限制数据集大小（如果只想处理少量数据）
-        ds = ds.limit(200)
+        ds = ds.limit(100)
         
         # 6. 调用处理函数，启动并行多模态推理
         print("="*60)
