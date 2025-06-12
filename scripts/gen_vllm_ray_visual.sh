@@ -17,16 +17,16 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 12000 \
-    --batch_size 16 \
+    --batch_size 8 \
     --max_model_len 4096 \
-    --max_num_batched_tokens 65536 \
+    --max_num_batched_tokens 32768 \
     --max_tokens 1024 \
     --max_num_seqs 16 \
     --temperature 0.8 \
     --top_p 0.95 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
-    --gpu_memory_utilization 0.9 \
+    --gpu_memory_utilization 0.8 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task llavacot \
