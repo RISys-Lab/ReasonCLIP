@@ -152,6 +152,10 @@ def load_model(
         "gpu_memory_utilization": gpu_memory_utilization,
         "trust_remote_code": trust_remote_code,
         "dtype": dtype,
+        "mm_processor_kwargs": {
+            "min_pixels": 256 * 28 * 28,  # 784 pixels (最小)
+            "max_pixels": 1280 * 28 * 28,  # 1,003,520 pixels (最大)
+        },
     }
     
     # 只有在quantization不为None时才添加到engine_kwargs
@@ -205,9 +209,7 @@ def visual_preprocess(row):
                 },
                 {
                     "type": "image",
-                    "image": image,
-                    "min_pixels": 256 * 28 * 28,  # 200,704 pixels
-                    "max_pixels": 1280 * 28 * 28  # 1,003,520 pixels
+                    "image": image
                 }
             ]
         },
