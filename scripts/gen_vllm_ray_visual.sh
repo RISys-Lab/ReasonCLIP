@@ -5,18 +5,18 @@ export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-3B-Instruct \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
-    --checkpoint_interval 10 \
-    --batch_size 4 \
+    --checkpoint_interval 10000 \
+    --batch_size 16 \
     --max_model_len 4096 \
-    --max_num_batched_tokens 4096 \
-    --max_tokens 100 \
+    --max_num_batched_tokens 8192 \
+    --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 2 \
+    --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \

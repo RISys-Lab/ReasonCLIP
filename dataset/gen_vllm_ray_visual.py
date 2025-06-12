@@ -121,9 +121,9 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
         ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
     else:
         ray.init(ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
-    if not show_progress:
-        ray.data.DataContext.get_current().enable_progress_bars = False
 
+    ray.data.DataContext.get_current().enable_progress_bars = True
+    print("✅ Ray Data progress bars forcefully enabled")
 
 def load_model(
     model_source: str,
@@ -271,7 +271,7 @@ def process_dataset_with_checkpoints(
                 print("-" * 40)
         
         # 保存当前批次的checkpoint
-        checkpoint_path = os.path.join(output_dir_path, f"llavacot_tbbb_checkpoint_batch_{batch_idx}")
+        checkpoint_path = os.path.join(output_dir_path, f"llavacot_tb_checkpoint_batch_{batch_idx}")
         batch_result_ds = ray.data.from_items(batch_results)
         # 强制合并为单个文件
         batch_result_ds = batch_result_ds.repartition(1)
@@ -285,7 +285,7 @@ def process_dataset_with_checkpoints(
     final_result_ds = ray.data.from_items(all_results)
     # 强制合并为单个文件
     final_result_ds = final_result_ds.repartition(1)
-    final_output_path = os.path.join(output_dir_path, "llavacot_tbbb_results")
+    final_output_path = os.path.join(output_dir_path, "llavacot_tb_results")
     final_result_ds.write_parquet(final_output_path)
     print(f"Final results saved to: {final_output_path}")
     print(f"Total processed samples: {len(all_results)}")
@@ -361,7 +361,7 @@ if __name__ == "__main__":
 
         
         # 5. 限制数据集大小（如果只想处理少量数据）
-        ds = ds.limit(20)
+        # ds = ds.limit(20)
         
         # 6. 调用处理函数，启动并行多模态推理
         print("="*60)
