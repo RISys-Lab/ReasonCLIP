@@ -17,8 +17,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
     --checkpoint_interval 12000 \
-    --batch_size 8 \
-    --max_model_len 4096 \
+    --batch_size 16 \
+    --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
     --max_tokens 1024 \
     --max_num_seqs 16 \
