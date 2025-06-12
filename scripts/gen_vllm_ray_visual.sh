@@ -16,20 +16,20 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
-    --checkpoint_interval 50 \
-    --batch_size 16 \
-    --max_model_len 4096 \
-    --max_num_batched_tokens 32768 \
+    --checkpoint_interval 12000 \
+    --batch_size 32 \
+    --max_model_len 2048 \
+    --max_num_batched_tokens 65536 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
-    --gpu_memory_utilization 0.85 \
+    --gpu_memory_utilization 0.95 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task llavacot \
-    --concurrency 1 \
+    --concurrency 2 \
     --num_workers 8 \
     --ray_address None \
     --log_level INFO \
