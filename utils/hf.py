@@ -14,7 +14,7 @@ from huggingface_hub import hf_hub_download
 repo_id = "Nicous/Hand-ICL"
 
 # 远程仓库中的文件路径
-path_in_repo = "fulldata.tar.gz"
+path_in_repo = "fulldata_2.tar.gz"
 
 # 指定本地存储路径（可选）
 local_file = hf_hub_download(

@@ -194,8 +194,8 @@ def load_model(
     return handle
 
 def visual_preprocess(row):
-    system_prompt = SYSTEM_PROMPT_HAND_VISUAL_ADVICE
-    user_prompt = USER_PROMPT_HAND_VISUAL_ADVICE
+    system_prompt = SYSTEM_PROMPT_HAND_VISUAL
+    user_prompt = USER_PROMPT_HAND_VISUAL
 
     # if bytes, convert to PIL image
     # image = Image.open(BytesIO(row["image"]["bytes"]))
@@ -237,68 +237,6 @@ def visual_postprocess(row):
         "generated_text": row["generated_text"],
     }
 
-def process_dataset_with_checkpoints(
-    dataset, 
-    processor, 
-    checkpoint_interval, 
-    output_dir_path,
-    show_sample_output=True,
-    max_sample_display=5
-):
-    import os
-    
-    total_samples = dataset.count()
-    print(f"Total samples to process: {total_samples}")
-    print(f"Checkpoint interval: {checkpoint_interval}")
-    
-    # 创建输出目录
-    os.makedirs(output_dir_path, exist_ok=True)
-    
-    if total_samples <= checkpoint_interval:          # 只有一批
-        batches = [dataset]                           # 直接把完整数据集当作第一批
-    else:                                             # 多批
-        indices = list(range(checkpoint_interval, total_samples, checkpoint_interval))
-        batches = dataset.split_at_indices(indices)   # 顺序切分
-
-    processed_count = 0
-    all_results = []
-    
-    for batch_idx, batch_ds in enumerate(batches, 1):
-        print("="*60)
-        print(f"==== Batch {batch_idx}/{len(batches)} ====")
-        result_ds = processor(batch_ds)
-        batch_results = list(result_ds.iter_rows())
-        all_results.extend(batch_results)
-        processed_count += len(batch_results)
-        
-        # 输出当前批次结果（可选）
-        if show_sample_output:
-            print(f"Batch {batch_idx} results:")
-            for sample in batch_results[:max_sample_display]:
-                print(f"Generated Text: {sample['generated_text']!r}")
-                print("-" * 40)
-        
-        # 保存当前批次的checkpoint
-        checkpoint_path = os.path.join(output_dir_path, f"hand_tb_checkpoint_batch_{batch_idx}")
-        batch_result_ds = ray.data.from_items(batch_results)
-        # 强制合并为单个文件
-        batch_result_ds = batch_result_ds.repartition(1)
-        batch_result_ds.write_parquet(checkpoint_path)
-        print(f"Saved checkpoint: {checkpoint_path}")
-        print(f"Processed: {processed_count}/{total_samples} samples")
-    
-    # 保存最终完整结果
-    print(f"\n{'='*60}")
-    print("Saving final complete results...")
-    final_result_ds = ray.data.from_items(all_results)
-    # 强制合并为单个文件
-    final_result_ds = final_result_ds.repartition(1)
-    final_output_path = os.path.join(output_dir_path, "hand_tb_results")
-    final_result_ds.write_parquet(final_output_path)
-    print(f"Final results saved to: {final_output_path}")
-    print(f"Total processed samples: {len(all_results)}")
-    
-    return all_results
 
 if __name__ == "__main__":
     args = parse_args()
@@ -385,8 +323,9 @@ if __name__ == "__main__":
         process_dataset_with_checkpoints(
             ds,
             processor,
+            task,
             checkpoint_interval,
-            output_dir_path
+            output_dir_path,
         )
 
     except Exception as e:
