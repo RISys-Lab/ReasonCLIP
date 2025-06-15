@@ -199,3 +199,93 @@ def ray_prepare_data_parquet_visual(parquet_dir: str):
     ds = ds.map(_extract_fields)
     print(ds.schema())  # {'image': binary, 'label': str, 'caption': str}
     return ds
+
+
+SYSTEM_PROMPT_HAND_VISUAL_ADVICE = """
+You are a reasoning agent specialized in egocentric hand-object interaction understanding. Your task is to analyze images captured from a first-person perspective and identify potential issues that may affect 3D hand reconstruction.
+
+Given a single input image, output one concise sentence that describes possible challenges for hand reconstruction, such as occlusions, hand-object interactions, or hand-hand interactions. Be specific about which hand (left/right) is affected and what the issue is. Do not provide explanations or repeat content—output only one short, precise sentence in English.
+"""
+USER_PROMPT_HAND_VISUAL_ADVICE = """
+Please analyze the image and return one sentence describing key challenges for hand reconstruction (e.g., left hand occluded, right hand interacting with an object):
+"""
+
+
+SYSTEM_PROMPT_HAND_VISUAL = """
+You are an image understanding agent. Your task is to analyze a first-person perspective image and classify the interaction status of the left and right hands.
+
+Classification rules:
+- 0: Only the left hand is interacting with an object
+- 1: Only the right hand is interacting with an object
+- 2: Both hands are interacting with an object
+- 3: Neither hand is interacting with any object
+
+Important notes:
+- Occlusion caused by objects must be considered in determining whether a hand is interacting.
+- Use your best reasoning based on the visual content to make this decision.
+
+Your response must be a single number: one of [0, 1, 2, -1]. Do not include any explanation or additional text.
+"""
+
+USER_PROMPT_HAND_VISUAL = """
+Please analyze the first-person perspective image and determine the interaction status of the hands.
+
+Return only the correct label number based on the following:
+- 0: Only the left hand is interacting
+- 1: Only the right hand is interacting
+- 2: Both hands are interacting
+- 3: Neither hand is interacting
+
+Do not include any explanation, reasoning, or extra output—just return the number.
+"""
+
+def ray_prepare_data_hand_visual(image_dir: str):
+    # 获取文件夹中所有图片文件
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
+    image_files = []
+    
+    for fname in os.listdir(image_dir):
+        if any(fname.lower().endswith(ext) for ext in image_extensions):
+            image_files.append(fname)
+    
+    print(f"Found {len(image_files)} image files in {image_dir}")
+    
+    # 根据图片名筛选，使用提供的正则规则
+    filtered_images = []
+    for img_name in image_files:
+        try:
+            # 从图片名中提取id: img_name.split('.')[0].split('_')[-1]
+            id_str = img_name.split('.')[0].split('_')[-1]
+            id_num = int(id_str)
+            
+            # 筛选条件：如果 id < 30 或 id > 530，则跳过
+            if id_num < 30 or id_num > 530:
+                continue
+            
+            filtered_images.append(img_name)
+        except (ValueError, IndexError):
+            # 如果无法提取id或转换为整数，跳过此文件
+            continue
+    
+    print("="*60)
+    print(f"Original image count: {len(image_files)}")
+    print(f"After filtering (id 30-530): {len(filtered_images)}")
+    
+    # 准备数据列表
+    data_list = []
+    for img_name in filtered_images:
+        image_path = os.path.abspath(os.path.join(image_dir, img_name))
+        # id就是图片名（不包含扩展名）
+        img_id = img_name.split('.')[0]
+        
+        data_list.append({
+            "id": img_id,
+            "image_path": image_path,
+        })
+    
+    # 使用 ray.data.from_items 创建 Ray Dataset
+    ds = ray.data.from_items(data_list)
+    
+    print("="*60)
+    print(ds.schema())  # {'id': str, 'image_path': str}
+    return ds
