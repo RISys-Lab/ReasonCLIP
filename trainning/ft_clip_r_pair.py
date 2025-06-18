@@ -32,9 +32,9 @@ def parse_args():
     
     parser.add_argument("--model_name", type=str, default="openai/clip-vit-large-patch14", 
                         help="Pre-trained model name")
-    parser.add_argument("--output_dir", type=str, default="./weights/clip_R_finetune", 
+    parser.add_argument("--output_dir", type=str, default="./weights/unifire_clip_finetune", 
                         help="Output directory")
-    parser.add_argument("--best_model_dir", type=str, default="./weights/clip_R_best_model", 
+    parser.add_argument("--best_model_dir", type=str, default="./weights/unifire_clip_best_model", 
                         help="Directory to save the best model")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Training batch size per device")
@@ -52,7 +52,7 @@ def parse_args():
                         help="Steps to save checkpoints")
     parser.add_argument("--eval_steps", type=int, default=250, 
                         help="Evaluation steps")
-    parser.add_argument("--run_name", type=str, default="clip_R_finetune", 
+    parser.add_argument("--run_name", type=str, default="clip-finetune-unifire", 
                         help="Experiment name")
     parser.add_argument("--warmup_ratio", type=float, default=0.1,
                         help="Warmup ratio for learning rate scheduler")
@@ -68,15 +68,18 @@ def parse_args():
                         help="Whether to push to HuggingFace Hub")
     parser.add_argument("--hub_username", type=str, default="fesvhtr", 
                         help="HuggingFace username")
-    parser.add_argument("--hub_model_name", type=str, default="clip-R-L14", 
+    parser.add_argument("--hub_model_name", type=str, default="clip-iferniu-L14-10epoch", 
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--dataset_name", type=str, default="TBD",
+    parser.add_argument("--dataset_name", type=str, default="fesvhtr/iferniu",
                       help="Dataset name on HuggingFace Hub")
+    default_workers = min(8, os.cpu_count() // 2)
+    parser.add_argument("--num_workers", type=int, default=default_workers,
+                        help="Number of workers for data loading")
 
     # wandb parameters
-    parser.add_argument("--wandb_project", type=str, default="clip-R",
+    parser.add_argument("--wandb_project", type=str, default="clip-unifire",
                         help="wandb project name")
     parser.add_argument("--wandb_entity", type=str, default=None,
                         help="wandb entity name (team or username)")
@@ -185,8 +188,10 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
             image = Image.open(io.BytesIO(item["image"])).convert("RGB")
         else:
             image = item["image"]
-            
-        text = item["caption"]  # 确认字段名是否正确
+        
+        label = item["label"] 
+        caption = item["caption"]
+        text = f"A photo of {label}, where {caption}"
         
         # 使用CLIP处理器处理图像和文本
         encoding = self.processor(
@@ -263,7 +268,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
@@ -271,10 +276,12 @@ def train_clip(args):
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
-        max_grad_norm=args.max_grad_norm
+        max_grad_norm=args.max_grad_norm,
         # load_best_model_at_end=True,
         # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
         # greater_is_better=False,       # 损失越小越好
+        dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
+        dataloader_pin_memory=True,         # 默认: True
     )
     
 

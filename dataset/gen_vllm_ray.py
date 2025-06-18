@@ -1,3 +1,5 @@
+# Deprecated
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -6,7 +8,8 @@ import ray
 from packaging.version import Version
 from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
-from dataset.dataset_utils import *
+from dataset.dataset_utils import process_dataset_with_checkpoints
+from dataset.task_config import LlavaCotTask
 import argparse
 from PIL import Image
 import logging
@@ -199,33 +202,6 @@ def load_model(
 
     return handle_dataset
 
-def preprocess(row):
-    system_prompt = SYSTEM_PROMPT_LLAVACOT
-    user_prompt = USER_PROMPT_LLAVACOT
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user", 
-            "content": user_prompt + "\n" + row["conversations"]
-        },
-    ]
-    return {
-        "messages": messages,
-        "sampling_params": {
-            "temperature": args.temperature,
-            "max_tokens": args.max_tokens,
-            "top_p": args.top_p,
-            "top_k": args.top_k,
-        },
-    }
-def postprocess(row):
-    return {
-        "id": row["id"],
-        "image_path": row["image_path"],
-        "generated_text": row["generated_text"],
-    }
-
-
 if __name__ == "__main__":
     args = parse_args()
 
@@ -267,10 +243,15 @@ if __name__ == "__main__":
         print("="*60)
         print("Reading dataset...")
         if task == "llavacot":
-            ds = ray_prepare_data_llavacot(parquet_dir_path)
+            task_config = LlavaCotTask(
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                top_p=args.top_p,
+            )
         else:
             raise ValueError(f"Invalid task: {task}")
 
+        ds = task_config.prepare_dataset(parquet_dir_path)
         print("Dataset schema:", ds.schema())   # {'image': binary, 'image_id': str}
         print("Dataset Size:", ds.count())
 
@@ -281,8 +262,8 @@ if __name__ == "__main__":
         print("Loading model:", args.model_source)
         vlm_handler = load_model(
             model_source=args.model_source,
-            preprocess_fn=preprocess,
-            postprocess_fn=postprocess,
+            preprocess_fn=task_config.preprocess,
+            postprocess_fn=task_config.postprocess,
             concurrency=args.concurrency,
             batch_size=args.batch_size,
             enable_chunked_prefill=args.enable_chunked_prefill,
