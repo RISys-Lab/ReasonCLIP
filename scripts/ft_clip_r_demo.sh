@@ -7,7 +7,7 @@ export WANDB_MODE=offline
 
 accelerate launch --config_file scripts/accelerate.yaml trainning/ft_clip_r_pair.py \
     --parquet_file $WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_combined.parquet \
-    --model_name $WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14 \
+    --model_name $WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14 \
     --output_dir $WORK/fmohamma/CLIP-R/weights/clip_r_finetune_demo \
     --best_model_dir $WORK/fmohamma/CLIP-R/weights/clip_r_best_model_demo \
     --batch_size 512 \
