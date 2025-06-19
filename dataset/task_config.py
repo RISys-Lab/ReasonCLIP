@@ -347,11 +347,21 @@ class CC12MVisualTask:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
-        self.SYSTEM_PROMPT_CC12M_VISUAL = """
+
+        self.SYSTEM_PROMPT_CC12M_tb_visual = """
         """
 
-        self.USER_PROMPT_CC12M_VISUAL = """
+        self.USER_PROMPT_CC12M_tb_visual = """
         """
+
+
+        self.SYSTEM_PROMPT_CC12M_trp_visual = """
+        """
+
+        self.USER_PROMPT_CC12M_trp_visual = """
+        """
+
+
     def prepare_dataset(self, parquet_dir, image_dir):
         # 直接读取parquet文件
         parquet_files = parquet_dir

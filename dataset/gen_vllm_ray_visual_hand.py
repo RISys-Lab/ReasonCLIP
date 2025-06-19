@@ -1,4 +1,7 @@
+# ===============================
 # Deprecated
+# Use gen_vllm_ray_visual.py instead
+# ===============================
 
 import sys
 import os

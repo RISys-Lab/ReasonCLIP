@@ -27,7 +27,7 @@ from datetime import datetime
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import numpy as np
-
+from transformers import EvalPrediction
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
@@ -55,6 +55,8 @@ def parse_args():
                         help="Steps to save checkpoints")
     parser.add_argument("--eval_steps", type=int, default=250, 
                         help="Evaluation steps")
+    parser.add_argument("--save_total_limit", type=int, default=3,
+                        help="Total number of checkpoints to save")
     parser.add_argument("--run_name", type=str, default="clip-finetune-unifire", 
                         help="Experiment name")
     parser.add_argument("--warmup_ratio", type=float, default=0.1,
@@ -97,6 +99,7 @@ def parse_args():
                         help="Enable wandb logging")
     
     return parser.parse_args()
+
 
 
 class BestModelCallback(TrainerCallback):
@@ -173,11 +176,27 @@ class CLIPTrainer(Trainer):
         
         # 组合损失
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
+
+        if (not dist.is_initialized() or dist.get_rank() == 0) and "wandb" in self.args.report_to:
+            # commit=False，等 Transformer 自己在 step 末尾再统一提交
+            wandb.log({
+                "train/tb_loss": tb_loss.item(),
+                "train/trp_loss": trp_loss.item(),
+                "train/total_loss": total_loss.item(),
+            }, commit=False)
+
         
         if return_outputs:
-            # 返回tb的outputs作为主要输出
-            return total_loss, tb_outputs
+            # 构造一个简单的 Namespace/dict 结构，保存 tb 和 trp 的 logits
+            outputs = {
+                "tb_logits_per_image": tb_logits_per_image,
+                "tb_logits_per_text":  tb_logits_per_text,
+                "trp_logits_per_image": trp_logits_per_image,
+                "trp_logits_per_text":  trp_logits_per_text,
+            }
+            return total_loss, outputs
         return total_loss
+
 
 class CLIPRDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dict, processor):
@@ -198,8 +217,8 @@ class CLIPRDataset(torch.utils.data.Dataset):
         item = self.dataset[original_idx]
         
         # 读取图像
-        image_path = item["image_path"]
-        # image = Image.open(image_path).convert("RGB")
+        # image_path = item["image_path"]
+        image = Image.open(image_path).convert("RGB")
 
         random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         image = Image.fromarray(random_image)
@@ -344,7 +363,7 @@ def train_clip(args):
         save_steps=args.save_steps if is_main_process else 999999,
         eval_strategy="steps",
         eval_steps=args.eval_steps,
-        save_total_limit=2,  # 保留更多检查点
+        save_total_limit=args.save_total_limit,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
         run_name=args.run_name,
         warmup_ratio=args.warmup_ratio,
