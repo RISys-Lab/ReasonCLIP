@@ -24,6 +24,9 @@ from PIL import Image
 import io
 from transformers import TrainerCallback
 from datetime import datetime
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import numpy as np
 
 
 def parse_args():
@@ -42,7 +45,7 @@ def parse_args():
                         help="Number of gradient accumulation steps")
     parser.add_argument("--epochs", type=int, default=1, 
                         help="Number of training epochs")
-    parser.add_argument("--learning_rate", type=float, default=3e-5, 
+    parser.add_argument("--learning_rate", type=float, default=5e-5, 
                         help="Learning rate")
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
@@ -63,6 +66,10 @@ def parse_args():
     # parser.add_argument("--early_stopping_patience", type=int, default=3,
     #                     help="Patience for early stopping")
     
+    # Loss weight parameters
+    parser.add_argument("--tb_alpha", type=float, default=0.5,
+                        help="Weight for tb loss (trp weight = 1 - tb_alpha), range [0, 1]")
+    
     # Hub push parameters
     parser.add_argument("--push_to_hub", action="store_true", 
                         help="Whether to push to HuggingFace Hub")
@@ -72,8 +79,11 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--dataset_name", type=str, default="fesvhtr/iferniu",
-                      help="Dataset name on HuggingFace Hub")
+    parser.add_argument("--parquet_file", type=str, required=True,
+                        help="Path to the parquet file containing image_path, tb, and trp columns")
+    parser.add_argument("--use_split", action="store_true",
+                        help="Whether to split dataset into train:eval:test = 8:1:1")
+    
     default_workers = min(8, os.cpu_count() // 2)
     parser.add_argument("--num_workers", type=int, default=default_workers,
                         help="Number of workers for data loading")
@@ -113,97 +123,132 @@ class BestModelCallback(TrainerCallback):
                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class CLIPTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        # 调用模型，不传 labels
-        outputs = model(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            pixel_values=inputs["pixel_values"]
-        )
-        logits_per_image = outputs.logits_per_image
-        logits_per_text  = outputs.logits_per_text
+    def __init__(self, tb_alpha=0.5, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tb_weight = tb_alpha
+        self.trp_weight = 1.0 - tb_alpha
+        print(f"Loss weights: TB={self.tb_weight:.3f}, TRP={self.trp_weight:.3f}")
+        
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """
+        Compute CLIP contrastive loss, calculate image-tb and image-trp loss separately
+        """
 
-        # 构造正确的 labels：0..batch_size-1
-        bs = logits_per_image.size(0)
-        labels = torch.arange(bs, device=logits_per_image.device)
-
-        # 计算两边对比损失
-        loss_i = F.cross_entropy(logits_per_image, labels)
-        loss_t = F.cross_entropy(logits_per_text, labels)
-        loss   = (loss_i + loss_t) / 2
-
-        return (loss, outputs) if return_outputs else loss
-    
-    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
-        # 调用父类的评估方法
-        metrics = super().evaluate(
-            eval_dataset=eval_dataset,
-            ignore_keys=ignore_keys,
-            metric_key_prefix=metric_key_prefix
+        pixel_values = inputs["pixel_values"]
+        tb_input_ids = inputs["tb_input_ids"]
+        tb_attention_mask = inputs["tb_attention_mask"]
+        trp_input_ids = inputs["trp_input_ids"]
+        trp_attention_mask = inputs["trp_attention_mask"]
+        
+        # 计算image-tb损失
+        tb_outputs = model(
+            input_ids=tb_input_ids,
+            attention_mask=tb_attention_mask,
+            pixel_values=pixel_values
         )
         
-        # 确保评估结果中包含 loss 指标
-        if f"{metric_key_prefix}_loss" not in metrics:
-            # 如果父类没有计算loss，我们手动计算
-            eval_dataloader = self.get_eval_dataloader(eval_dataset)
-            total_loss = 0.0
-            num_batches = 0
-            
-            # 将模型设为评估模式
-            self.model.eval()
-            
-            with torch.no_grad():
-                for batch in eval_dataloader:
-                    # 准备输入
-                    batch = self._prepare_inputs(batch)
-                    
-                    # 计算损失
-                    loss = self.compute_loss(self.model, batch)
-                    
-                    total_loss += loss.item()
-                    num_batches += 1
-            
-            # 计算平均损失
-            if num_batches > 0:
-                metrics[f"{metric_key_prefix}_loss"] = total_loss / num_batches
-        self.log(metrics)
-        return metrics
+        tb_logits_per_image = tb_outputs.logits_per_image
+        tb_logits_per_text = tb_outputs.logits_per_text
+        
+        batch_size = tb_logits_per_image.size(0)
+        labels = torch.arange(batch_size, device=tb_logits_per_image.device)
+        
+        tb_loss_i = F.cross_entropy(tb_logits_per_image, labels)
+        tb_loss_t = F.cross_entropy(tb_logits_per_text, labels)
+        tb_loss = (tb_loss_i + tb_loss_t) / 2.0
+        
+        # 计算image-trp损失
+        trp_outputs = model(
+            input_ids=trp_input_ids,
+            attention_mask=trp_attention_mask,
+            pixel_values=pixel_values
+        )
+        
+        trp_logits_per_image = trp_outputs.logits_per_image
+        trp_logits_per_text = trp_outputs.logits_per_text
+        
+        trp_loss_i = F.cross_entropy(trp_logits_per_image, labels)
+        trp_loss_t = F.cross_entropy(trp_logits_per_text, labels)
+        trp_loss = (trp_loss_i + trp_loss_t) / 2.0
+        
+        # 组合损失
+        total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
+        
+        if return_outputs:
+            # 返回tb的outputs作为主要输出
+            return total_loss, tb_outputs
+        return total_loss
 
-class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
+class CLIPRDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dict, processor):
         self.dataset = dataset_dict
         self.processor = processor
+        # 每个样本有3个tb + 3个trp = 6个caption，交叉组合生成3*3=9个图像-文本对
+        self.captions_per_image = 9  # 3个tb * 3个trp = 9个组合
     
     def __len__(self):
-        return len(self.dataset)
+        # 每个原始样本生成9个caption pair
+        return len(self.dataset) * self.captions_per_image
     
     def __getitem__(self, idx):
-        item = self.dataset[idx]
+        # 计算原始样本索引和caption组合索引
+        original_idx = idx // self.captions_per_image
+        pair_idx = idx % self.captions_per_image
         
-        # 处理bytes格式的图像
-        if isinstance(item["image"], dict) and "bytes" in item["image"]:
-            image_bytes = item["image"]["bytes"]
-            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        elif isinstance(item["image"], bytes):
-            image = Image.open(io.BytesIO(item["image"])).convert("RGB")
-        else:
-            image = item["image"]
+        item = self.dataset[original_idx]
         
-        label = item["label"] 
-        caption = item["caption"]
-        text = f"A photo of {label}, where {caption}"
+        # 读取图像
+        image_path = item["image_path"]
+        # image = Image.open(image_path).convert("RGB")
+
+        random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        image = Image.fromarray(random_image)
         
-        # 使用CLIP处理器处理图像和文本
-        encoding = self.processor(
-            text=[text], 
+        # 获取tb和trp列表
+        tb_captions = item["tb"]  # 3个基础caption
+        trp_captions = item["trp"]  # 3个推理caption
+        
+        # 计算tb和trp的索引（3x3组合）
+        tb_idx = pair_idx // 3  # 0, 0, 0, 1, 1, 1, 2, 2, 2
+        trp_idx = pair_idx % 3   # 0, 1, 2, 0, 1, 2, 0, 1, 2
+        
+        # 获取对应的tb和trp caption
+        tb_caption = tb_captions[tb_idx]
+        trp_caption = trp_captions[trp_idx]
+        
+        # 使用CLIP处理器分别处理图像和两种文本
+        # 处理tb caption
+        tb_encoding = self.processor(
+            text=[tb_caption], 
             images=image, 
             return_tensors="pt",
             padding="max_length",
             truncation=True
         )
         
-        # 移除批次维度
-        batch = {k: v.squeeze(0) for k, v in encoding.items()}
+        # 处理trp caption
+        trp_encoding = self.processor(
+            text=[trp_caption], 
+            images=image, 
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True
+        )
+        
+        # 构建返回的batch，只包含必要的数据
+        batch = {
+            # 图像信息
+            "pixel_values": tb_encoding["pixel_values"].squeeze(0),
+            
+            # TB文本信息
+            "tb_input_ids": tb_encoding["input_ids"].squeeze(0),
+            "tb_attention_mask": tb_encoding["attention_mask"].squeeze(0),
+            
+            # TRP文本信息
+            "trp_input_ids": trp_encoding["input_ids"].squeeze(0),
+            "trp_attention_mask": trp_encoding["attention_mask"].squeeze(0)
+        }
+        
         return batch
 
 
@@ -230,32 +275,61 @@ def train_clip(args):
     model = CLIPModel.from_pretrained(model_name)
     processor = CLIPProcessor.from_pretrained(model_name)
 
-    # Download dataset if specified
-    if hasattr(args, 'dataset_name') and args.dataset_name:
-        try:
-            # 尝试加载数据集
-            raw_ds = load_dataset(args.dataset_name)
-            print(f"Dataset structure: {raw_ds}")
-            print(f"Column names: {raw_ds['train'].column_names}")
-            raw_ds = raw_ds['train']
-            # take 1000 for demo test
-            # raw_ds = raw_ds.shuffle(seed=42).select(range(1000))  # 仅用于演示测试
-            
-            # 如果数据集没有预定义分割，则手动分割
-            split_ds = raw_ds.train_test_split(test_size=0.02, seed=42)
-            train_dataset = split_ds["train"]
-            eval_dataset = split_ds["test"]
-                
-            # 包装为CLIP可用的数据集
-            train_dataset = UniFireDataset(train_dataset, processor)
-            eval_dataset = UniFireDataset(eval_dataset, processor)
-                
-        except Exception as e:
-            print(f"Error loading dataset: {e}")
-            raise ValueError(f"Failed to load dataset {args.dataset_name}: {e}")
+    # 读取parquet数据集
+    print("="*60)
+    print(f"Loading dataset from {args.parquet_file}")
+    df = pd.read_parquet(args.parquet_file)
+    print(f"Dataset loaded with {len(df)} samples")
+    
+    # 验证数据格式
+    required_columns = ["image_path", "tb", "trp"]
+    for col in required_columns:
+        if col not in df.columns:
+            raise ValueError(f"Missing required column: {col}")
+    
+    # 将DataFrame转换为字典格式供CLIPRDataset使用
+    dataset_dict = df.to_dict('records')
+    
+    # 分割训练、验证和测试集 (8:1:1)
+    if args.use_split:
+        # 首先分出训练集和临时集 (8:2)
+        train_data, temp_data = train_test_split(
+            dataset_dict, 
+            test_size=0.2,  # 20% 用于验证+测试
+            random_state=42
+        )
+        
+        # 然后将临时集分为验证集和测试集 (1:1)
+        eval_data, test_data = train_test_split(
+            temp_data,
+            test_size=0.5,  # 50% 的临时数据作为测试集，50% 作为验证集
+            random_state=42
+        )
+        
+        print(f"Dataset split (8:1:1): {len(train_data)} train, {len(eval_data)} eval, {len(test_data)} test")
     else:
-        raise ValueError("Please specify a dataset name using --dataset_name argument.")
+        train_data = dataset_dict
+        eval_data = None
+        test_data = None
+        print(f"Using full dataset for training: {len(train_data)} samples")
 
+    # 创建数据集
+    train_dataset = CLIPRDataset(train_data, processor)
+    eval_dataset = CLIPRDataset(eval_data, processor) if eval_data else None
+    
+    print(f"Train dataset size: {len(train_dataset)}")
+    if eval_dataset:
+        print(f"Eval dataset size: {len(eval_dataset)}")
+    
+    # 验证数据样本
+    print("="*60)
+    sample = train_dataset[0]
+    print(f"Sample keys: {sample.keys()}")
+    print(f"TB Input IDs shape: {sample['tb_input_ids'].shape}")
+    print(f"TRP Input IDs shape: {sample['trp_input_ids'].shape}")
+    print(f"Pixel values shape: {sample['pixel_values'].shape}")
+    print("Validation of triplet data format passed: (image, tb_text, trp_text)")
+    
 
 
     # 训练参数
@@ -282,12 +356,14 @@ def train_clip(args):
         # greater_is_better=False,       # 损失越小越好
         dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
         dataloader_pin_memory=True,         # 默认: True
+        remove_unused_columns=False,
     )
     
-
+    print("="*60)
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
+        tb_alpha=args.tb_alpha,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()]
@@ -334,16 +410,22 @@ def push_to_hub(best_model_path, repo_name):
         dist.barrier()
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
+    print(f"Arguments: {args}")
+    
     best_model_path = train_clip(args)
     
-    if args.push_to_hub and args.hub_username:
-        repo_name = f"{args.hub_username}/{args.hub_model_name}"
-        push_to_hub(best_model_path, repo_name)
-
-
+    # 推送到HuggingFace Hub
+    if args.push_to_hub:
+        push_to_hub(best_model_path, args.hub_model_name)
+    
+    # Distributed training cleanup
     if dist.is_initialized():
         dist.barrier()
         if dist.get_rank() == 0:
             print("All processes have completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
