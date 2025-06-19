@@ -2,9 +2,9 @@
 #SBATCH --job-name=gen_hand_icl
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=gen_hand_icl.out
@@ -21,9 +21,9 @@ export WANDB_MODE=offline
 # activate env 
 module load profile/deeplrn
 module load openmpi
-source $WORK/fmohamma/venvs/llm/bin/activate
-# source $WORK/venvs/clipr/bin/activate
+# source $WORK/fmohamma/venvs/llm/bin/activate
+source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # run python
-bash ./scripts/gen_vllm_ray_hand_visual.sh
+bash ./scripts/ft_clip_r_demo.sh
