@@ -20,9 +20,9 @@ accelerate launch --config_file scripts/accelerate.yaml trainning/ft_clip_r_pair
     --weight_decay 0.01 \
     --fp16 \
     --logging_strategy ratio \
-    --logging_ratio 0.01 \
+    --logging_ratio 0.005 \
     --save_strategy ratio \
-    --save_ratio 0.1 \
+    --save_ratio 0.25 \
     --eval_strategy ratio \
     --eval_ratio 0.05 \
     --num_workers 8 \

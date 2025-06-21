@@ -170,6 +170,13 @@ class CLIPTrainer(Trainer):
         combined_attention_mask = torch.cat([inputs["tb_attention_mask"], inputs["trp_attention_mask"]], dim=0)
         combined_pixel_values = torch.cat([inputs["pixel_values"], inputs["pixel_values"]], dim=0)
         
+        # 添加调试信息 - 只在主进程打印
+        # if accelerator.is_main_process and accelerator.process_index == 0:
+        #     main_print(f"Debug info:")
+        #     main_print(f"  - batch_size: {batch_size}")
+        #     main_print(f"  - combined_input_ids.shape: {combined_input_ids.shape}")
+        #     main_print(f"  - combined_pixel_values.shape: {combined_pixel_values.shape}")
+        
         # 一次前向传播
         combined_outputs = model(
             input_ids=combined_input_ids,
@@ -181,11 +188,23 @@ class CLIPTrainer(Trainer):
         logits_per_image = combined_outputs.logits_per_image
         logits_per_text = combined_outputs.logits_per_text
         
+        # 添加维度检查
+        # if accelerator.is_main_process and accelerator.process_index == 0:
+        #     main_print(f"  - logits_per_image.shape: {logits_per_image.shape}")
+        #     main_print(f"  - logits_per_text.shape: {logits_per_text.shape}")
+        
+        # # 检查维度是否正确
+        # expected_size = 2 * batch_size
+        # if logits_per_image.size(0) != expected_size or logits_per_image.size(1) != expected_size:
+        #     raise ValueError(f"Unexpected logits dimensions: "
+        #                    f"logits_per_image.shape={logits_per_image.shape}, "
+        #                    f"expected=({expected_size}, {expected_size})")
+        
         # 前半部分是TB，后半部分是TRP
-        tb_logits_per_image = logits_per_image[:batch_size]
-        tb_logits_per_text = logits_per_text[:batch_size]
-        trp_logits_per_image = logits_per_image[batch_size:]
-        trp_logits_per_text = logits_per_text[batch_size:]
+        tb_logits_per_image  = logits_per_image[:batch_size, :batch_size]
+        tb_logits_per_text   = logits_per_text [:batch_size, :batch_size]
+        trp_logits_per_image = logits_per_image[batch_size:, batch_size:]
+        trp_logits_per_text  = logits_per_text [batch_size:, batch_size:]
         
         # 计算损失
         labels = torch.arange(batch_size, device=device)
@@ -288,7 +307,8 @@ class CLIPRDataset(torch.utils.data.Dataset):
             images=image, 
             return_tensors="pt",
             padding="max_length",
-            truncation=True
+            truncation=True,
+            max_length=77,
         )
         
         # 处理trp caption
@@ -297,7 +317,8 @@ class CLIPRDataset(torch.utils.data.Dataset):
             images=image, 
             return_tensors="pt",
             padding="max_length",
-            truncation=True
+            truncation=True,
+            max_length=77,
         )
         
         # 构建返回的batch，只包含必要的数据
@@ -471,7 +492,7 @@ def train_clip(args):
         logging_strategy=logging_strategy,
         logging_steps=logging_steps,
         save_strategy=save_strategy,
-        save_steps=save_steps if is_main_process else 999999,
+        save_steps=save_steps,
         eval_strategy=eval_strategy,
         eval_steps=eval_steps,
         save_total_limit=args.save_total_limit,  # 保留更多检查点
@@ -510,14 +531,11 @@ def train_clip(args):
     trainer.train()
 
     # 手动保存 best model
-    if accelerator.is_main_process:
-        best_model_path = args.best_model_dir
-        trainer.save_model(best_model_path)
-        processor.save_pretrained(best_model_path)
-        main_print(f"\n💾 Best model saved to: {best_model_path}")
-    else:
-        best_model_path = args.best_model_dir
-        # No need to print skip message for each process
+    best_model_path = args.best_model_dir
+    trainer.save_model(best_model_path)
+    processor.save_pretrained(best_model_path)
+    main_print(f"\n💾 Best model saved to: {best_model_path}")
+ 
 
     return best_model_path
 
