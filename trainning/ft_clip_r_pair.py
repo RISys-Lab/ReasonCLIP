@@ -11,6 +11,7 @@ from transformers import (
 import torch.nn.functional as F
 from accelerate import Accelerator
 import numpy as np 
+from typing import Optional, List
 
 # 初始化 accelerator
 accelerator = Accelerator()
@@ -139,7 +140,7 @@ class BestModelCallback(TrainerCallback):
                 import wandb
                 if wandb.run is not None:
                     wandb.log({"eval_loss": eval_loss}, step=state.global_step)
-                    main_print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
+                    main_print(f"Manual wandb logging: eval_loss={eval_loss:.4f} (step={state.global_step})")
             
             # 检查是否为新的最佳模型
             if eval_loss < self.best_eval_loss:
@@ -220,6 +221,25 @@ class CLIPTrainer(Trainer):
             }
             return total_loss, outputs
         return total_loss
+
+    # NEW: override prediction_step to avoid unexpected kwargs during evaluation
+    def prediction_step(
+        self,
+        model,
+        inputs,
+        prediction_loss_only: bool,
+        ignore_keys: Optional[List[str]] = None,
+    ):
+        """Custom evaluation step that reuses compute_loss logic to prevent forward() kwargs errors."""
+        model.eval()
+        with torch.no_grad():
+            loss, _ = self.compute_loss(model, inputs, return_outputs=True)
+
+        if prediction_loss_only:
+            return (loss.detach(), None, None)
+
+        # For simplicity, we do not return logits/labels for now.
+        return (loss.detach(), None, None)
 
 
 class CLIPRDataset(torch.utils.data.Dataset):
