@@ -490,7 +490,6 @@ def train_clip(args):
         # 分布式训练配置
         ddp_find_unused_parameters=False,  # 关闭unused parameters检测，提高性能
         dataloader_drop_last=True,            # 丢弃训练集最后一个不满 batch
-        eval_dataloader_drop_last=True,  
     )
     
     main_print(f"\n🎯 Loss Configuration:")
