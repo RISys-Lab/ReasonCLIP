@@ -14,10 +14,15 @@ from accelerate import Accelerator
 # 初始化 accelerator
 accelerator = Accelerator()
 
+def main_print(*args, **kwargs):
+    """只在主进程打印的函数"""
+    if accelerator.is_main_process:
+        print(*args, **kwargs)
+
 # 非主进程立即禁用 Wandb（在导入wandb之前）
 if not accelerator.is_main_process:
     os.environ["WANDB_DISABLED"] = "true"
-    print("已禁用非主进程的 Wandb")
+    print("已禁用非主进程的 Wandb")  # 这个保留，让每个进程都知道自己的状态
 
 import wandb
 import argparse
@@ -133,20 +138,20 @@ class BestModelCallback(TrainerCallback):
                 import wandb
                 if wandb.run is not None:
                     wandb.log({"eval_loss": eval_loss}, step=state.global_step)
-                    print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
+                    main_print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
             
             # 检查是否为新的最佳模型
             if eval_loss < self.best_eval_loss:
-                print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
+                main_print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
                 self.best_eval_loss = eval_loss
-                print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
+                main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class CLIPTrainer(Trainer):
     def __init__(self, tb_alpha=0.5, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tb_weight = tb_alpha
         self.trp_weight = 1.0 - tb_alpha
-        print(f"Loss weights: TB={self.tb_weight:.3f}, TRP={self.trp_weight:.3f}")
+        # Loss weights already printed in main function
         
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
@@ -293,6 +298,17 @@ def train_clip(args):
     is_main_process = accelerator.is_main_process
 
     
+    # 打印分布式训练信息
+    main_print("="*60)
+    main_print("🚀 CLIP-R Training Configuration")
+    main_print("="*60)
+    main_print(f"🔧 Training setup:")
+    main_print(f"   - Distributed training: {accelerator.num_processes > 1}")
+    main_print(f"   - Number of processes: {accelerator.num_processes}")
+    main_print(f"   - Mixed precision: {accelerator.mixed_precision}")
+    if accelerator.num_processes > 1:
+        main_print(f"   - Current process rank: {accelerator.process_index}")
+    
     # 创建带时间戳的运行名称
     timestamp = datetime.now().strftime("%m%d_%H%M%S")
     args.run_name = f"{args.run_name}_{timestamp}"
@@ -312,10 +328,10 @@ def train_clip(args):
     processor = CLIPProcessor.from_pretrained(model_name)
 
     # 读取parquet数据集
-    print("="*60)
-    print(f"Loading dataset from {args.parquet_file}")
+    main_print(f"\n📊 Dataset Configuration:")
+    main_print(f"   - Loading from: {args.parquet_file}")
     df = pd.read_parquet(args.parquet_file)
-    print(f"Dataset loaded with {len(df)} samples")
+    main_print(f"   - Total samples: {len(df)}")
     
     # 验证数据格式
     required_columns = ["image_path", "tb", "trp"]
@@ -342,29 +358,29 @@ def train_clip(args):
             random_state=42
         )
         
-        print(f"Dataset split (8:1:1): {len(train_data)} train, {len(eval_data)} eval, {len(test_data)} test")
+        main_print(f"   - Dataset split (8:1:1): {len(train_data)} train, {len(eval_data)} eval, {len(test_data)} test")
     else:
         train_data = dataset_dict
         eval_data = None
         test_data = None
-        print(f"Using full dataset for training: {len(train_data)} samples")
+        main_print(f"   - Using full dataset for training: {len(train_data)} samples")
 
     # 创建数据集
     train_dataset = CLIPRDataset(train_data, processor)
     eval_dataset = CLIPRDataset(eval_data, processor) if eval_data else None
     
-    print(f"Train dataset size: {len(train_dataset)}")
+    main_print(f"   - Train dataset size: {len(train_dataset)} (with 9x augmentation)")
     if eval_dataset:
-        print(f"Eval dataset size: {len(eval_dataset)}")
+        main_print(f"   - Eval dataset size: {len(eval_dataset)} (with 9x augmentation)")
     
     # 验证数据样本
-    print("="*60)
+    main_print(f"\n🔍 Data Validation:")
     sample = train_dataset[0]
-    print(f"Sample keys: {sample.keys()}")
-    print(f"TB Input IDs shape: {sample['tb_input_ids'].shape}")
-    print(f"TRP Input IDs shape: {sample['trp_input_ids'].shape}")
-    print(f"Pixel values shape: {sample['pixel_values'].shape}")
-    print("Validation of triplet data format passed: (image, tb_text, trp_text)")
+    main_print(f"   - Sample keys: {list(sample.keys())}")
+    main_print(f"   - TB Input IDs shape: {sample['tb_input_ids'].shape}")
+    main_print(f"   - TRP Input IDs shape: {sample['trp_input_ids'].shape}")
+    main_print(f"   - Pixel values shape: {sample['pixel_values'].shape}")
+    main_print(f"   - ✅ Triplet data format validated: (image, tb_text, trp_text)")
     
 
 
@@ -373,9 +389,13 @@ def train_clip(args):
     steps_per_epoch = total_samples // (args.batch_size * args.gradient_accumulation_steps * accelerator.num_processes)
     total_steps = steps_per_epoch * args.epochs
     
-    print(f"Total samples: {total_samples}")
-    print(f"Steps per epoch: {steps_per_epoch}")
-    print(f"Total training steps: {total_steps}")
+    main_print(f"\n⚡ Training Schedule:")
+    main_print(f"   - Total samples: {total_samples}")
+    main_print(f"   - Per-device batch size: {args.batch_size}")
+    main_print(f"   - Gradient accumulation steps: {args.gradient_accumulation_steps}")
+    main_print(f"   - Effective batch size: {args.batch_size * args.gradient_accumulation_steps * accelerator.num_processes}")
+    main_print(f"   - Steps per epoch: {steps_per_epoch}")
+    main_print(f"   - Total training steps: {total_steps}")
     
     # 根据策略计算实际步数
     # Logging steps
@@ -411,10 +431,10 @@ def train_clip(args):
         eval_steps = args.eval_steps
         eval_strategy = "steps"
     
-    print(f"Computed intervals:")
-    print(f"  Logging: every {logging_steps} steps ({args.logging_strategy})")
-    print(f"  Saving: every {save_steps} steps ({args.save_strategy})")
-    print(f"  Evaluation: every {eval_steps} steps ({args.eval_strategy})")
+    main_print(f"\n📝 Logging & Evaluation Schedule:")
+    main_print(f"   - Logging: every {logging_steps} steps ({args.logging_strategy})")
+    main_print(f"   - Saving: every {save_steps} steps ({args.save_strategy})")
+    main_print(f"   - Evaluation: every {eval_steps} steps ({args.eval_strategy})")
 
     # 训练参数
     training_args = TrainingArguments(
@@ -445,7 +465,12 @@ def train_clip(args):
         remove_unused_columns=False,
     )
     
-    print("="*60)
+    main_print(f"\n🎯 Loss Configuration:")
+    main_print(f"   - TB loss weight: {args.tb_alpha:.3f}")
+    main_print(f"   - TRP loss weight: {1.0 - args.tb_alpha:.3f}")
+    
+    main_print(f"\n🚀 Starting Training...")
+    main_print("="*60)
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
@@ -462,10 +487,10 @@ def train_clip(args):
         best_model_path = args.best_model_dir
         trainer.save_model(best_model_path)
         processor.save_pretrained(best_model_path)
-        print(f"Best model saved to {best_model_path}")
+        main_print(f"\n💾 Best model saved to: {best_model_path}")
     else:
         best_model_path = args.best_model_dir
-        print(f"Skipping saving best model for rank {accelerator.process_index}")
+        # No need to print skip message for each process
 
     return best_model_path
 
@@ -473,7 +498,7 @@ def train_clip(args):
 def push_to_hub(best_model_path, repo_name):
     # 只有主进程执行推送操作
     if accelerator.is_main_process:
-        print(f"Pushing model to HuggingFace Hub: {repo_name}")
+        main_print(f"\n🤗 Pushing model to HuggingFace Hub: {repo_name}")
         from huggingface_hub import HfApi
         
         # 自动上传 best model 到 hub
@@ -483,9 +508,8 @@ def push_to_hub(best_model_path, repo_name):
         model.push_to_hub(repo_name)
         processor.push_to_hub(repo_name)
 
-        print(f"Model pushed to HuggingFace Hub: https://huggingface.co/{repo_name}")
-    else:
-        print(f"Skipping model push for rank {accelerator.process_index}")
+        main_print(f"✅ Model successfully pushed to: https://huggingface.co/{repo_name}")
+    # No need to print skip message for non-main processes
 
     # 等待所有进程同步
     accelerator.wait_for_everyone()
@@ -493,7 +517,7 @@ def push_to_hub(best_model_path, repo_name):
 
 def main():
     args = parse_args()
-    print(f"Arguments: {args}")
+    main_print(f"Arguments: {args}")
     
     best_model_path = train_clip(args)
     
@@ -504,7 +528,7 @@ def main():
     # Distributed training cleanup
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        print("All processes have completed successfully.")
+        main_print("\n🎉 All processes have completed successfully!")
 
 
 if __name__ == "__main__":
