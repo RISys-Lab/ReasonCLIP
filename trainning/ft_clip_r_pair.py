@@ -12,7 +12,8 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 import numpy as np 
 from typing import Optional, List
-
+import sys
+sys.stderr.isatty = lambda: True
 # 初始化 accelerator
 accelerator = Accelerator()
 

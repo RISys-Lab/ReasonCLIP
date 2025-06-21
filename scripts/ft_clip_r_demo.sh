@@ -24,7 +24,7 @@ accelerate launch --config_file scripts/accelerate.yaml trainning/ft_clip_r_pair
     --save_strategy ratio \
     --save_ratio 0.1 \
     --eval_strategy ratio \
-    --eval_ratio 0.00001 \
+    --eval_ratio 0.05 \
     --num_workers 8 \
     --wandb_log \
     --wandb_project "clip-r-training" \
