@@ -9,25 +9,22 @@ from transformers import (
     TrainingArguments,
 )
 import torch.nn.functional as F
-import torch.distributed as dist
-def is_main_process():
-    return not dist.is_initialized() or dist.get_rank() == 0
+from accelerate import Accelerator
+
+# 初始化 accelerator
+accelerator = Accelerator()
 
 # 非主进程立即禁用 Wandb（在导入wandb之前）
-if not is_main_process():
+if not accelerator.is_main_process:
     os.environ["WANDB_DISABLED"] = "true"
     print("已禁用非主进程的 Wandb")
 
 import wandb
 import argparse
-from PIL import Image
-import io
 from transformers import TrainerCallback
 from datetime import datetime
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import numpy as np
-from transformers import EvalPrediction
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
@@ -49,12 +46,31 @@ def parse_args():
                         help="Learning rate")
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
+    
+    # Logging parameters - support both percentage and steps
+    parser.add_argument("--logging_strategy", type=str, default="ratio", choices=["steps", "epoch", "ratio"],
+                        help="Logging strategy: 'steps', 'epoch', or 'ratio' (percentage of total steps)")
     parser.add_argument("--logging_steps", type=int, default=25, 
-                        help="Logging steps")
+                        help="Logging steps (used when logging_strategy='steps')")
+    parser.add_argument("--logging_ratio", type=float, default=0.02,
+                        help="Logging ratio (used when logging_strategy='ratio'), e.g., 0.02 = every 2% of total steps")
+    
+    # Save parameters - support both percentage and steps
+    parser.add_argument("--save_strategy", type=str, default="ratio", choices=["steps", "epoch", "ratio"],
+                        help="Save strategy: 'steps', 'epoch', or 'ratio' (percentage of total steps)")
     parser.add_argument("--save_steps", type=int, default=500, 
-                        help="Steps to save checkpoints")
+                        help="Steps to save checkpoints (used when save_strategy='steps')")
+    parser.add_argument("--save_ratio", type=float, default=0.1,
+                        help="Save ratio (used when save_strategy='ratio'), e.g., 0.1 = every 10% of total steps")
+    
+    # Evaluation parameters - support both percentage and steps
+    parser.add_argument("--eval_strategy", type=str, default="ratio", choices=["steps", "epoch", "ratio"],
+                        help="Evaluation strategy: 'steps', 'epoch', or 'ratio' (percentage of total steps)")
     parser.add_argument("--eval_steps", type=int, default=250, 
-                        help="Evaluation steps")
+                        help="Evaluation steps (used when eval_strategy='steps')")
+    parser.add_argument("--eval_ratio", type=float, default=0.05,
+                        help="Evaluation ratio (used when eval_strategy='ratio'), e.g., 0.05 = every 5% of total steps")
+    
     parser.add_argument("--save_total_limit", type=int, default=3,
                         help="Total number of checkpoints to save")
     parser.add_argument("--run_name", type=str, default="clip-finetune-unifire", 
@@ -110,7 +126,7 @@ class BestModelCallback(TrainerCallback):
         if metrics and "eval_loss" in metrics:
             eval_loss = metrics["eval_loss"]
 
-            is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+            is_main_process = accelerator.is_main_process
             
             # 手动记录到 Wandb
             if is_main_process and (args.report_to == "wandb" or (isinstance(args.report_to, list) and "wandb" in args.report_to)):
@@ -177,7 +193,7 @@ class CLIPTrainer(Trainer):
         # 组合损失
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
-        if (not dist.is_initialized() or dist.get_rank() == 0) and "wandb" in self.args.report_to:
+        if accelerator.is_main_process and "wandb" in self.args.report_to:
             # commit=False，等 Transformer 自己在 step 末尾再统一提交
             wandb.log({
                 "train/tb_loss": tb_loss.item(),
@@ -274,7 +290,7 @@ class CLIPRDataset(torch.utils.data.Dataset):
 
 def train_clip(args):
     # 获取当前是否为主进程
-    is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+    is_main_process = accelerator.is_main_process
 
     
     # 创建带时间戳的运行名称
@@ -352,6 +368,54 @@ def train_clip(args):
     
 
 
+    # 计算总步数来确定实际的logging、save、eval步数
+    total_samples = len(train_dataset)
+    steps_per_epoch = total_samples // (args.batch_size * args.gradient_accumulation_steps * accelerator.num_processes)
+    total_steps = steps_per_epoch * args.epochs
+    
+    print(f"Total samples: {total_samples}")
+    print(f"Steps per epoch: {steps_per_epoch}")
+    print(f"Total training steps: {total_steps}")
+    
+    # 根据策略计算实际步数
+    # Logging steps
+    if args.logging_strategy == "epoch":
+        logging_steps = steps_per_epoch
+        logging_strategy = "epoch"
+    elif args.logging_strategy == "ratio":
+        logging_steps = max(1, int(total_steps * args.logging_ratio))
+        logging_strategy = "steps"
+    else:  # steps
+        logging_steps = args.logging_steps
+        logging_strategy = "steps"
+    
+    # Save steps
+    if args.save_strategy == "epoch":
+        save_steps = steps_per_epoch
+        save_strategy = "epoch"
+    elif args.save_strategy == "ratio":
+        save_steps = max(1, int(total_steps * args.save_ratio))
+        save_strategy = "steps"
+    else:  # steps
+        save_steps = args.save_steps
+        save_strategy = "steps"
+    
+    # Eval steps
+    if args.eval_strategy == "epoch":
+        eval_steps = steps_per_epoch
+        eval_strategy = "epoch"
+    elif args.eval_strategy == "ratio":
+        eval_steps = max(1, int(total_steps * args.eval_ratio))
+        eval_strategy = "steps"
+    else:  # steps
+        eval_steps = args.eval_steps
+        eval_strategy = "steps"
+    
+    print(f"Computed intervals:")
+    print(f"  Logging: every {logging_steps} steps ({args.logging_strategy})")
+    print(f"  Saving: every {save_steps} steps ({args.save_strategy})")
+    print(f"  Evaluation: every {eval_steps} steps ({args.eval_strategy})")
+
     # 训练参数
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -360,10 +424,12 @@ def train_clip(args):
         fp16=args.fp16,
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
-        logging_steps=args.logging_steps,
-        save_steps=args.save_steps if is_main_process else 999999,
-        eval_strategy="steps",
-        eval_steps=args.eval_steps,
+        logging_strategy=logging_strategy,
+        logging_steps=logging_steps,
+        save_strategy=save_strategy,
+        save_steps=save_steps if is_main_process else 999999,
+        eval_strategy=eval_strategy,
+        eval_steps=eval_steps,
         save_total_limit=args.save_total_limit,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
         run_name=args.run_name,
@@ -392,25 +458,21 @@ def train_clip(args):
     trainer.train()
 
     # 手动保存 best model
-    if not dist.is_initialized() or dist.get_rank() == 0:
+    if accelerator.is_main_process:
         best_model_path = args.best_model_dir
         trainer.save_model(best_model_path)
         processor.save_pretrained(best_model_path)
         print(f"Best model saved to {best_model_path}")
     else:
         best_model_path = args.best_model_dir
-        print(f"Skipping saving best model for rank {dist.get_rank()}")
+        print(f"Skipping saving best model for rank {accelerator.process_index}")
 
     return best_model_path
 
 
 def push_to_hub(best_model_path, repo_name):
-    # 检查当前进程的rank
-    import os
-    import torch.distributed as dist
-    
-    # 只有rank0进程执行推送操作
-    if not dist.is_initialized() or dist.get_rank() == 0:
+    # 只有主进程执行推送操作
+    if accelerator.is_main_process:
         print(f"Pushing model to HuggingFace Hub: {repo_name}")
         from huggingface_hub import HfApi
         
@@ -423,11 +485,10 @@ def push_to_hub(best_model_path, repo_name):
 
         print(f"Model pushed to HuggingFace Hub: https://huggingface.co/{repo_name}")
     else:
-        print(f"Skipping model push for rank {dist.get_rank()}")
+        print(f"Skipping model push for rank {accelerator.process_index}")
 
-    # Ensure all processes synchronize
-    if dist.is_initialized():
-        dist.barrier()
+    # 等待所有进程同步
+    accelerator.wait_for_everyone()
 
 
 def main():
@@ -441,10 +502,9 @@ def main():
         push_to_hub(best_model_path, args.hub_model_name)
     
     # Distributed training cleanup
-    if dist.is_initialized():
-        dist.barrier()
-        if dist.get_rank() == 0:
-            print("All processes have completed successfully.")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        print("All processes have completed successfully.")
 
 
 if __name__ == "__main__":

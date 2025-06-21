@@ -10,18 +10,21 @@ accelerate launch --config_file scripts/accelerate.yaml trainning/ft_clip_r_pair
     --model_name $WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14 \
     --output_dir $WORK/fmohamma/CLIP-R/weights/clip_r_finetune_demo \
     --best_model_dir $WORK/fmohamma/CLIP-R/weights/clip_r_best_model_demo \
-    --batch_size 512 \
+    --batch_size 384 \
     --gradient_accumulation_steps 1 \
     --epochs 3 \
-    --learning_rate 5e-5 \
+    --learning_rate 3e-5 \
     --tb_alpha 0.5 \
     --use_split \
     --warmup_ratio 0.03 \
     --weight_decay 0.01 \
     --fp16 \
-    --logging_steps 25 \
-    --save_steps 500 \
-    --eval_steps 100 \
+    --logging_strategy ratio \
+    --logging_ratio 0.01 \
+    --save_strategy ratio \
+    --save_ratio 0.1 \
+    --eval_strategy ratio \
+    --eval_ratio 0.05 \
     --num_workers 8 \
     --wandb_log \
     --wandb_project "clip-r-training" \
