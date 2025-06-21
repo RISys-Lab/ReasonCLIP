@@ -12,8 +12,8 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 import numpy as np 
 from typing import Optional, List
-import sys
-sys.stderr.isatty = lambda: True
+# import sys
+# sys.stderr.isatty = lambda: True
 # 初始化 accelerator
 accelerator = Accelerator()
 
@@ -489,6 +489,8 @@ def train_clip(args):
         remove_unused_columns=False,
         # 分布式训练配置
         ddp_find_unused_parameters=False,  # 关闭unused parameters检测，提高性能
+        dataloader_drop_last=True,            # 丢弃训练集最后一个不满 batch
+        eval_dataloader_drop_last=True,  
     )
     
     main_print(f"\n🎯 Loss Configuration:")
