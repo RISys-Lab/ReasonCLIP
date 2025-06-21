@@ -217,11 +217,12 @@ class CLIPRDataset(torch.utils.data.Dataset):
         item = self.dataset[original_idx]
         
         # 读取图像
-        # image_path = item["image_path"]
+        image_path = item["image_path"]
         image = Image.open(image_path).convert("RGB")
 
-        random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-        image = Image.fromarray(random_image)
+        # 随机生成图像，用于测试
+        # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        # image = Image.fromarray(random_image)
         
         # 获取tb和trp列表
         tb_captions = item["tb"]  # 3个基础caption

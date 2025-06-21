@@ -361,9 +361,15 @@ class CC12MVisualTask:
         self.USER_PROMPT_CC12M_trp_visual = """
         """
 
+        self.SYSTEM_PROMPT_CC12M_cls_visual = """
+        """
+
+        self.USER_PROMPT_CC12M_cls_visual = """
+        """
+
 
     def prepare_dataset(self, parquet_dir, image_dir):
-        # 直接读取parquet文件
+        # 直接读取parquet文件, each 2 million rows
         parquet_files = parquet_dir
         
         # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
