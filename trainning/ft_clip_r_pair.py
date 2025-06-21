@@ -163,6 +163,13 @@ class CLIPTrainer(Trainer):
         tb_attention_mask = inputs["tb_attention_mask"]
         trp_input_ids = inputs["trp_input_ids"]
         trp_attention_mask = inputs["trp_attention_mask"]
+
+        pixel_values = inputs["pixel_values"].clone()
+        tb_input_ids = inputs["tb_input_ids"].clone()
+        tb_attention_mask = inputs["tb_attention_mask"].clone()
+        trp_input_ids = inputs["trp_input_ids"].clone()
+        trp_attention_mask = inputs["trp_attention_mask"].clone()
+
         
         # 计算image-tb损失
         tb_outputs = model(
@@ -324,7 +331,7 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = CLIPModel.from_pretrained(model_name)
+    model = CLIPModel.from_pretrained(model_name, use_cache=False)
     processor = CLIPProcessor.from_pretrained(model_name)
 
     # 读取parquet数据集
