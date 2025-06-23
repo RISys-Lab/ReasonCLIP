@@ -13,14 +13,14 @@ export TOKENIZERS_PARALLELISM=false
 
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
-    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
-    --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
-    --checkpoint_interval 500 \
-    --batch_size 24 \
+    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
+    --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
+    --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/tmp \
+    --checkpoint_interval 50 \
+    --batch_size 16 \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
-    --max_num_seqs 24 \
+    --max_num_seqs 16 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
@@ -29,21 +29,25 @@ python -u dataset/gen_vllm_ray_visual.py \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
     --trust_remote_code \
-    --task cc12m_visual \
+    --task llavacot_visual \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
-    --dtype float16 \
-    --quantization awq \
+    --dtype auto
 
 
 # remote
 # --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
 # --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
 # --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
-# --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
+# --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/tmp \
 
 # local
 # --model_source Qwen2.5-VL-7B-Instruct\
 # --parquet_dir_path /fesvhtr-iferniu/data \
 # --image_dir_path /fesvhtr-iferniu/data \
+
+# --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
+# --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
+# --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
+# --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
