@@ -40,14 +40,14 @@ python -u dataset/gen_vllm_ray_visual_hand.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL \
     --checkpoint_interval 100000 \
-    --batch_size 32 \
+    --batch_size 16 \
     --max_model_len 2048 \
     --max_num_batched_tokens 65536 \
     --max_tokens 1024 \
-    --max_num_seqs 32 \
+    --max_num_seqs 16 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
