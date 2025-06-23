@@ -206,7 +206,7 @@ def load_model(
     }
     
     # 根据任务类型设置不同的配置
-    if task_type in ["llavacot_visual", "hand_visual"]:
+    if "visual" in task_type:
         config_kwargs["has_image"] = True
     else:
         # 非视觉任务，且启用推理时才启用思维模式
