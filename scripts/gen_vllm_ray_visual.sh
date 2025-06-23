@@ -16,15 +16,15 @@ python -u dataset/gen_vllm_ray_visual.py \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
-    --checkpoint_interval 50 \
-    --batch_size 16 \
+    --checkpoint_interval 500000 \
+    --batch_size 48 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 32768 \
-    --max_num_seqs 16 \
+    --max_num_batched_tokens 65536 \
+    --max_num_seqs 48 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 2 \
+    --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
