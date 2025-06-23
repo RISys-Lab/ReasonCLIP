@@ -375,6 +375,7 @@ class CC12MVisualTask:
     def postprocess(self, row):
         return {
             "id": row["id"],
+            "image_path": row["image_path"],
             "generated_text": row["generated_text"],
             "raw_caption": row["raw_caption"],
         }
