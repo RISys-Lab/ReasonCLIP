@@ -42,7 +42,7 @@ python -u dataset/gen_vllm_ray_visual_hand.py \
     --checkpoint_interval 50 \
     --batch_size 16 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 65536 \
+    --max_num_batched_tokens 32768 \
     --max_tokens 1024 \
     --max_num_seqs 16 \
     --temperature 0.8 \
