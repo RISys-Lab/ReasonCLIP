@@ -128,8 +128,10 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
     Initialize Ray cluster. If address is None, start in single-node mode.
     """
     if address:
-        ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
+        # 连接到现有集群时，不能指定 num_cpus 和 num_gpus
+        ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
     else:
+        # 本地模式可以指定 num_cpus
         ray.init(ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
     
     # 强制启用进度条，即使在非交互式环境中
