@@ -282,7 +282,7 @@ class CC12MVisualTask:
         self.max_tokens = max_tokens
         self.top_p = top_p
 
-        self.SYSTEM_PROMPT_LLAVACOT_VISUAL = """
+        self.SYSTEM_PROMPT_CC12M_tb_visual = """
         You are an image annotation assistant. For each image I provide, you need to generate some concise descriptions. No reasoning is required—just briefly describe the objects and events present in the image.
         For each image, I will provide a raw and draft caption (with very limited words), it will provides some additional information to help you.
         For each image, generate three captions. They can differ in detail, but must not omit the main subject of the image.
@@ -348,8 +348,8 @@ class CC12MVisualTask:
         return ds
 
     def preprocess(self, row):
-        system_prompt = self.SYSTEM_PROMPT_CC12M_VISUAL
-        user_prompt = self.USER_PROMPT_CC12M_VISUAL
+        system_prompt = self.SYSTEM_PROMPT_CC12M_tb_visual
+        user_prompt = self.USER_PROMPT_CC12M_tb_visual
         from PIL import Image
         image = Image.open(row["image_path"])
         image = image.convert('RGB')
