@@ -179,6 +179,7 @@ wandb/
 weights/
 data/
 outputs/
+eval/results/
 
 *.err
 *.out

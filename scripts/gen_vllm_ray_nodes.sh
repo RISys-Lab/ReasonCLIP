@@ -1,22 +1,15 @@
 #!/bin/bash
 
-# 配置环境
+# 关闭 tokenizers 并行
 export TOKENIZERS_PARALLELISM=false
-# FIXME: add ray log forwarding
-# if [ ! -z "$SLURM_JOB_ID" ]; then
-#     echo "SLURM environment detected, enabling Ray log forwarding..."
-#     export RAY_LOG_TO_STDERR=1
-# else
-#     echo "Interactive environment detected, using default Ray logging..."
-# fi
-# export CUDA_VISIBLE_DEVICES=2
 
+# 使用从上层传入的 RAY_ADDRESS
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
-    --checkpoint_interval 500 \
+    --checkpoint_interval 500\
     --batch_size 64 \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
@@ -32,19 +25,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --task cc12m_visual \
     --concurrency 1 \
     --num_workers 8 \
-    --ray_address None \
+    --ray_address "${RAY_ADDRESS}" \
     --log_level INFO \
     --dtype auto \
     --quantization awq \
-
-
-# remote
-# --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
-# --parquet_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k-parquet/default/train \
-# --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
-# --output_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/ \
-
-# local
-# --model_source Qwen2.5-VL-7B-Instruct\
-# --parquet_dir_path /fesvhtr-iferniu/data \
-# --image_dir_path /fesvhtr-iferniu/data \

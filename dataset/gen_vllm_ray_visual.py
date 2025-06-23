@@ -8,10 +8,11 @@ from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
 import argparse
 from dataset.dataset_utils import process_dataset_with_checkpoints
-from dataset.task_config import HandVisualTask, LlavaCotVisualTask, LlavaCotTask
+
 from PIL import Image
 import logging
 import time
+import re
 
 def setup_logging(log_level: str = "INFO", disable_vllm_logs: bool = False, disable_ray_logs: bool = False):
     """Setup logging configuration based on arguments"""
@@ -222,6 +223,32 @@ def load_model(
 
     return handle
 
+def get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task):
+    
+    # 对于cc12m_visual任务，启用batch检测逻辑
+    if task == "cc12m_visual":
+        batch_pattern = re.compile(r'chunk_(0\d+)', re.IGNORECASE)
+        
+        # 检查 parquet_dir_path 和 image_dir_path 中是否包含 batch_n
+        batch_match = None
+        if parquet_dir_path:
+            batch_match = batch_pattern.search(parquet_dir_path)
+        if not batch_match and image_dir_path:
+            batch_match = batch_pattern.search(image_dir_path)
+        
+        # 如果找到 batch_n 模式，在输出目录下创建相应子目录
+        if batch_match:
+            batch_dir = f"chunk_{batch_match.group(1)}"
+            output_dir_path = os.path.join(output_dir_path, batch_dir)
+            print(f"[{task}] Found {batch_dir} in input path, using output directory: {output_dir_path}")
+            os.makedirs(output_dir_path, exist_ok=True)
+        else:
+            print(f"[{task}] No batch pattern found in input paths, using original output directory: {output_dir_path}")
+    else:
+        print(f"[{task}] Batch detection not enabled for this task, using original output directory: {output_dir_path}")
+    
+    return output_dir_path
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -244,7 +271,7 @@ if __name__ == "__main__":
             pass
         import time
         time.sleep(2)
-        init_ray(address=None, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
+        init_ray(address=args.ray_address, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
         ctx = ray.data.DataContext.get_current()
         ctx.execution_options.preserve_order = True
         ctx.wait_for_min_actors_s = 60 * 10 * args.tensor_parallel_size
@@ -262,6 +289,7 @@ if __name__ == "__main__":
             image_dir_path = None
 
         if task == "llavacot":
+            from dataset.task_config import LlavaCotTask
             task_config = LlavaCotTask(
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
@@ -269,13 +297,22 @@ if __name__ == "__main__":
                 top_k=args.top_k,
             )
         elif task == "llavacot_visual":
+            from dataset.task_config import LlavaCotVisualTask
             task_config = LlavaCotVisualTask(
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 top_p=args.top_p,
             )
         elif task == "hand_visual":
+            from dataset.task_config import HandVisualTask
             task_config = HandVisualTask(
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                top_p=args.top_p,
+            )
+        elif task == "cc12m_visual":
+            from dataset.task_config import CC12MVisualTask
+            task_config = CC12MVisualTask(
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 top_p=args.top_p,
@@ -286,6 +323,7 @@ if __name__ == "__main__":
         ds = task_config.prepare_dataset(parquet_dir_path, image_dir_path)
         print("Dataset schema:", ds.schema())
         print("Dataset Size:", ds.count())
+
 
         print("="*60)
         print("Loading model:", args.model_source)
@@ -312,6 +350,9 @@ if __name__ == "__main__":
 
         checkpoint_interval = args.checkpoint_interval
         output_dir_path = args.output_dir_path
+        
+        output_dir_path = get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task)
+        
         process_dataset_with_checkpoints(
             dataset=ds,
             processor=processor,
