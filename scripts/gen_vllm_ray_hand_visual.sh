@@ -39,7 +39,7 @@ python -u dataset/gen_vllm_ray_visual_hand.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL \
-    --checkpoint_interval 100000 \
+    --checkpoint_interval 50 \
     --batch_size 16 \
     --max_model_len 2048 \
     --max_num_batched_tokens 65536 \
