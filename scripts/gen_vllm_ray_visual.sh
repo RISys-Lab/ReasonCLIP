@@ -17,10 +17,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
     --checkpoint_interval 500 \
-    --batch_size 32 \
+    --batch_size 48 \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
-    --max_num_seqs 32 \
+    --max_num_seqs 48 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
@@ -33,7 +33,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
-    --dtype auto \
+    --dtype float16 \
     --quantization awq \
 
 
