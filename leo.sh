@@ -10,7 +10,7 @@
 #SBATCH --output=gen_cc12m_tb_00.out
 #SBATCH --error=gen_cc12m_tb_00.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=512G
+#SBATCH --mem=256G
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  
 export NCCL_DEBUG=WARN

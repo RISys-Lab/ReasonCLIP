@@ -139,7 +139,7 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
             ignore_reinit_error=True, 
             log_to_driver=log_to_driver, 
             num_cpus=num_cpus,
-            object_store_memory=250 * 1024**3
+            object_store_memory=128 * 1024**3
         )
     
     # 强制启用进度条，即使在非交互式环境中
