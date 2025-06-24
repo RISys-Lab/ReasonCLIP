@@ -231,11 +231,7 @@ def load_model(
         postprocess=postprocess_fn,
     )
 
-    # 返回一个"轻量"闭包——后面只复用同一 processor
-    def handle(dataset):
-        return processor(dataset)
-
-    return handle
+    return processor
 
 
 def get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task):
