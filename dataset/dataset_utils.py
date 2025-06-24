@@ -169,6 +169,8 @@ def process_dataset_with_checkpoints_optimized(
     # 断点续传逻辑
     start_index = 0
     if enable_resume:
+        print("="*60)
+        print("Resuming from last checkpoint")
         start_index = get_last_processed_index(output_dir_path, task)
         if start_index > 0:
             dataset = get_dataset_slice_from_index(dataset, start_index, total)
@@ -194,9 +196,10 @@ def process_dataset_with_checkpoints_optimized(
     batch_idx = 0
     current_batch_processed = 0  # 当前会话处理的样本数
 
-    print(f"📍 Next checkpoint at: {next_ckpt} samples")
-    print(f"🔢 Checkpoint interval: {checkpoint_interval}")
     print("="*60)
+    print(f"Next checkpoint at: {next_ckpt} samples")
+    print(f"Checkpoint interval: {checkpoint_interval}")
+    
 
     for batch in dataset.iter_batches(batch_format="pandas",
                                       batch_size=step):

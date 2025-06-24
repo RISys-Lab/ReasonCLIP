@@ -368,12 +368,6 @@ if __name__ == "__main__":
         
         output_dir_path = get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task)
         
-        print("🌊 Using memory-optimized processing")
-        if args.enable_resume:
-            print("📋 Resume functionality enabled")
-        else:
-            print("📋 Resume functionality disabled")
-            
         process_dataset_with_checkpoints_optimized(
             dataset=ds,
             processor=processor,

@@ -17,22 +17,22 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
     --checkpoint_interval 100000 \
-    --ray_batch_size 20000 \
-    --batch_size 20 \
+    --ray_batch_size 16384 \
+    --batch_size 8 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 40960 \
-    --max_num_seqs 20 \
+    --max_num_batched_tokens 16384 \
+    --max_num_seqs 8 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task cc12m_visual \
     --concurrency 1 \
-    --num_workers 4 \
+    --num_workers 8 \
     --log_level INFO \
     --dtype auto \
     --enable_resume
