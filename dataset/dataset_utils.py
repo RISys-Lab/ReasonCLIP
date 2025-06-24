@@ -158,7 +158,7 @@ def process_dataset_with_checkpoints(
 def process_dataset_with_checkpoints_optimized(
     dataset, processor, task,
     checkpoint_interval, output_dir_path,
-    show_sample_output=True, max_sample_display=5,
+    show_sample_output=True, max_sample_display=3,
     ray_batch_size=None, enable_resume=False
 ):
     import datetime, gc, os
@@ -221,10 +221,9 @@ def process_dataset_with_checkpoints_optimized(
             print(f"💾 Checkpoint saved: {path}")
             print(f"📈 Progress: {processed}/{total} samples ({processed/total*100:.1f}%)")
             
-            # 在保存checkpoint时显示最近的样本输出
+            # 保存成功后再显示样本（作为验证）
             if show_sample_output and buffer:
-                print(f"\n⏺ Recent samples (at checkpoint {processed}):")
-                # 显示buffer中最后几个样本
+                print(f"\n⏺ Recent samples:")
                 recent_samples = buffer[-max_sample_display:] if len(buffer) >= max_sample_display else buffer
                 for i, r in enumerate(recent_samples):
                     print(f"  Sample {i+1}: {r.get('generated_text', '')[:80].replace('\n',' ')}")
