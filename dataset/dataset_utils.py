@@ -203,6 +203,9 @@ def process_dataset_with_checkpoints_optimized(
 
     for batch in dataset.iter_batches(batch_format="pandas",
                                       batch_size=step):
+        print("="*60)
+        print(f"Processing batch {batch_idx} of {total} samples")
+        
         batch_idx += 1
         out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
         buffer.extend(out_rows)
