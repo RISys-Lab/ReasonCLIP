@@ -186,7 +186,7 @@ def process_dataset_with_checkpoints_optimized(
         remaining_total = total
         print(f"🚫 Resume disabled, processing all {total} samples")
 
-    step = ray_batch_size or min(checkpoint_interval, 8192)  # 给个上限，防爆内存
+    step = ray_batch_size # 给个上限，防爆内存
     
     # 调整checkpoint逻辑以考虑已处理的样本
     processed = start_index  # 从已处理的数量开始计算
@@ -209,12 +209,6 @@ def process_dataset_with_checkpoints_optimized(
         processed += len(out_rows)
         current_batch_processed += len(out_rows)
 
-        if show_sample_output and out_rows:
-            print(f"\n⏺ Batch {batch_idx} sample (processed: {processed}/{total}):")
-            for r in out_rows[:max_sample_display]:
-                print("  »", r.get("generated_text", "")[:80].replace("\n"," "))
-            print("-" * 40)
-
         # flush 条件：到达checkpoint间隔或处理完所有数据
         if (processed >= next_ckpt and buffer) or processed == total:
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -223,6 +217,16 @@ def process_dataset_with_checkpoints_optimized(
             ray.data.from_items(buffer).repartition(1).write_parquet(path)
             print(f"💾 Checkpoint saved: {path}")
             print(f"📈 Progress: {processed}/{total} samples ({processed/total*100:.1f}%)")
+            
+            # 在保存checkpoint时显示最近的样本输出
+            if show_sample_output and buffer:
+                print(f"\n⏺ Recent samples (at checkpoint {processed}):")
+                # 显示buffer中最后几个样本
+                recent_samples = buffer[-max_sample_display:] if len(buffer) >= max_sample_display else buffer
+                for i, r in enumerate(recent_samples):
+                    print(f"  Sample {i+1}: {r.get('generated_text', '')[:80].replace('\n',' ')}")
+                print("-" * 40)
+            
             buffer.clear()
             next_ckpt += checkpoint_interval
 
