@@ -108,6 +108,10 @@ def parse_args():
     parser.add_argument("--ray_batch_size", type=int, default=None,
                        help="Ray batch size for processing")
     
+    # Resume/checkpoint parameters
+    parser.add_argument("--enable_resume", action="store_true",
+                       help="Enable resume from last checkpoint")
+    
     # Logging parameters
     parser.add_argument("--log_level", type=str, default="INFO", 
                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -139,7 +143,7 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
             ignore_reinit_error=True, 
             log_to_driver=log_to_driver, 
             num_cpus=num_cpus,
-            object_store_memory=128 * 1024**3
+            # object_store_memory=128 * 1024**3
         )
     
     # 强制启用进度条，即使在非交互式环境中
@@ -365,13 +369,19 @@ if __name__ == "__main__":
         output_dir_path = get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task)
         
         print("🌊 Using memory-optimized processing")
+        if args.enable_resume:
+            print("📋 Resume functionality enabled")
+        else:
+            print("📋 Resume functionality disabled")
+            
         process_dataset_with_checkpoints_optimized(
             dataset=ds,
             processor=processor,
             checkpoint_interval=checkpoint_interval,
             output_dir_path=output_dir_path,
             task=task,
-            ray_batch_size=args.ray_batch_size # 处理更大的批次以提高效率
+            ray_batch_size=args.ray_batch_size, # 处理更大的批次以提高效率
+            enable_resume=args.enable_resume
         )
 
     except Exception as e:

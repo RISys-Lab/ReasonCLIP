@@ -34,7 +34,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --concurrency 1 \
     --num_workers 4 \
     --log_level INFO \
-    --dtype auto
+    --dtype auto \
+    --enable_resume
 
 
 # remote
