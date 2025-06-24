@@ -1,6 +1,10 @@
 import os
 import ray
 from datasets import load_dataset
+import gc
+import datetime
+import re
+
 
 def create_batch_messages(image_paths, text_prompt):
     """Create batch messages for multiple images with same prompt"""
@@ -86,4 +90,49 @@ def process_dataset_with_checkpoints(
     print(f"Total processed samples: {len(all_results)}")
     
     return all_results
+
+def process_dataset_with_checkpoints_optimized(
+    dataset, processor, task,
+    checkpoint_interval, output_dir_path,
+    show_sample_output=True, max_sample_display=5,
+    ray_batch_size=None,
+):
+    import datetime, gc, os
+    os.makedirs(output_dir_path, exist_ok=True)
+
+    total = dataset.count()
+    step  = ray_batch_size or min(checkpoint_interval, 8192)  # 给个上限，防爆内存
+    next_ckpt = checkpoint_interval
+    processed = 0
+    buffer = []
+    batch_idx = 0
+
+    for batch in dataset.iter_batches(batch_format="pandas",
+                                      batch_size=step,
+                                      drop_empty_batches=True):
+        batch_idx += 1
+        out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
+        buffer.extend(out_rows)
+        processed += len(out_rows)
+
+        if show_sample_output and out_rows:
+            print(f"\n⏺ Batch {batch_idx} sample:")
+            for r in out_rows[:max_sample_display]:
+                print("  »", r.get("generated_text", "")[:80].replace("\n"," "))
+            print("-" * 40)
+
+        # flush 条件
+        if (processed >= next_ckpt and buffer) or processed == total:
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = os.path.join(output_dir_path,
+                                f"{task}_ckpt_{processed:07d}_{ts}")
+            ray.data.from_items(buffer).repartition(1).write_parquet(path)
+            print(f"💾 saved {path}")
+            buffer.clear()
+            next_ckpt += checkpoint_interval
+
+        del batch, out_rows
+        gc.collect()
+
+    print(f"✅ done: {processed}/{total}")
 

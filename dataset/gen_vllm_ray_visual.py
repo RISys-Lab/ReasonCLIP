@@ -7,7 +7,8 @@ from packaging.version import Version
 from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
 import argparse
-from dataset.dataset_utils import process_dataset_with_checkpoints
+from dataset.dataset_utils import process_dataset_with_checkpoints, process_dataset_with_checkpoints_optimized
+import gc
 
 from PIL import Image
 import logging
@@ -101,9 +102,11 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=os.cpu_count() // 2,
                        help="Number of workers for data loading")
     
-    # System parameters
+    # Ray parameters
     parser.add_argument("--ray_address", type=str, default=None,
                        help="Ray cluster address (None for local)")
+    parser.add_argument("--ray_batch_size", type=int, default=None,
+                       help="Ray batch size for processing")
     
     # Logging parameters
     parser.add_argument("--log_level", type=str, default="INFO", 
@@ -125,14 +128,19 @@ def parse_args():
 
 def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bool = True, num_cpus: int = None):
     """
-    Initialize Ray cluster. If address is None, start in single-node mode.
+    Initialize Ray cluster with memory optimizations.
     """
     if address:
         # 连接到现有集群时，不能指定 num_cpus 和 num_gpus
         ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
     else:
-        # 本地模式可以指定 num_cpus
-        ray.init(ignore_reinit_error=True, log_to_driver=log_to_driver, num_cpus=num_cpus)
+        # 本地模式可以指定 num_cpus，并限制对象存储内存
+        ray.init(
+            ignore_reinit_error=True, 
+            log_to_driver=log_to_driver, 
+            num_cpus=num_cpus,
+            object_store_memory=250 * 1024**3
+        )
     
     # 强制启用进度条，即使在非交互式环境中
     ray.data.DataContext.get_current().enable_progress_bars = True
@@ -224,6 +232,7 @@ def load_model(
         return processor(dataset)
 
     return handle
+
 
 def get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task):
     
@@ -355,12 +364,14 @@ if __name__ == "__main__":
         
         output_dir_path = get_output_dir(output_dir_path, parquet_dir_path, image_dir_path, task)
         
-        process_dataset_with_checkpoints(
+        print("🌊 Using memory-optimized processing")
+        process_dataset_with_checkpoints_optimized(
             dataset=ds,
             processor=processor,
             checkpoint_interval=checkpoint_interval,
             output_dir_path=output_dir_path,
-            task=task
+            task=task,
+            ray_batch_size=args.ray_batch_size # 处理更大的批次以提高效率
         )
 
     except Exception as e:
@@ -383,4 +394,7 @@ if __name__ == "__main__":
             print("CUDA cache cleared")
         except:
             pass
+        
+        # 最终垃圾回收
+        gc.collect()
         print("Cleanup completed.")
