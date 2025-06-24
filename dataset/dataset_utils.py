@@ -30,40 +30,41 @@ def create_batch_messages(image_paths, text_prompt):
 def get_last_processed_index(output_dir_path, task):
     """
     获取上次处理到的位置（已处理的样本总数）
-    通过检查checkpoint文件名中的数字来确定
+    通过检查checkpoint文件夹名中的数字来确定
+    只检查文件夹格式的checkpoint
     """
     if not os.path.exists(output_dir_path):
         print(f"Output directory {output_dir_path} does not exist, starting from beginning")
         return 0
     
-    # 查找所有checkpoint文件
-    checkpoint_pattern = os.path.join(output_dir_path, f"{task}_ckpt_*.parquet")
-    checkpoint_files = glob.glob(checkpoint_pattern)
+    # 查找所有checkpoint文件夹
+    checkpoint_pattern = os.path.join(output_dir_path, f"{task}_ckpt_*")
+    checkpoint_dirs = [d for d in glob.glob(checkpoint_pattern) if os.path.isdir(d)]
     
-    if not checkpoint_files:
-        print(f"No checkpoint files found in {output_dir_path}, starting from beginning")
+    if not checkpoint_dirs:
+        print(f"No checkpoint directories found in {output_dir_path}, starting from beginning")
         return 0
     
-    # 从文件名中提取已处理的样本数量
+    # 从文件夹名中提取已处理的样本数量
     max_processed = 0
     latest_checkpoint = None
     
-    for file_path in checkpoint_files:
-        filename = os.path.basename(file_path)
-        # 匹配格式: {task}_ckpt_{processed:07d}_{timestamp}.parquet
-        match = re.search(rf'{re.escape(task)}_ckpt_(\d+)_', filename)
+    for checkpoint_dir in checkpoint_dirs:
+        dir_name = os.path.basename(checkpoint_dir)
+        # 匹配格式: {task}_ckpt_{processed:07d}_{timestamp}
+        match = re.search(rf'{re.escape(task)}_ckpt_(\d+)_', dir_name)
         if match:
             processed_count = int(match.group(1))
             if processed_count > max_processed:
                 max_processed = processed_count
-                latest_checkpoint = file_path
+                latest_checkpoint = checkpoint_dir
     
     if max_processed > 0:
-        print(f"Found latest checkpoint: {latest_checkpoint}")
+        print(f"Found latest checkpoint directory: {latest_checkpoint}")
         print(f"Last processed index: {max_processed}")
         return max_processed
     else:
-        print("No valid checkpoint files found, starting from beginning")
+        print("No valid checkpoint directories found, starting from beginning")
         return 0
 
 
