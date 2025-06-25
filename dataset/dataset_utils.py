@@ -82,12 +82,11 @@ def get_dataset_slice_from_index(dataset, start_index, total_count=None):
     if start_index >= total_count:
         print(f"Start index {start_index} >= total count {total_count}, no data to process")
         return ray.data.from_items([])  # 返回空数据集
+
     
-    remaining_count = total_count - start_index
-    print(f"Skipping first {start_index} samples, processing remaining {remaining_count} samples")
-    
-    # 使用 skip 方法跳过已处理的数据
-    return dataset.skip(start_index)
+    _, tail = dataset.split_at_indices([start_index])
+    print(f"Skipping first {start_index} samples, processing remaining {total_count - start_index} samples")
+    return tail
 
 
 def process_dataset_with_checkpoints(
