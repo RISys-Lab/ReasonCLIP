@@ -12,6 +12,126 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 
 
+# 官方ImageNet prompt模板
+IMAGENET_TEMPLATES = [
+    "a bad photo of a {c}.",
+    "a photo of many {c}.",
+    "a sculpture of a {c}.",
+    "a photo of the hard to see {c}.",
+    "a low resolution photo of the {c}.",
+    "a rendering of a {c}.",
+    "graffiti of a {c}.",
+    "a bad photo of the {c}.",
+    "a cropped photo of the {c}.",
+    "a tattoo of a {c}.",
+    "the embroidered {c}.",
+    "a photo of a hard to see {c}.",
+    "a bright photo of a {c}.",
+    "a photo of a clean {c}.",
+    "a photo of a dirty {c}.",
+    "a dark photo of the {c}.",
+    "a drawing of a {c}.",
+    "a photo of my {c}.",
+    "the plastic {c}.",
+    "a photo of the cool {c}.",
+    "a close-up photo of a {c}.",
+    "a black and white photo of the {c}.",
+    "a painting of the {c}.",
+    "a painting of a {c}.",
+    "a pixelated photo of the {c}.",
+    "a sculpture of the {c}.",
+    "a bright photo of the {c}.",
+    "a cropped photo of a {c}.",
+    "a plastic {c}.",
+    "a photo of the dirty {c}.",
+    "a jpeg corrupted photo of a {c}.",
+    "a blurry photo of the {c}.",
+    "a photo of the {c}.",
+    "a good photo of the {c}.",
+    "a rendering of the {c}.",
+    "a {c} in a video game.",
+    "a photo of one {c}.",
+    "a doodle of a {c}.",
+    "a close-up photo of the {c}.",
+    "a photo of a {c}.",
+    "the origami {c}.",
+    "the {c} in a video game.",
+    "a sketch of a {c}.",
+    "a doodle of the {c}.",
+    "a origami {c}.",
+    "a low resolution photo of a {c}.",
+    "the toy {c}.",
+    "a rendition of the {c}.",
+    "a photo of the clean {c}.",
+    "a photo of a large {c}.",
+    "a rendition of a {c}.",
+    "a photo of a nice {c}.",
+    "a photo of a weird {c}.",
+    "a blurry photo of a {c}.",
+    "a cartoon {c}.",
+    "art of a {c}.",
+    "a sketch of the {c}.",
+    "a embroidered {c}.",
+    "a pixelated photo of a {c}.",
+    "itap of the {c}.",
+    "a jpeg corrupted photo of the {c}.",
+    "a good photo of a {c}.",
+    "a plushie {c}.",
+    "a photo of the nice {c}.",
+    "a photo of the small {c}.",
+    "a photo of the weird {c}.",
+    "the cartoon {c}.",
+    "art of the {c}.",
+    "a drawing of the {c}.",
+    "a photo of the large {c}.",
+    "a black and white photo of a {c}.",
+    "the plushie {c}.",
+    "a dark photo of a {c}.",
+    "itap of a {c}.",
+    "graffiti of the {c}.",
+    "a toy {c}.",
+    "itap of my {c}.",
+    "a photo of a cool {c}.",
+    "a photo of a small {c}.",
+    "a tattoo of the {c}."
+]
+
+def create_text_features(classnames, processor, model, device, use_amp=False):
+    """创建所有类别的文本特征，使用官方prompt模板"""
+    print(f"Computing text features for {len(classnames)} classes with {len(IMAGENET_TEMPLATES)} templates...")
+    
+    all_text_features = []
+    
+    # 为每个类别生成所有模板的prompt
+    for classname in tqdm(classnames, desc="Processing classes"):
+        class_prompts = [template.format(c=classname) for template in IMAGENET_TEMPLATES]
+        
+        # 批量处理当前类别的所有prompts
+        with torch.no_grad():
+            inputs = processor(text=class_prompts, return_tensors="pt", padding="max_length", max_length=77, truncation=True)
+            
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    text_features = model.get_text_features(inputs.input_ids.to(device))
+            else:
+                text_features = model.get_text_features(inputs.input_ids.to(device))
+            
+            # 归一化
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+            
+            # 对所有模板取平均（这是官方做法）
+            class_text_feature = text_features.mean(dim=0, keepdim=True)
+            class_text_feature /= class_text_feature.norm(dim=-1, keepdim=True)
+            
+            all_text_features.append(class_text_feature)
+    
+    # 拼接所有类别的特征
+    text_features = torch.cat(all_text_features, dim=0)  # [num_classes, feature_dim]
+    
+    print(f"✅ Text features shape: {text_features.shape}")
+    return text_features
+
+
 class ImageNetDataset(torch.utils.data.Dataset):
     """优化的ImageNet数据集类，支持快速批处理"""
     def __init__(self, ds, processor, device, max_samples=None, preload_images=False, num_workers=4):
@@ -155,22 +275,11 @@ def run_zero_shot_imagenet_wds_optimized(
     # 启用混合精度
     scaler = torch.cuda.amp.GradScaler() if use_amp else None
 
-    # 加载类名 & 构建文本特征（一次性计算）
+    # 加载类名 & 构建文本特征（使用官方prompt模板）
     classnames = [line.strip() for line in open("/home/muzammal/Projects/safe_proj/safe-clip/imagenet/imagenet_classes.txt")]
-    prompts = [f"a photo of a {name}" for name in classnames]
-
-    print("Computing text features...")
-    with torch.no_grad():
-        if 'clip' in model_id:
-            inputs = processor(text=prompts, return_tensors="pt", padding="max_length", max_length=77, truncation=True)
-            if use_amp:
-                with torch.cuda.amp.autocast():
-                    text_features = model.get_text_features(inputs.input_ids.to(device))
-            else:
-                text_features = model.get_text_features(inputs.input_ids.to(device))
-        else:
-            pass
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+    
+    print("🎯 Using official ImageNet prompt templates for consistent evaluation...")
+    text_features = create_text_features(classnames, processor, model, device, use_amp)
 
     # 加载数据集（使用优化的数据集类）
     ds = load_dataset("timm/imagenet-1k-wds", split=split, streaming=True)
@@ -223,18 +332,19 @@ def run_zero_shot_imagenet_wds_optimized(
             top5 += top5_batch
             total += batch_size_current
 
-    print(f"Zero-Shot {model_id} on ImageNet-WDS ({split}):")
+    print(f"Zero-Shot {model_id} on ImageNet-WDS ({split}) [Official Templates]:")
     print(f"Top-1 (R@1): {top1 / total * 100:.2f}%")
     print(f"Top-5 (R@5): {top5 / total * 100:.2f}%")
     print(f"Total samples: {total}")
     
     # 保存结果
     model_name = model_id.replace("/", "_")
-    with open(f"results_{model_name}_optimized.txt", "w") as f:
-        f.write(f"Zero-Shot {model_id} on ImageNet-WDS ({split}):\n")
+    with open(f"/home/muzammal/Projects/CLIP-R/eval/results/zeroshot_{model_name}.txt", "w") as f:
+        f.write(f"Zero-Shot {model_id} on ImageNet-WDS ({split}) [Official Templates]:\n")
         f.write(f"Top-1 (R@1): {top1 / total * 100:.2f}%\n")
         f.write(f"Top-5 (R@5): {top5 / total * 100:.2f}%\n")
         f.write(f"Total samples: {total}\n")
+        f.write(f"Used {len(IMAGENET_TEMPLATES)} official prompt templates\n")
         f.write(f"Batch size: {batch_size}, AMP: {use_amp}\n")
         f.write(f"Fast mode: {fast_mode}, Preload: {preload_images}\n")
 
@@ -251,8 +361,6 @@ def run_zero_shot_imagenet_wds(model_id="safeclip_vit-l_14", split="validation",
     print(f"Loading model: {model_id}")
 
     # 模型初始化
-
-
     if model_id == "safeclip_vit-l_14_336":
         print("Loading safeclip_vit-l_14_336 model")
         model = CLIPModel.from_pretrained(f'aimagelab/{model_id}')
@@ -266,17 +374,11 @@ def run_zero_shot_imagenet_wds(model_id="safeclip_vit-l_14", split="validation",
 
     model.to(device).eval()
 
-    # 加载类名 & 构建文本特征
+    # 加载类名 & 构建文本特征（使用官方prompt模板）
     classnames = [line.strip() for line in open("/home/muzammal/Projects/safe_proj/safe-clip/imagenet/imagenet_classes.txt")]
-    prompts = [f"a photo of a {name}" for name in classnames]
-
-    with torch.no_grad():
-        if 'clip' in model_id:
-            inputs = processor(text=prompts, return_tensors="pt", padding="max_length", max_length=77, truncation=True)
-            text_features = model.get_text_features(inputs.input_ids.to(device))
-        else:
-            pass
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+    
+    print("🎯 Using official ImageNet prompt templates...")
+    text_features = create_text_features(classnames, processor, model, device)
 
     # 加载 WDS 数据集（自动流式）
     ds = load_dataset("timm/imagenet-1k-wds", split=split, streaming=True)
@@ -305,32 +407,35 @@ def run_zero_shot_imagenet_wds(model_id="safeclip_vit-l_14", split="validation",
             top5 += (label in topk)
             total += 1
 
-    print(f"Zero-Shot {model_id} on ImageNet-WDS ({split}):")
+    print(f"Zero-Shot {model_id} on ImageNet-WDS ({split}) [Official Templates]:")
     print(f"Top-1 (R@1): {top1 / total * 100:.2f}%")
     print(f"Top-5 (R@5): {top5 / total * 100:.2f}%")
-    with open(f"results_{model_id}.txt", "w") as f:
-        f.write(f"Zero-Shot {model_id} on ImageNet-WDS ({split}):\n")
+    
+    model_name = model_id.replace("/", "_")
+    with open(f"/home/muzammal/Projects/CLIP-R/eval/results/zeroshot_{model_name}.txt", "w") as f:
+        f.write(f"Zero-Shot {model_id} on ImageNet-WDS ({split}) [Official Templates]:\n")
         f.write(f"Top-1 (R@1): {top1 / total * 100:.2f}%\n")
         f.write(f"Top-5 (R@5): {top5 / total * 100:.2f}%\n")
+        f.write(f"Used {len(IMAGENET_TEMPLATES)} official prompt templates\n")
 
 if __name__ == "__main__":
     # 使用优化版本 - 快速模式
-    print("🚀 Running optimized zero-shot evaluation with fast mode...")
+    print("🚀 Running optimized zero-shot evaluation with official prompt templates...")
     result = run_zero_shot_imagenet_wds_optimized(
         model_id="openai/clip-vit-large-patch14", 
         split="validation",
         batch_size=64,   # 更大的batch size
         num_workers=16,  # 更多worker进程
-        use_amp=True,    # 启用混合精度
+        use_amp=False,    # 启用混合精度
         fast_mode=True,  # 🔥 启用快速模式
         max_samples=None, # 评估完整数据集，或设置为1000来快速测试
-        device="cuda:3"  # 指定GPU设备
+        device="cuda:0"  # 指定GPU设备
     )
     
-    print(f"\n🎯 Final Results:")
+    print(f"\n🎯 Final Results (Official Templates):")
     print(f"Top-1: {result['top1_accuracy']:.2f}%")
     print(f"Top-5: {result['top5_accuracy']:.2f}%")
     print(f"Samples: {result['total_samples']}")
     
     # 原版本（保留兼容性）
-    # run_zero_shot_imagenet_wds(model_id="fesvhtr/clip_r_best_model_demo_0621_192211", split="validation")
+    # run_zero_shot_imagenet_wds(model_id="openai/clip-vit-large-patch14", split="validation")
