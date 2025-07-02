@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_cc12m_tb_00
+#SBATCH --job-name=gen_cc12m_tb_01
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4    
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_cc12m_tb_00.out
-#SBATCH --error=gen_cc12m_tb_00.err
+#SBATCH --output=gen_cc12m_tb_01.out
+#SBATCH --error=gen_cc12m_tb_01.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 

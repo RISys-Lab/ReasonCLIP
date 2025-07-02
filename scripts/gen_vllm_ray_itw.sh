@@ -14,7 +14,7 @@ export TOKENIZERS_PARALLELISM=false
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/QVQ-72B-Preview  \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/itw \
-    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_test.parquet \
+    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \
     --checkpoint_interval 100000 \
     --ray_batch_size 100000 \
@@ -22,7 +22,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --max_model_len 4096\
     --max_num_batched_tokens 40960 \
     --max_num_seqs 12 \
-    --max_tokens 2048 \
+    --max_tokens 4096 \
     --temperature 0.8 \
     --top_p 0.95 \
     --tensor_parallel_size 4 \
@@ -30,7 +30,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
     --trust_remote_code \
-    --task reason_itw_cls_visual \
+    --task reason_itw_cls_neg_visual \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
