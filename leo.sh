@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_cc12m_tb_01
+#SBATCH --job-name=gen_itw
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,10 +7,10 @@
 #SBATCH --gres=gpu:4    
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_cc12m_tb_01.out
-#SBATCH --error=gen_cc12m_tb_01.err
+#SBATCH --output=gen_itw.out
+#SBATCH --error=gen_itw.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  
 export NCCL_DEBUG=WARN
@@ -26,4 +26,4 @@ source $WORK/fmohamma/venvs/llm/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # run python
-bash ./scripts/gen_vllm_ray_visual.sh
+bash ./scripts/gen_vllm_ray_itw.sh
