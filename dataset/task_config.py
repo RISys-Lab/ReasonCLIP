@@ -380,7 +380,7 @@ class CC12MVisualTask:
             "raw_caption": row["raw_caption"],
         }
     
-class ReasonItwClassificationTask:
+class ReasonItwCSLVisualTask:
     
     def __init__(self, temperature, max_tokens, top_p):
         self.temperature = temperature

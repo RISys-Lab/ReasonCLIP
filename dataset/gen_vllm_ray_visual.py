@@ -328,9 +328,9 @@ if __name__ == "__main__":
                 max_tokens=args.max_tokens,
                 top_p=args.top_p,
             )
-        elif task == "reason_itw_classification":
-            from dataset.task_config import ReasonItwClassificationTask
-            task_config = ReasonItwClassificationTask(
+        elif task == "reason_itw_csl_visual":
+            from dataset.task_config import ReasonItwCSLVisualTask
+            task_config = ReasonItwCSLVisualTask(
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 top_p=args.top_p,
