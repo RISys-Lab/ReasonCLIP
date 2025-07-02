@@ -30,7 +30,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
     --trust_remote_code \
-    --task reason_itw_classification \
+    --task reason_itw_cls_visual \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
