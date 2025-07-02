@@ -2,29 +2,29 @@ from huggingface_hub import HfApi
 import os
 
 api = HfApi()
-for file in os.listdir("/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo"):
+for file in os.listdir("/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw"):
     if file.endswith(".parquet"):
         api.upload_file(
             path_in_repo=file, 
-            path_or_fileobj=f"/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/{file}",  
-            repo_id="fesvhtr/CLIPReasonPro200K", 
+            path_or_fileobj=f"/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/{file}",  
+            repo_id="fesvhtr/CLIPReasonItw", 
             repo_type="dataset" 
         )
 
-# from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download
 
-# # 设定仓库ID
-# repo_id = "Nicous/Hand-ICL"
+# 设定仓库ID
+# repo_id = "fesvhtr/CLIPReasonItw"
 
 # # 远程仓库中的文件路径
-# path_in_repo = "fulldata_2.tar.gz"
+# path_in_repo = "14_000000_000000.parquet"
 
 # # 指定本地存储路径（可选）
 # local_file = hf_hub_download(
 #     repo_id=repo_id, 
 #     filename=path_in_repo, 
 #     repo_type="dataset",
-#     local_dir="/home/muzammal/Projects/CLIP-R/data/"
+#     local_dir="/home/muzammal/Projects/CLIP-R/data/CLIPReasonItw"
 # )
 
 # print(f"文件已下载到: {local_file}")

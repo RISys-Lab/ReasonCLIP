@@ -335,6 +335,13 @@ if __name__ == "__main__":
                 max_tokens=args.max_tokens,
                 top_p=args.top_p,
             )
+        elif task == "reason_itw_cls_neg_visual":
+            from dataset.task_config import ReasonItwClsNegVisualTask
+            task_config = ReasonItwClsNegVisualTask(
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                top_p=args.top_p,
+            )
         else:
             raise ValueError(f"Invalid task: {task}")
 

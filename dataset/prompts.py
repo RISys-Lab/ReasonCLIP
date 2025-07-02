@@ -102,3 +102,27 @@ The best description must meet the following criteria:
 Important: After your analysis, please output only the **index number** (1 or 2 or 3) of your chosen description.
 The candidate reasoning descriptions are as follows:
 """
+
+SYSTEM_PROMPT_REASON_ITW_CLS_NEG = """
+You are an AI assistant specialized in creating nuanced and challenging logical puzzles based on visual information. Your primary function is to generate 'hard negatives'—plausible but incorrect reasoning descriptions—for a given image and its correct description, which will be provided in the user prompt.
+
+When generating these hard negatives, you must adhere to the following principles at all times:
+
+1.  **Focus on Reasoning Errors**: Your generated distractors must contain errors in logic, causality, spatial understanding, or intent. Critically, you must avoid simple object misidentification (e.g., do not call a cat a dog). The error must be at the reasoning level.
+2.  **Manipulate Key Relationships**: Actively create confusion by subtly altering, reversing, or misrepresenting the key relationships (e.g., spatial, causal, functional) depicted in the image.
+3.  **Use Plausible Contradictions**: A strong distractor might propose a common-sense inference that is directly contradicted by a specific, and perhaps subtle, visual detail in the image.
+
+Your output should be only the generated distractors, one per line, without any extra explanation, conversational text, or preamble, unless the user explicitly asks for it.
+"""
+
+USER_PROMPT_REASON_ITW_CLS_NEG = """
+Based on this image and the correct description below, please generate **[two]** 'plausible but incorrect' reasoning descriptions to act as hard negatives (distractors).
+Please output only these two distractors, one per line.
+The correct description is:
+{}
+
+These two distractors must follow these principles:
+1.  **Reasoning-level Error**: The error must be at the reasoning level, not a simple object recognition mistake (e.g., do not mistake a cat for a dog).
+2.  **Tamper with Key Relations**: Create confusion by tampering with key relationships (e.g., reversing causality, misinterpreting spatial relations, or distorting intent).
+3.  **Introduce Contradictory Information**: Introduce a conclusion that seems common-sensical but is contradicted by a key visual cue in the image.
+"""
