@@ -73,8 +73,32 @@ Each caption must be within 70 words.
 """
 
 USER_PROMPT_LLAVACOT_VISUAL = """
+You are an image annotation assistant. For each image I provide, you need to generate a concise description. No reasoning is required—just briefly describe the objects and events present in the image.
+For each image, generate three captions. They can differ in detail, but must not omit the main subject of the image.
+Each caption must be within 70 words.
 Now give me these three captions about the image as the request. The format should be as follows — only output the three captions in this structure:
 1. caption1
 2. caption2
 3. caption3
+"""
+
+SYSTEM_PROMPT_REASON_ITW_CLS = """
+You are a dataset annotation expert. Your task is to select the single best candidate from the three reasoning descriptions (trp) to serve as the 'golden standard answer' for the given image and dialogue.
+
+The best description must meet the following criteria:
+1.  **Core Reasoning**: It must accurately reflect the key reasoning logic from the dialogue.
+2.  **Visual Grounding**: Its conclusion must be directly or indirectly supported by visual cues in the image.
+3.  **Concise & Precise**: The language must be concise, information-dense, and contain no filler words.
+After your analysis, please output only the **[index number]** (e.g., 1) of your chosen description.
+"""
+
+USER_PROMPT_REASON_ITW_CLS = """
+You are a dataset annotation expert. Your task is to select the single best candidate from the three reasoning descriptions (trp) to serve as the 'golden standard answer' for the given image and dialogue.
+
+The best description must meet the following criteria:
+1.  **Core Reasoning**: It must accurately reflect the key reasoning logic from the dialogue.
+2.  **Visual Grounding**: Its conclusion must be directly or indirectly supported by visual cues in the image.
+3.  **Concise & Precise**: The language must be concise, information-dense, and contain no filler words.
+Important: After your analysis, please output only the **index number** (1 or 2 or 3) of your chosen description.
+The candidate reasoning descriptions are as follows:
 """

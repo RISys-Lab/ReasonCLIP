@@ -379,3 +379,84 @@ class CC12MVisualTask:
             "generated_text": row["generated_text"],
             "raw_caption": row["raw_caption"],
         }
+    
+class ReasonItwClassificationTask:
+    
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+        self.SYSTEM_PROMPT = SYSTEM_PROMPT_REASON_ITW_CLS
+        self.USER_PROMPT = USER_PROMPT_REASON_ITW_CLS
+
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        parquet_files = parquet_dir
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Dataset size: {ds.count()}")
+        
+        # 然后进行数据转换
+        def _extract_fields(row):
+            # image as path
+            return {
+                "id": row["id"],
+                "image_path": row["image_path"],
+                "trp": row["trp"],
+            }
+        
+        ds = ds.map(_extract_fields)
+        print("="*60)
+        
+        print(ds.schema())  # {'id': str, 'image_path': str, 'trp': str}
+        return ds
+
+    def preprocess(self, row):
+        from PIL import Image
+        image = Image.open(row["image_path"])
+        image = image.convert('RGB')
+        trp = row["trp"]
+        trps = ""
+        for i in range(len(trp)):
+            trps += f"{i+1}: {trp[i]}\n"
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": self.USER_PROMPT + "\n" + trps},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "trp": row["trp"],
+            "generated_text": row["generated_text"],
+        }
+    
