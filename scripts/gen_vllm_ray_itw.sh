@@ -12,7 +12,7 @@ export TOKENIZERS_PARALLELISM=false
 # export CUDA_VISIBLE_DEVICES=2
 
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/QVQ-72B-Preview  \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/itw \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Xkev-LLaVA-CoT-100k/ \

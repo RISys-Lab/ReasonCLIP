@@ -496,29 +496,26 @@ class ReasonItwClsNegVisualTask:
             return {
                 "id": row["id"],
                 "image_path": row["image_path"],
-                "trp": row["trp"],
+                "best_trp": row['best_trp'],
             }
         
         ds = ds.map(_extract_fields)
         print("="*60)
         
-        print(ds.schema())  # {'id': str, 'image_path': str, 'trp': str}
+        print(ds.schema())
         return ds
 
     def preprocess(self, row):
         from PIL import Image
         image = Image.open(row["image_path"])
         image = image.convert('RGB')
-        trp = row["trp"]
-        trps = ""
-        for i in range(len(trp)):
-            trps += f"{i+1}: {trp[i]}\n"
+        best_trp = row["best_trp"]
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": self.USER_PROMPT + "\n" + trps},
+                    {"type": "text", "text": self.USER_PROMPT + "\n" + best_trp},
                     {"type": "image", "image": image}
                 ]
             },
@@ -536,6 +533,6 @@ class ReasonItwClsNegVisualTask:
         return {
             "id": row["id"],
             "image_path": row["image_path"],
-            "trp": row["trp"],
+            "best_trp": row["best_trp"],
             "generated_text": row["generated_text"],
         }
