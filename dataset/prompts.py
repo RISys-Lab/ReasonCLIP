@@ -129,3 +129,6 @@ The output length should be in the similar length as the correct description. Pl
 
 The correct reasoningdescription you will be given is:
 """
+
+REASON_CLS_PROMPT_DICT = {
+}
