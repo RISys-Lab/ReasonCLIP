@@ -536,3 +536,71 @@ class ReasonItwClsNegVisualTask:
             "best_trp": row["best_trp"],
             "generated_text": row["generated_text"],
         }
+
+class Cyber1Task:
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+        self.SYSTEM_PROMPT = SYSTEM_PROMPT_LLAVACOT
+        self.USER_PROMPT = USER_PROMPT_LLAVACOT
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        parquet_files = [
+            os.path.join(parquet_dir, fname)
+            for fname in os.listdir(parquet_dir) 
+            if fname.endswith(".parquet")
+        ]
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Original dataset size: {ds.count()}")
+        
+        # 然后进行数据转换
+        def _extract_fields(row):
+            return {
+                "id": row["id"],
+                "conversations": str(row["conversations"]),
+            }
+        
+        ds = ds.map(_extract_fields)
+        print("="*60)
+        
+        print(ds.schema())  # {'id': str, 'conversations': str}
+        return ds
+
+    def preprocess(self, row):
+        system_prompt = self.SYSTEM_PROMPT
+        user_prompt = self.USER_PROMPT
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user", 
+                "content": user_prompt + "\n" + row["conversations"]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+    def postprocess(self, row):
+        return {
+            "id": row["id"],
+            "generated_text": row["generated_text"],
+        }

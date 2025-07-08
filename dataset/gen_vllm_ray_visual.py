@@ -307,6 +307,13 @@ if __name__ == "__main__":
                 top_p=args.top_p,
                 top_k=args.top_k,
             )
+        elif task == "cyber1":
+            from dataset.task_config import Cyber1Task
+            task_config = Cyber1Task(
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                top_p=args.top_p,
+            )
         elif task == "llavacot_visual":
             from dataset.task_config import LlavaCotVisualTask
             task_config = LlavaCotVisualTask(
