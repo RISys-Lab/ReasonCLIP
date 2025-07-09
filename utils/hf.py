@@ -1,15 +1,15 @@
 from huggingface_hub import HfApi
 import os
 
-# api = HfApi()
-# for file in os.listdir("/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw"):
-#     if file.endswith(".parquet"):
-#         api.upload_file(
-#             path_in_repo=file, 
-#             path_or_fileobj=f"/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/{file}",  
-#             repo_id="fesvhtr/CLIPReasonItw", 
-#             repo_type="dataset" 
-#         )
+api = HfApi()
+for file in os.listdir("/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw"):
+    if file.endswith(".parquet"):
+        api.upload_file(
+            path_in_repo=file, 
+            path_or_fileobj=f"/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/{file}",  
+            repo_id="fesvhtr/CLIPReasonItw", 
+            repo_type="dataset" 
+        )
 
 from huggingface_hub import hf_hub_download
 

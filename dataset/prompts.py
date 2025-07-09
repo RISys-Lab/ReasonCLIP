@@ -123,6 +123,12 @@ These two distractors must follow these principles:
 1.  **Reasoning-level Error**: The error must be at the reasoning level, not a simple object recognition mistake (e.g., do not mistake a cat for a dog).
 2.  **Tamper with Key Relations**: Create confusion by tampering with key relationships (e.g., reversing causality, misinterpreting spatial relations, or distorting intent).
 3.  **Introduce Contradictory Information**: Introduce a conclusion that seems common-sensical but is contradicted by a key visual cue in the image.
+
+Tips:
+1. Your distractors must involve logical reasoning and inference, rather than simply presenting obviously incorrect factual information.
+2. Your distractors should be plausible but incorrect, and should be able to confuse human annotators.
+3. The distractive statement should be fundamentally grounded in the visual content, with the provided reasoning text serving only as contextual support.
+
 The output length should be in the similar length as the correct description. Please output only these two distractors, one per line, like this:
 1. Distractor 1
 2. Distractor 2
