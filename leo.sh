@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=gen_cc12m_00
-#SBATCH --time=24:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
-#SBATCH --qos=normal
+#SBATCH --qos=boost_qos_lprod
 #SBATCH --output=gen_cc12m_00.out
 #SBATCH --error=gen_cc12m_00.err
 #SBATCH --account=EUHPC_R04_192

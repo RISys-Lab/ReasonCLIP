@@ -4,8 +4,9 @@
 # Chunk Number Update Script
 # =============================================================================
 # 功能: 批量更新作业脚本中的chunk编号
+# 使用方法: ./update_chunk.sh <旧chunk号> <新chunk号> [--dry-run]
 # 使用方法: ./update_chunk.sh <旧chunk号> <新chunk号>
-# 例如: ./update_chunk.sh 00 01
+# 例如: ./update_chunk.sh 00 01 --dry-run
 # =============================================================================
 
 set -e  # 遇到错误时立即退出
