@@ -18,10 +18,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
     --checkpoint_interval 100000 \
     --ray_batch_size 100000 \
-    --batch_size 72 \
+    --batch_size 64 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 10240 \
-    --max_num_seqs 72 \
+    --max_num_batched_tokens 98304 \
+    --max_num_seqs 64 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
