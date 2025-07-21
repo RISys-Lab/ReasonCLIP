@@ -5,8 +5,8 @@ from tqdm import tqdm
 from pathlib import Path
 
 # Read parquet file
-# parquet_file = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet"
-parquet_file = "/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet"
+parquet_file = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet"
+# parquet_file = "/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/llavacot_test_with_best_trp.parquet"
 df = pd.read_parquet(parquet_file)
 
 print(f"DataFrame shape: {df.shape}")
