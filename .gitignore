@@ -180,6 +180,6 @@ weights/
 data/
 outputs/
 eval/results/
-
+eval/results_clip/
 *.err
 *.out
