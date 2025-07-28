@@ -161,84 +161,99 @@ def process_dataset_with_checkpoints_optimized(
     show_sample_output=True, max_sample_display=3,
     ray_batch_size=None, enable_resume=False
 ):
-    import datetime, gc, os
+    import datetime, gc, os, math
     os.makedirs(output_dir_path, exist_ok=True)
 
-    total = dataset.count()
-    
-    # 断点续传逻辑
+    # -------- 1) 计算全量与断点 --------
+    total_all = dataset.count()
     start_index = 0
     if enable_resume:
-        print("="*60)
+        print("=" * 60)
         print("Resuming from last checkpoint")
         start_index = get_last_processed_index(output_dir_path, task)
-        if start_index > 0:
-            dataset = get_dataset_slice_from_index(dataset, start_index, total)
-            # 重新计算剩余的数据量
-            remaining_total = total - start_index
-            print(f"🔄 Resuming from index {start_index}")
-            print(f"📊 Remaining samples to process: {remaining_total}")
-        else:
-            remaining_total = total
-            print(f"🆕 Starting fresh processing")
-            print(f"📊 Total samples to process: {remaining_total}")
     else:
-        remaining_total = total
-        print(f"🚫 Resume disabled, processing all {total} samples")
+        print("🚫 Resume disabled")
 
-    step = ray_batch_size # 给个上限，防爆内存
-    
-    # 调整checkpoint逻辑以考虑已处理的样本
-    processed = start_index  # 从已处理的数量开始计算
+    # 切掉已经处理的部分
+    if start_index > 0:
+        dataset = get_dataset_slice_from_index(dataset, start_index, total_all)
+        print(f"🔄 Resuming from index {start_index}")
+    else:
+        print("🆕 Starting fresh")
+
+    # 剩余要处理的数量 & 真正终点（全局索引）
+    tail_count = dataset.count()
+    end_index = start_index + tail_count
+
+    print(f"📊 Remaining samples to process: {tail_count}")
+    print(f"📊 Global end index: {end_index}/{total_all}")
+
+    # -------- 2) 初始化计数与 ckpt 位置 --------
+    step = ray_batch_size  # None 或者整数
+    processed = start_index            # 全局已处理计数
     next_ckpt = ((start_index // checkpoint_interval) + 1) * checkpoint_interval
-    
+
     buffer = []
     batch_idx = 0
-    current_batch_processed = 0  # 当前会话处理的样本数
+    current_session_processed = 0
 
-    print("="*60)
-    print(f"Next checkpoint at: {next_ckpt} samples")
+    print("=" * 60)
+    print(f"Next checkpoint at: {next_ckpt}")
     print(f"Checkpoint interval: {checkpoint_interval}")
-    
 
-    for batch in dataset.iter_batches(batch_format="pandas",
-                                      batch_size=step):
-        print("="*60)
-        print(f"Processing batch {batch_idx} of {total} samples")
-        
+    # 小工具：flush 写盘
+    def flush_buffer():
+        nonlocal buffer, processed
+        if not buffer:
+            return
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(output_dir_path, f"{task}_ckpt_{processed:07d}_{ts}")
+        ray.data.from_items(buffer).repartition(1).write_parquet(path)
+        print(f"💾 Checkpoint saved: {path}")
+        pct = (processed / end_index) * 100 if end_index else 0
+        print(f"📈 Progress: {processed}/{end_index} ({pct:.1f}%)")
+
+        if show_sample_output:
+            print("\n⏺ Recent samples:")
+            recent = buffer[-max_sample_display:] if len(buffer) >= max_sample_display else buffer
+            for i, r in enumerate(recent, 1):
+                txt = r.get('generated_text', '')
+                print(f"  Sample {i}: {txt[:80].replace('\\n',' ')}")
+            print("-" * 40)
+
+        buffer.clear()
+
+    # -------- 3) 主循环 --------
+    for batch in dataset.iter_batches(batch_format="pandas", batch_size=step):
+        print("=" * 60)
+        print(f"Processing batch {batch_idx} "
+              f"({processed - start_index}/{tail_count} this run)")
         batch_idx += 1
+
         out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
         buffer.extend(out_rows)
         processed += len(out_rows)
-        current_batch_processed += len(out_rows)
+        current_session_processed += len(out_rows)
 
-        # flush 条件：到达checkpoint间隔或处理完所有数据
-        if (processed >= next_ckpt and buffer) or processed == total:
-            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = os.path.join(output_dir_path,
-                                f"{task}_ckpt_{processed:07d}_{ts}")
-            ray.data.from_items(buffer).repartition(1).write_parquet(path)
-            print(f"💾 Checkpoint saved: {path}")
-            print(f"📈 Progress: {processed}/{total} samples ({processed/total*100:.1f}%)")
-            
-            # 保存成功后再显示样本（作为验证）
-            if show_sample_output and buffer:
-                print(f"\n⏺ Recent samples:")
-                recent_samples = buffer[-max_sample_display:] if len(buffer) >= max_sample_display else buffer
-                for i, r in enumerate(recent_samples):
-                    print(f"  Sample {i+1}: {r.get('generated_text', '')[:80].replace('\n',' ')}")
-                print("-" * 40)
-            
-            buffer.clear()
+        # 触发条件：到达 ckpt 或到达真正终点
+        if (processed >= next_ckpt and buffer) or processed == end_index:
+            flush_buffer()
             next_ckpt += checkpoint_interval
 
         del batch, out_rows
         gc.collect()
 
-    print("="*60)
-    print(f"✅ Processing completed!")
-    print(f"📊 Total processed in this session: {current_batch_processed}")
-    print(f"📊 Total processed overall: {processed}/{total}")
+    # -------- 4) 兜底 flush --------
+    if buffer:
+        print("🧹 Final flush...")
+        flush_buffer()
+
+    # -------- 5) 收尾打印 --------
+    print("=" * 60)
+    print("✅ Processing completed!")
+    print(f"📊 Total processed in this session: {current_session_processed}")
+    print(f"📊 Total processed overall: {processed}/{end_index}")
     if start_index > 0:
         print(f"🔄 Resumed from index: {start_index}")
+
 
