@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=gen_cc12m_02
-#SBATCH --time=4-00:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
-#SBATCH --qos=boost_qos_lprod
+#SBATCH --qos=normal
 #SBATCH --output=gen_cc12m_02.out
 #SBATCH --error=gen_cc12m_02.err
 #SBATCH --account=EUHPC_R04_192
@@ -31,16 +31,16 @@ python -u dataset/gen_vllm_ray_visual.py \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_02.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
-    --checkpoint_interval 100000 \
-    --ray_batch_size 100000 \
-    --batch_size 64 \
+    --checkpoint_interval 50000 \
+    --ray_batch_size 50000 \
+    --batch_size 16 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 98304 \
-    --max_num_seqs 64 \
+    --max_num_batched_tokens 24800 \
+    --max_num_seqs 16 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
