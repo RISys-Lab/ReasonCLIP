@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_cc12m_02
+#SBATCH --job-name=gen_cc12m_00
 #SBATCH --time=4-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=boost_qos_lprod
-#SBATCH --output=gen_cc12m_02.out
-#SBATCH --error=gen_cc12m_02.err
+#SBATCH --output=gen_cc12m_00.out
+#SBATCH --error=gen_cc12m_00.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -29,7 +29,7 @@ cd $WORK/fmohamma/CLIP-R/
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb \
-    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_02.parquet \
+    --parquet_dir_path $WORK/fmohamma/CLIP-R/data/cc12m-anno/cc12m_chunk_00.parquet \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/cc12m/ \
     --checkpoint_interval 100000 \
     --ray_batch_size 100000 \
