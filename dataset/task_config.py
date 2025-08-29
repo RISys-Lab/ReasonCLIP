@@ -96,8 +96,8 @@ class HandVisualTask:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT_HAND_VISUAL
-        self.USER_PROMPT = USER_PROMPT_HAND_VISUAL
+        self.SYSTEM_PROMPT = SYSTEM_PROMPT_HAND_VISUAL_ADVICE
+        self.USER_PROMPT = USER_PROMPT_HAND_VISUAL_ADVICE
     def prepare_dataset(self, parquet_dir, image_dir):
         # 获取文件夹中所有图片文件
         image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
