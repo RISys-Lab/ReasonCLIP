@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_hand_visual.out
-#SBATCH --error=gen_hand_visual.err
+#SBATCH --output=gen_hand_visual_fulldata.out
+#SBATCH --error=gen_hand_visual_fulldata.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
