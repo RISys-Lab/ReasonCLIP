@@ -99,47 +99,54 @@ class HandVisualTask:
         self.SYSTEM_PROMPT = SYSTEM_PROMPT_HAND_VISUAL_ADVICE
         self.USER_PROMPT = USER_PROMPT_HAND_VISUAL_ADVICE
     def prepare_dataset(self, parquet_dir, image_dir):
-        # 获取文件夹中所有图片文件
+        # 递归获取所有子文件夹中的图片文件
         image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
         image_files = []
         
-        for fname in os.listdir(image_dir):
-            if any(fname.lower().endswith(ext) for ext in image_extensions):
-                image_files.append(fname)
+        # 递归遍历所有子文件夹
+        for root, dirs, files in os.walk(image_dir):
+            for fname in files:
+                if any(fname.lower().endswith(ext) for ext in image_extensions):
+                    # 存储相对于image_dir的相对路径和完整的绝对路径
+                    rel_path = os.path.relpath(os.path.join(root, fname), image_dir)
+                    abs_path = os.path.abspath(os.path.join(root, fname))
+                    image_files.append((fname, rel_path, abs_path))
         
-        print(f"Found {len(image_files)} image files in {image_dir}")
+        print(f"Found {len(image_files)} image files in {image_dir} and its subdirectories")
         
         # 根据图片名筛选，使用提供的正则规则
-        filtered_images = []
-        for img_name in image_files:
-            try:
-                # 从图片名中提取id: img_name.split('.')[0].split('_')[-1]
-                id_str = img_name.split('.')[0].split('_')[-1]
-                id_num = int(id_str)
+        # filtered_images = []
+        # for img_name in image_files:
+        #     try:
+        #         # 从图片名中提取id: img_name.split('.')[0].split('_')[-1]
+        #         id_str = img_name.split('.')[0].split('_')[-1]
+        #         id_num = int(id_str)
                 
-                # 筛选条件：如果 id < 30 或 id > 530，则跳过
-                if id_num < 30 or id_num > 530:
-                    continue
+        #         # 筛选条件：如果 id < 30 或 id > 530，则跳过
+        #         if id_num < 30 or id_num > 530:
+        #             continue
                 
-                filtered_images.append(img_name)
-            except (ValueError, IndexError):
-                # 如果无法提取id或转换为整数，跳过此文件
-                continue
+        #         filtered_images.append(img_name)
+        #     except (ValueError, IndexError):
+        #         # 如果无法提取id或转换为整数，跳过此文件
+        #         continue
         
-        print("="*60)
-        print(f"Original image count: {len(image_files)}")
-        print(f"After filtering (id 30-530): {len(filtered_images)}")
+        # print("="*60)
+        # print(f"Original image count: {len(image_files)}")
+        # print(f"After filtering (id 30-530): {len(filtered_images)}")
+        
+        # 暂时使用所有图片（注释掉筛选逻辑）
+        filtered_images = image_files
         
         # 准备数据列表
         data_list = []
-        for img_name in filtered_images:
-            image_path = os.path.abspath(os.path.join(image_dir, img_name))
+        for img_name, rel_path, abs_path in filtered_images:
             # id就是图片名（不包含扩展名）
             img_id = img_name.split('.')[0]
             
             data_list.append({
                 "id": img_id,
-                "image_path": image_path,
+                "image_path": abs_path,  # 使用绝对路径
             })
         
         # 使用 ray.data.from_items 创建 Ray Dataset
