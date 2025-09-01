@@ -95,8 +95,8 @@ def parse_args():
                        help="Type of dataset to process")
     parser.add_argument("--parquet_dir_path", type=str, default=None,
                        help="Path to parquet data (file pattern or directory)")
-    parser.add_argument("--image_dir_path", type=str, default=None,
-                       help="Path to image data directory")
+    parser.add_argument("--image_dir_path", type=str, nargs="+", default=None,
+                   help="Paths to image data directories")
     parser.add_argument("--concurrency", type=int, default=2,
                        help="Number of vLLM instances to run in parallel")
     parser.add_argument("--num_workers", type=int, default=os.cpu_count() // 2,

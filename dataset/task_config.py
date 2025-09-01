@@ -99,41 +99,65 @@ class HandVisualTask:
         self.SYSTEM_PROMPT = SYSTEM_PROMPT_HAND_VISUAL_ADVICE
         self.USER_PROMPT = USER_PROMPT_HAND_VISUAL_ADVICE
     def prepare_dataset(self, parquet_dir, image_dir):
-        # 递归获取所有子文件夹中的图片文件
+        # 获取图片文件
         image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
         image_files = []
         
-        # 递归遍历所有子文件夹
-        for root, dirs, files in os.walk(image_dir):
-            for fname in files:
-                if any(fname.lower().endswith(ext) for ext in image_extensions):
-                    # 存储相对于image_dir的相对路径和完整的绝对路径
-                    rel_path = os.path.relpath(os.path.join(root, fname), image_dir)
-                    abs_path = os.path.abspath(os.path.join(root, fname))
-                    image_files.append((fname, rel_path, abs_path))
+        # 支持单个目录或目录列表
+        if isinstance(image_dir, list):
+            image_dirs = image_dir
+        else:
+            image_dirs = [image_dir]
         
-        print(f"Found {len(image_files)} image files in {image_dir} and its subdirectories")
+        # 对每个目录执行图片查找逻辑
+        for current_dir in image_dirs:
+            print(f"Processing directory: {current_dir}")
+            
+            # 首先检查根目录是否有图片文件
+            root_files = os.listdir(current_dir)
+            root_images = [f for f in root_files if any(f.lower().endswith(ext) for ext in image_extensions)]
+            
+            if root_images:
+                # 如果根目录有图片，只使用根目录的图片
+                print(f"  Found images in root directory, using only root level images")
+                for fname in root_images:
+                    abs_path = os.path.abspath(os.path.join(current_dir, fname))
+                    image_files.append((fname, fname, abs_path))
+            else:
+                # 如果根目录没有图片，递归遍历所有子文件夹
+                print(f"  No images in root directory, searching subdirectories recursively")
+                for root, dirs, files in os.walk(current_dir):
+                    for fname in files:
+                        if any(fname.lower().endswith(ext) for ext in image_extensions):
+                            # 存储相对于current_dir的相对路径和完整的绝对路径
+                            rel_path = os.path.relpath(os.path.join(root, fname), current_dir)
+                            abs_path = os.path.abspath(os.path.join(root, fname))
+                            image_files.append((fname, rel_path, abs_path))
+            
+            print(f"  Found {len([f for f in image_files if f[2].startswith(os.path.abspath(current_dir))])} images in {current_dir}")
+        
+        print(f"Found {len(image_files)} image files total from all directories")
         
         # 根据图片名筛选，使用提供的正则规则
-        # filtered_images = []
-        # for img_name in image_files:
-        #     try:
-        #         # 从图片名中提取id: img_name.split('.')[0].split('_')[-1]
-        #         id_str = img_name.split('.')[0].split('_')[-1]
-        #         id_num = int(id_str)
+        filtered_images = []
+        for img_name in image_files:
+            try:
+                # 从图片名中提取id: img_name.split('.')[0].split('_')[-1]
+                id_str = img_name.split('.')[0].split('_')[-1]
+                id_num = int(id_str)
                 
-        #         # 筛选条件：如果 id < 30 或 id > 530，则跳过
-        #         if id_num < 30 or id_num > 530:
-        #             continue
+                # 筛选条件：如果 id < 30 或 id > 530，则跳过
+                if id_num < 30 or id_num > 530:
+                    continue
                 
-        #         filtered_images.append(img_name)
-        #     except (ValueError, IndexError):
-        #         # 如果无法提取id或转换为整数，跳过此文件
-        #         continue
+                filtered_images.append(img_name)
+            except (ValueError, IndexError):
+                # 如果无法提取id或转换为整数，跳过此文件
+                continue
         
-        # print("="*60)
-        # print(f"Original image count: {len(image_files)}")
-        # print(f"After filtering (id 30-530): {len(filtered_images)}")
+        print("="*60)
+        print(f"Original image count: {len(image_files)}")
+        print(f"After filtering (id 30-530): {len(filtered_images)}")
         
         # 暂时使用所有图片（注释掉筛选逻辑）
         filtered_images = image_files
@@ -198,6 +222,7 @@ class LlavaCotVisualTask:
         self.SYSTEM_PROMPT = SYSTEM_PROMPT_LLAVACOT_VISUAL
         self.USER_PROMPT = USER_PROMPT_LLAVACOT_VISUAL
     def prepare_dataset(self, parquet_dir, image_dir):
+        image_dir = image_dir[0]
         parquet_files = [
             os.path.join(parquet_dir, fname)
             for fname in os.listdir(parquet_dir) 
@@ -318,6 +343,7 @@ class CC12MVisualTask:
 
 
     def prepare_dataset(self, parquet_dir, image_dir):
+        image_dir = image_dir[0]
         # 直接读取parquet文件, each 2 million rows
         parquet_files = parquet_dir
         
@@ -541,73 +567,5 @@ class ReasonItwClsNegVisualTask:
             "id": row["id"],
             "image_path": row["image_path"],
             "best_trp": row["best_trp"],
-            "generated_text": row["generated_text"],
-        }
-
-class Cyber1Task:
-    def __init__(self, temperature, max_tokens, top_p):
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.top_p = top_p
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT_LLAVACOT
-        self.USER_PROMPT = USER_PROMPT_LLAVACOT
-
-    def prepare_dataset(self, parquet_dir, image_dir):
-        parquet_files = [
-            os.path.join(parquet_dir, fname)
-            for fname in os.listdir(parquet_dir) 
-            if fname.endswith(".parquet")
-        ]
-        
-        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
-        try:
-            ds = ray.data.read_parquet(parquet_files)
-        except Exception as e:
-            print(f"Direct parquet reading failed: {e}")
-            raw_ds = load_dataset(
-                "parquet",
-                data_files={"train": parquet_files}, 
-            )
-            # 转换为 pandas DataFrame 再转换为 Ray Dataset
-            df = raw_ds['train'].to_pandas()
-            ds = ray.data.from_pandas(df)
-        
-        print("="*60)
-        print(f"Original dataset size: {ds.count()}")
-        
-        # 然后进行数据转换
-        def _extract_fields(row):
-            return {
-                "id": row["id"],
-                "conversations": str(row["conversations"]),
-            }
-        
-        ds = ds.map(_extract_fields)
-        print("="*60)
-        
-        print(ds.schema())  # {'id': str, 'conversations': str}
-        return ds
-
-    def preprocess(self, row):
-        system_prompt = self.SYSTEM_PROMPT
-        user_prompt = self.USER_PROMPT
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user", 
-                "content": user_prompt + "\n" + row["conversations"]
-            },
-        ]
-        return {
-            "messages": messages,
-            "sampling_params": {
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-            },
-        }
-    def postprocess(self, row):
-        return {
-            "id": row["id"],
             "generated_text": row["generated_text"],
         }
