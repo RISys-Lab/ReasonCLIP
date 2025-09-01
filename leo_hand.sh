@@ -29,9 +29,9 @@ cd $WORK/fmohamma/CLIP-R/
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata \
-    --image_dir_path $WORK/CLIP-R/data/Nicous-Hand-ICL/fulldata \
-                 $WORK/CLIP-R/data/Nicous-Hand-ICL/fulldata_2 \
-                 $WORK/CLIP-R/data/Nicous-Hand-ICL/fulldata_3 \
+    --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
+                 $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_2 \
+                 $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_3 \
     --checkpoint_interval 100000 \
     --ray_batch_size 100000 \
     --batch_size 64 \
