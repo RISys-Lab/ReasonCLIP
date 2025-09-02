@@ -162,7 +162,7 @@ class HandVisualTask:
         print(f"After filtering (id 30-530): {len(filtered_images)}")
         
         # 暂时使用所有图片（注释掉筛选逻辑）
-        filtered_images = image_files
+        # filtered_images = image_files
         
         # 准备数据列表
         data_list = []
