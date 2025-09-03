@@ -392,7 +392,7 @@ if __name__ == "__main__":
             checkpoint_interval=checkpoint_interval,
             output_dir_path=output_dir_path,
             task=task,
-            ray_batch_size=args.ray_batch_size, # 处理更大的批次以提高效率
+            ray_batch_size=args.ray_batch_size,
             enable_resume=args.enable_resume
         )
 

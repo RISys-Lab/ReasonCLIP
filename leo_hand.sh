@@ -2,15 +2,15 @@
 #SBATCH --job-name=gen_hand_visual
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=gen_hand_visual_fulldata.out
 #SBATCH --error=gen_hand_visual_fulldata.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  
 export NCCL_DEBUG=WARN
@@ -31,16 +31,16 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
                  $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_2 \
                  $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_3 \
-    --checkpoint_interval 80000 \
+    --checkpoint_interval 60000 \
     --ray_batch_size 2000 \
-    --batch_size 64 \
+    --batch_size 16 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 98304 \
-    --max_num_seqs 64 \
+    --max_num_batched_tokens 32768 \
+    --max_num_seqs 16 \
     --max_tokens 1024 \
     --temperature 0.8 \
     --top_p 0.95 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.9 \
     --enable_chunked_prefill \
