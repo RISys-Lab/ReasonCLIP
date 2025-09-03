@@ -188,6 +188,8 @@ def process_dataset_with_checkpoints_optimized(
     print(f"📊 Remaining samples to process: {tail_count}")
     print(f"📊 Global end index: {end_index}/{total_all}")
 
+    # change to gen_ds
+    gen_ds = processor(dataset)
     # -------- 2) 初始化计数与 ckpt 位置 --------
     step = ray_batch_size  # None 或者整数
     processed = start_index            # 全局已处理计数
@@ -224,13 +226,16 @@ def process_dataset_with_checkpoints_optimized(
         buffer.clear()
 
     # -------- 3) 主循环 --------
-    for batch in dataset.iter_batches(batch_format="pandas", batch_size=step):
+    # change to gen_ds
+    for batch in gen_ds.iter_batches(batch_format="pandas", batch_size=step):
         print("=" * 60)
         print(f"Processing batch {batch_idx} "
               f"({processed - start_index}/{tail_count} this run)")
         batch_idx += 1
 
-        out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
+        # change to gen_ds
+        # out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
+        out_rows = batch.to_dict(orient="records")
         buffer.extend(out_rows)
         processed += len(out_rows)
         current_session_processed += len(out_rows)

@@ -16,7 +16,8 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
-
+export RAY_TMPDIR="$WORK/fmohamma/ray_logs/${SLURM_JOB_ID}"
+mkdir -p "$RAY_TMPDIR"
 
 # activate env 
 module load profile/deeplrn
@@ -32,8 +33,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
                  $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_2 \
                  $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_3 \
-    --checkpoint_interval 100000 \
-    --ray_batch_size 100000 \
+    --checkpoint_interval 80000 \
+    --ray_batch_size 2000 \
     --batch_size 64 \
     --max_model_len 2048 \
     --max_num_batched_tokens 98304 \
@@ -50,4 +51,5 @@ python -u dataset/gen_vllm_ray_visual.py \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
-    --dtype auto
+    --dtype auto \
+    --enable_resume

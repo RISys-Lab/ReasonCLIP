@@ -136,10 +136,11 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
     """
     if address:
         # 连接到现有集群时，不能指定 num_cpus 和 num_gpus
-        ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
+        ray.init(_temp_dir=os.environ["RAY_TMPDIR"], address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
     else:
         # 本地模式可以指定 num_cpus，并限制对象存储内存
         ray.init(
+            _temp_dir=os.environ["RAY_TMPDIR"],
             ignore_reinit_error=True, 
             log_to_driver=log_to_driver, 
             num_cpus=num_cpus,
@@ -282,7 +283,8 @@ if __name__ == "__main__":
             pass
         import time
         time.sleep(2)
-        init_ray(address=args.ray_address, log_to_driver=not args.disable_log_to_driver, show_progress=True, num_cpus=args.num_workers)
+        init_ray(address=args.ray_address,  log_to_driver=not args.disable_log_to_driver, 
+                    show_progress=True, num_cpus=args.num_workers)
         ctx = ray.data.DataContext.get_current()
         ctx.execution_options.preserve_order = True
         ctx.wait_for_min_actors_s = 60 * 10 * args.tensor_parallel_size
