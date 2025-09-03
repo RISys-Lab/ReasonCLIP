@@ -26,13 +26,11 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata-awq \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
-                 $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_2 \
-                 $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata_3 \
-    --checkpoint_interval 60000 \
-    --ray_batch_size 2000 \
+    --checkpoint_interval 1000 \
+    --ray_batch_size 1000 \
     --batch_size 16 \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
@@ -49,5 +47,6 @@ python -u dataset/gen_vllm_ray_visual.py \
     --concurrency 1 \
     --num_workers 8 \
     --log_level INFO \
-    --dtype auto \
+    --dtype float16 \
+    --quantization awq \
     --enable_resume
