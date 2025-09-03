@@ -136,11 +136,10 @@ def init_ray(address: str = None, log_to_driver: bool = False, show_progress: bo
     """
     if address:
         # 连接到现有集群时，不能指定 num_cpus 和 num_gpus
-        ray.init(_temp_dir=os.environ["RAY_TMPDIR"], address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
+        ray.init(address=address, ignore_reinit_error=True, log_to_driver=log_to_driver)
     else:
         # 本地模式可以指定 num_cpus，并限制对象存储内存
         ray.init(
-            _temp_dir=os.environ["RAY_TMPDIR"],
             ignore_reinit_error=True, 
             log_to_driver=log_to_driver, 
             num_cpus=num_cpus,

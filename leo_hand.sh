@@ -16,8 +16,6 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
-export RAY_TMPDIR="$WORK/ray/ray_${SLURM_JOB_ID}"
-mkdir -p "$RAY_TMPDIR"
 
 # activate env 
 module load profile/deeplrn
