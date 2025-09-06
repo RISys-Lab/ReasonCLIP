@@ -300,58 +300,15 @@ if __name__ == "__main__":
             print("image_dir_path is not provided, will not process image data")
             image_dir_path = None
 
-        if task == "llavacot":
-            from dataset.task_config import LlavaCotTask
-            task_config = LlavaCotTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-                top_k=args.top_k,
-            )
-        elif task == "cyber1":
-            from dataset.task_config import Cyber1Task
-            task_config = Cyber1Task(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        elif task == "llavacot_visual":
-            from dataset.task_config import LlavaCotVisualTask
-            task_config = LlavaCotVisualTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        elif task == "hand_visual":
-            from dataset.task_config import HandVisualTask
-            task_config = HandVisualTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        elif task == "cc12m_visual":
-            from dataset.task_config import CC12MVisualTask
-            task_config = CC12MVisualTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        elif task == "reason_itw_cls_visual":
-            from dataset.task_config import ReasonItwClsVisualTask
-            task_config = ReasonItwClsVisualTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        elif task == "reason_itw_cls_neg_visual":
-            from dataset.task_config import ReasonItwClsNegVisualTask
-            task_config = ReasonItwClsNegVisualTask(
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                top_p=args.top_p,
-            )
-        else:
-            raise ValueError(f"Invalid task: {task}")
+        # 使用任务注册表创建任务配置
+        from dataset.task_config import create_task_config
+        task_config = create_task_config(
+            task_name=task,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            top_p=args.top_p,
+            top_k=args.top_k,
+        )
 
         ds = task_config.prepare_dataset(parquet_dir_path, image_dir_path)
         print("Dataset schema:", ds.schema())

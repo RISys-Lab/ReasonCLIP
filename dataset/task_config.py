@@ -2,6 +2,7 @@ import os
 import ray
 from datasets import load_dataset
 from dataset.prompts import *
+import re
 
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
@@ -414,7 +415,201 @@ class CC12MVisualTask:
             "generated_text": row["generated_text"],
             "raw_caption": row["raw_caption"],
         }
+
+class CC12MtbVisualTask:
     
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+        self.SYSTEM_PROMPT_CC12M_tb_visual = """
+        You are an image annotation assistant. For each image I provide, you need to generate some concise descriptions. No reasoning is required—just briefly describe the objects and events present in the image.
+        For each image, I will provide a raw and draft caption (with very limited words), it will provides some additional information to help you.
+        For each image, generate three captions. They can differ in detail, but must not omit the main subject of the image.
+        Each caption must be short and concise within 50 words.
+        """
+
+        self.USER_PROMPT_CC12M_tb_visual = """
+        Now give me these three captions about the image as the request. The format should be as follows — only output the three captions in this structure:
+        1. caption1
+        2. caption2
+        3. caption3
+        """
+
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        image_dir = image_dir[0]
+        # 直接读取parquet文件, each 2 million rows
+        parquet_files = parquet_dir
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Dataset size: {ds.count()}")
+        
+        # 然后进行数据转换
+        def _extract_fields(row):
+            image_name = row["id"] + ".jpg"
+            image_path = os.path.join(image_dir, image_name)
+            # image as path
+            return {
+                "id": row["id"],
+                "image_path": image_path,
+                "raw_caption": row["raw_caption"],
+            }
+        
+        ds = ds.map(_extract_fields)
+        print("="*60)
+        
+        print(ds.schema())  # {'id': str, 'image_path': str, 'raw_caption': str}
+        return ds
+
+    def preprocess(self, row):
+        system_prompt = self.SYSTEM_PROMPT_CC12M_tb_visual
+        user_prompt = self.USER_PROMPT_CC12M_tb_visual
+        from PIL import Image
+        image = Image.open(row["image_path"])
+        image = image.convert('RGB')
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Here is the raw and draft caption for the image: " + row["raw_caption"] + "\n" + user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "generated_text": row["generated_text"],
+            "raw_caption": row["raw_caption"],
+        }
+
+class CC12MtrlVisualTask:
+    
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+        self.SYSTEM_PROMPT_CC12M_trl_visual = """
+        You are an image annotation assistant. Each time I will provide you with one image and a simple description of the image. Here is your task:
+        1. You need to generate three common level reasoning captions about the image, the reasoning level should be higher than the simple description.
+        2. Each time, you have the ability and right to choose the fitting direction of the reasoning based on the image content. The simple description is just for your reference.
+        3. It's not that your captions make people to think, the level of reasoning in your captions is the result of simple human thinking.
+        4. If the content permits, the reasoning approaches for the three captions should be somewhat distinct, though all should remain at a basic level of reasoning without requiring overly complex chains of inference.
+        5. Finally, you need to generate three captions, each caption should be short and concise within 50 words, no more than 2 short sentences.
+        """
+
+        self.USER_PROMPT_CC12M_trl_visual = """
+        Now give me the three reasoning captions about the image as the request, each caption should be short and concise within 50 words, no more than 2 short sentences.
+        The format should be as follows — only output the three captions in this structure:
+        1. caption1
+        2. caption2
+        3. caption3
+        """
+
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        # 直接读取parquet文件, each 2 million rows
+        parquet_files = parquet_dir
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Dataset size: {ds.count()}")
+        
+        # 然后进行数据转换
+        def _extract_fields(row):
+            # image as path
+            s = (row["tb"] if isinstance(row["tb"], str) else str(row["tb"])).replace("\\n", "\n")
+
+            m = re.search(r'^\s*1\.\s*(.*?)(?=\n\s*\d+\.|\Z)', s, flags=re.S | re.M)
+            if m:
+                tb1 = m.group(1).strip()
+            else:
+                m = re.search(r'^\s*1\.\s*(.*)$', s, flags=re.M)
+                tb1 = (m.group(1).strip() if m else s.strip())
+            return {
+                "id": row["id"],
+                "image_path": row["image_path"],
+                "tb": tb1,
+            }
+        
+        ds = ds.map(_extract_fields)
+        print("="*60)
+        
+        print(ds.schema())  # {'id': str, 'image_path': str, 'tb': list}
+        return ds
+
+    def preprocess(self, row):
+        system_prompt = self.SYSTEM_PROMPT_CC12M_trl_visual
+        user_prompt = self.USER_PROMPT_CC12M_trl_visual
+        from PIL import Image
+        image = Image.open(row["image_path"])
+        image = image.convert('RGB')
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Here is the simple description for the image: " + row["tb"] + "\n" + user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "tb": row["tb"],
+            "generated_text": row["generated_text"],
+        }
+
 class ReasonItwClsVisualTask:
     
     def __init__(self, temperature, max_tokens, top_p):
@@ -571,3 +766,77 @@ class ReasonItwClsNegVisualTask:
             "best_trp": row["best_trp"],
             "generated_text": row["generated_text"],
         }
+
+# 添加 Cyber1Task 类的定义（从代码中看起来缺失了）
+class Cyber1Task:
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+        # 这里需要添加实际的实现，暂时留空
+        pass
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        # 需要根据实际需求实现
+        pass
+
+    def preprocess(self, row):
+        # 需要根据实际需求实现
+        pass
+
+    def postprocess(self, row):
+        # 需要根据实际需求实现
+        pass
+
+# 任务注册表 - 将任务名称映射到对应的类
+TASK_REGISTRY = {
+    "llavacot": LlavaCotTask,
+    "cyber1": Cyber1Task,
+    "llavacot_visual": LlavaCotVisualTask,
+    "hand_visual": HandVisualTask,
+    "cc12m_tb_visual": CC12MtbVisualTask,
+    "reason_itw_cls_visual": ReasonItwClsVisualTask,
+    "reason_itw_cls_neg_visual": ReasonItwClsNegVisualTask,
+    "cc12m_trl_visual": CC12MtrlVisualTask,
+}
+
+def create_task_config(task_name, temperature, max_tokens, top_p, top_k=None):
+    """
+    根据任务名称创建对应的任务配置对象
+    
+    Args:
+        task_name: 任务名称
+        temperature: 采样温度
+        max_tokens: 最大生成tokens
+        top_p: top-p采样参数
+        top_k: top-k采样参数（可选）
+    
+    Returns:
+        对应的任务配置对象
+    
+    Raises:
+        ValueError: 当任务名称不存在时
+    """
+    if task_name not in TASK_REGISTRY:
+        available_tasks = ", ".join(TASK_REGISTRY.keys())
+        raise ValueError(f"Invalid task: {task_name}. Available tasks: {available_tasks}")
+    
+    task_class = TASK_REGISTRY[task_name]
+    
+    # 检查构造函数需要的参数
+    import inspect
+    sig = inspect.signature(task_class.__init__)
+    params = list(sig.parameters.keys())[1:]  # 排除 self
+    
+    # 根据参数构造kwargs
+    kwargs = {
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "top_p": top_p,
+    }
+    
+    # 只有当构造函数需要top_k参数时才添加
+    if "top_k" in params and top_k is not None:
+        kwargs["top_k"] = top_k
+    
+    return task_class(**kwargs)

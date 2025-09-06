@@ -29,8 +29,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
-    --checkpoint_interval 100000 \
-    --ray_batch_size 10000 \
+    --checkpoint_interval 10000 \
+    --ray_batch_size 3000 \
     --batch_size 64 \
     --max_model_len 2048 \
     --max_num_batched_tokens 98304 \

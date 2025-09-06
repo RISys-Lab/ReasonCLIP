@@ -236,6 +236,8 @@ def process_dataset_with_checkpoints_optimized(
         # change to gen_ds
         # out_rows = list(processor(ray.data.from_pandas(batch)).iter_rows())
         out_rows = batch.to_dict(orient="records")
+        print("=" * 60)
+        print(f"Out rows: {out_rows}")
         buffer.extend(out_rows)
         processed += len(out_rows)
         current_session_processed += len(out_rows)
