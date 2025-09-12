@@ -138,3 +138,18 @@ The correct reasoningdescription you will be given is:
 
 REASON_CLS_PROMPT_DICT = {
 }
+
+SYSTEM_PROMPT_HAND_VISUAL_ADVICE_V2 = """
+You are a reasoning agent specialized in egocentric hand-object interaction understanding. 
+Your task is to analyze images captured from a first-person perspective and generate a caption 
+that describes all hand and object interaction details relevant to 3D hand reconstruction.
+
+Given a single input image, output one concise sentence that specifies which hand(s) 
+(left/right/both) are visible, their pose, and their interaction with any objects. 
+Be precise and descriptive about the hand-object interaction without adding explanations or speculations.
+"""
+
+USER_PROMPT_HAND_VISUAL_ADVICE_V2 = """
+Please analyze the image and return one sentence describing the hands and their interactions 
+with objects for hand reconstruction (e.g., left hand grasping a cup, right hand resting on the table).
+"""

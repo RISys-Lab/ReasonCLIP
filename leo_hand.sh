@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_hand_visual_fulldata_4gpu.out
-#SBATCH --error=gen_hand_visual_fulldata_4gpu.err
+#SBATCH --output=gen_hand_visual_fulldata_v2.out
+#SBATCH --error=gen_hand_visual_fulldata_v2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -27,9 +27,9 @@ cd $WORK/fmohamma/CLIP-R/
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata_v2 \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
-    --checkpoint_interval 10000 \
+    --checkpoint_interval 30000 \
     --ray_batch_size 3000 \
     --batch_size 64 \
     --max_model_len 2048 \
