@@ -170,13 +170,6 @@ class CLIPTrainer(Trainer):
         combined_attention_mask = torch.cat([inputs["tb_attention_mask"], inputs["trp_attention_mask"]], dim=0)
         combined_pixel_values = torch.cat([inputs["pixel_values"], inputs["pixel_values"]], dim=0)
         
-        # 添加调试信息 - 只在主进程打印
-        # if accelerator.is_main_process and accelerator.process_index == 0:
-        #     main_print(f"Debug info:")
-        #     main_print(f"  - batch_size: {batch_size}")
-        #     main_print(f"  - combined_input_ids.shape: {combined_input_ids.shape}")
-        #     main_print(f"  - combined_pixel_values.shape: {combined_pixel_values.shape}")
-        
         # 一次前向传播
         combined_outputs = model(
             input_ids=combined_input_ids,
@@ -187,18 +180,6 @@ class CLIPTrainer(Trainer):
         # 分离TB和TRP的输出
         logits_per_image = combined_outputs.logits_per_image
         logits_per_text = combined_outputs.logits_per_text
-        
-        # 添加维度检查
-        # if accelerator.is_main_process and accelerator.process_index == 0:
-        #     main_print(f"  - logits_per_image.shape: {logits_per_image.shape}")
-        #     main_print(f"  - logits_per_text.shape: {logits_per_text.shape}")
-        
-        # # 检查维度是否正确
-        # expected_size = 2 * batch_size
-        # if logits_per_image.size(0) != expected_size or logits_per_image.size(1) != expected_size:
-        #     raise ValueError(f"Unexpected logits dimensions: "
-        #                    f"logits_per_image.shape={logits_per_image.shape}, "
-        #                    f"expected=({expected_size}, {expected_size})")
         
         # 前半部分是TB，后半部分是TRP
         tb_logits_per_image  = logits_per_image[:batch_size, :batch_size]
