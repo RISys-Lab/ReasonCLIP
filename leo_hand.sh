@@ -28,7 +28,7 @@ cd $WORK/fmohamma/CLIP-R/
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/undistorted_v2 \
-    --image_dir_path $WORK/data/Nicous-Hand-ICL/image_portrait_view/undistorted/train \
+    --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/image_portrait_view/undistorted/train \
     --checkpoint_interval 30000 \
     --ray_batch_size 3000 \
     --batch_size 64 \
