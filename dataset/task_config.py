@@ -141,29 +141,29 @@ class HandVisualTask:
         
         # 根据图片名筛选，使用提供的正则规则
         filtered_images = []
-        for img_tuple in image_files:
-            try:
-                # img_tuple 是 (fname, rel_path, abs_path)
-                fname, rel_path, abs_path = img_tuple
-                # 从图片名中提取id: fname.split('.')[0].split('_')[-1]
-                id_str = fname.split('.')[0].split('_')[-1]
-                id_num = int(id_str)
+        # for img_tuple in image_files:
+        #     try:
+        #         # img_tuple 是 (fname, rel_path, abs_path)
+        #         fname, rel_path, abs_path = img_tuple
+        #         # 从图片名中提取id: fname.split('.')[0].split('_')[-1]
+        #         id_str = fname.split('.')[0].split('_')[-1]
+        #         id_num = int(id_str)
                 
-                # 筛选条件：如果 id < 30 或 id > 530，则跳过
-                if id_num < 30 or id_num > 530:
-                    continue
+        #         # 筛选条件：如果 id < 30 或 id > 530，则跳过
+        #         if id_num < 30 or id_num > 530:
+        #             continue
                 
-                filtered_images.append(img_tuple)
-            except (ValueError, IndexError):
-                # 如果无法提取id或转换为整数，跳过此文件
-                continue
+        #         filtered_images.append(img_tuple)
+        #     except (ValueError, IndexError):
+        #         # 如果无法提取id或转换为整数，跳过此文件
+        #         continue
         
         print("="*60)
         print(f"Original image count: {len(image_files)}")
         print(f"After filtering (id 30-530): {len(filtered_images)}")
         
         # 暂时使用所有图片（注释掉筛选逻辑）
-        # filtered_images = image_files
+        filtered_images = image_files
         
         # 准备数据列表
         data_list = []
