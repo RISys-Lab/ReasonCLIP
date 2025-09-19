@@ -26,7 +26,7 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct-AWQ \
+    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Hand-ICL/fulldata-awq \
     --image_dir_path $WORK/fmohamma/CLIP-R/data/Nicous-Hand-ICL/fulldata \
     --checkpoint_interval 1000 \

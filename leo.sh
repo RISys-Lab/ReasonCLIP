@@ -27,7 +27,7 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen2.5-VL-72B-Instruct \
+    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/ \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/chunk_03 \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/combined/cc12m_tb_chunk_03.parquet \
     --checkpoint_interval 50000 \
