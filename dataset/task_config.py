@@ -767,37 +767,183 @@ class ReasonItwClsNegVisualTask:
             "generated_text": row["generated_text"],
         }
 
-# 添加 Cyber1Task 类的定义（从代码中看起来缺失了）
-class Cyber1Task:
+
+class TRIGVisualTask:
+
     def __init__(self, temperature, max_tokens, top_p):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
-        # 这里需要添加实际的实现，暂时留空
-        pass
+        self.SYSTEM_PROMPT = SYSTEM_PROMPT_TRIG_VISUAL
+        self.USER_PROMPT = USER_PROMPT_TRIG_VISUAL
+
+    def logprobs_score(self, top_logprobs_dict, confidence=False):
+        import math
+        weights = {
+            "excellent": 1.0,
+            "good": 0.75,
+            "medium": 0.5,
+            "bad": 0.25,
+            "terrible": 0.0,
+        }
+        prefixes = {
+            "excellent": ("excellent", "ex"),
+            "good": ("good",),
+            "medium": ("medium", "med"),
+            "bad": ("bad",),
+            "terrible": ("terrible", "terr"),
+        }
+
+        def norm_token(t: str) -> str:
+            t = t.strip().lower()
+            if t.startswith("▁") or t.startswith("Ġ"):
+                t = t[1:]
+            return t
+
+        agg = {k: None for k in weights}
+
+        for tok, lp in top_logprobs_dict.items():
+            tk = norm_token(tok)
+            for label, cands in prefixes.items():
+                if any(tk == p or tk.startswith(p) for p in cands):
+                    if agg[label] is None:
+                        agg[label] = float(lp)
+                    else:
+                        a, b = agg[label], float(lp)
+                        m = max(a, b)
+                        agg[label] = m + math.log(math.exp(a - m) + math.exp(b - m))
+
+        if all(v is None for v in agg.values()):
+            return 0.0
+
+        for k in agg:
+            if agg[k] is None:
+                agg[k] = float("-inf")
+
+        m = max(agg.values())
+        exps = {k: (0.0 if v == float("-inf") else math.exp(v - m)) for k, v in agg.items()}
+        Z = sum(exps.values()) + 1e-10
+        probs = {k: v / Z for k, v in exps.items()}
+
+        score = sum(weights[k] * probs[k] for k in weights)
+        if confidence:
+            score *= max(probs.values())
+
+        return round(score, 3)
 
     def prepare_dataset(self, parquet_dir, image_dir):
-        # 需要根据实际需求实现
-        pass
+        # 获取图片文件
+        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
+        image_files = []
+
+        # 支持单个目录或目录列表
+        if isinstance(image_dir, list):
+            image_dirs = image_dir
+        else:
+            image_dirs = [image_dir]
+
+        print("image_dirs found:", len(image_dirs))
+        # 对每个目录执行图片查找逻辑
+        for current_dir in image_dirs:
+            print(f"Processing directory: {current_dir}")
+
+            # 首先检查根目录是否有图片文件
+            root_files = os.listdir(current_dir)
+            root_images = [f for f in root_files if any(f.lower().endswith(ext) for ext in image_extensions)]
+
+            print(f"  Found {len(root_images)} images in root directory")
+            folder_name = os.path.basename(current_dir)  # 获取当前目录的文件夹名
+            for fname in root_images:
+                abs_path = os.path.abspath(os.path.join(current_dir, fname))
+                image_files.append((fname, folder_name, abs_path))
+
+            print(
+                f"  Found {len([f for f in image_files if f[2].startswith(os.path.abspath(current_dir))])} images in {current_dir}")
+
+        print(f"Found {len(image_files)} image files total from all directories")
+
+        data_list = []
+        for img_name, model_name, abs_path in image_files:
+            data_id = img_name.split('.')[0]
+
+            # TODO: 过滤掉 IQ-R 数据
+            if "IQ-R" in data_id:
+                continue
+            data_list.append({
+                "data_id": data_id,
+                "model_name": model_name,
+                "image_path": abs_path,
+            })
+
+        # 使用 ray.data.from_items 创建 Ray Dataset
+        ds = ray.data.from_items(data_list)
+
+        print("=" * 60)
+        print(ds.schema())  # {'id': str, 'image_path': str}
+        return ds
 
     def preprocess(self, row):
-        # 需要根据实际需求实现
-        pass
+        system_prompt = self.SYSTEM_PROMPT
+        user_prompt = self.USER_PROMPT
+        from PIL import Image
+        image = Image.open(row["image_path"])
+        image = image.convert('RGB')
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+
+        sampling_params = {
+            "temperature": self.temperature,  # 0.0 评分更稳
+            "max_tokens": self.max_tokens,  # 1 只要一个词
+            "top_p": self.top_p,
+            "top_k": self.top_k,
+            "logprobs": max(self.top_k, 10),  # 一定要 >= 你要看的候选数
+            "stop": ["\n"],  # 保险：遇换行就停
+        }
+
+        return {
+            "messages": messages,
+            "sampling_params": sampling_params
+        }
 
     def postprocess(self, row):
-        # 需要根据实际需求实现
-        pass
+        # 兼容不同字段名
+        top_list = (
+                row.get("top_logprobs")
+                or row.get("generated_token_top_logprobs")
+                or []
+        )
+        # 只看首 token 的候选分布
+        top0 = {}
+        if isinstance(top_list, list) and len(top_list) > 0 and isinstance(top_list[0], dict):
+            top0 = top_list[0]
+
+        score = self.logprobs_score(top0) if top0 else 0.0
+
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "generated_text": row.get("generated_text"),
+            "score": score,
+        }
 
 # 任务注册表 - 将任务名称映射到对应的类
 TASK_REGISTRY = {
     "llavacot": LlavaCotTask,
-    "cyber1": Cyber1Task,
     "llavacot_visual": LlavaCotVisualTask,
     "hand_visual": HandVisualTask,
     "cc12m_tb_visual": CC12MtbVisualTask,
     "reason_itw_cls_visual": ReasonItwClsVisualTask,
     "reason_itw_cls_neg_visual": ReasonItwClsNegVisualTask,
     "cc12m_trl_visual": CC12MtrlVisualTask,
+    "trig_visual": TRIGVisualTask,
 }
 
 def create_task_config(task_name, temperature, max_tokens, top_p, top_k=None):
