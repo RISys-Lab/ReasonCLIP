@@ -29,8 +29,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen2.5-VL-72B-Instruct-AWQ \
     --output_dir_path  $WORK/fmohamma/TRIG/data/result/trigscore/flux \
     --image_dir_path $WORK/fmohamma/TRIG/data/output/t2i_ml/flux \
-    --checkpoint_interval 1000 \
-    --ray_batch_size 1000 \
+    --checkpoint_interval 2000 \
+    --ray_batch_size 2000 \
     --batch_size 32 \
     --max_model_len 1024 \
     --max_num_batched_tokens 32768 \

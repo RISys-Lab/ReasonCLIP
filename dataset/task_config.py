@@ -774,8 +774,6 @@ class TRIGVisualTask:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
-        self.SYSTEM_PROMPT = SYSTEM_PROMPT_TRIG_VISUAL
-        self.USER_PROMPT = USER_PROMPT_TRIG_VISUAL
 
     def logprobs_score(self, top_logprobs_dict, confidence=False):
         import math
