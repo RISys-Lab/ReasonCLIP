@@ -775,6 +775,7 @@ class TRIGVisualTask:
         self.max_tokens = max_tokens
         self.top_p = top_p
 
+
     def logprobs_score(self, top_logprobs_dict, confidence=False):
         import math
         weights = {
@@ -863,10 +864,13 @@ class TRIGVisualTask:
         import json
         with open("/leonardo_work/EUHPC_R04_192/fmohamma/TRIG/dataset/TRIG-multilingual/text-to-image-multilingual.json", "r", encoding='utf-8') as f:
             annotations = json.load(f)
+        annotations = {item["data_id"]: item for item in annotations_list}
         data_list = []
         for img_name, model_name, abs_path in image_files:
             data_id = img_name.split('.')[0]
-
+            if data_id not in annotations:
+                print(f"Skipping {img_name}")
+                continue
             data_list.append({
                 "data_id": data_id,
                 "model_name": model_name,
