@@ -863,7 +863,7 @@ class TRIGVisualTask:
 
         import json
         with open("/leonardo_work/EUHPC_R04_192/fmohamma/TRIG/dataset/TRIG-multilingual/text-to-image-multilingual.json", "r", encoding='utf-8') as f:
-            annotations = json.load(f)
+            annotations_list = json.load(f)
         annotations = {item["data_id"]: item for item in annotations_list}
         data_list = []
         for img_name, model_name, abs_path in image_files:
