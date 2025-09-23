@@ -861,7 +861,7 @@ class TRIGVisualTask:
         print(f"Found {len(image_files)} image files total from all directories")
 
         import json
-        with open("/leonardo_work/EUHPC_R04_192/fmohamma/TRIG/dataset/TRIG-multilingual/text-to-image-multilingual.json", "r", encode='utf-8') as f:
+        with open("/leonardo_work/EUHPC_R04_192/fmohamma/TRIG/dataset/TRIG-multilingual/text-to-image-multilingual.json", "r", encoding='utf-8') as f:
             annotations = json.load(f)
         data_list = []
         for img_name, model_name, abs_path in image_files:
