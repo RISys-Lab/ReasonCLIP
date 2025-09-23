@@ -31,10 +31,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --image_dir_path $WORK/fmohamma/TRIG/data/output/t2i_ml/flux \
     --checkpoint_interval 2000 \
     --ray_batch_size 2000 \
-    --batch_size 32 \
-    --max_model_len 1024 \
+    --batch_size 16 \
+    --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
-    --max_num_seqs 32 \
+    --max_num_seqs 16 \
     --max_tokens 1 \
     --temperature 0.3 \
     --top_p 0.95 \
