@@ -869,7 +869,7 @@ class TRIGVisualTask:
         data_list = []
         for img_name, model_name, abs_path in image_files:
             data_id = img_name.split('.')[0]
-            if (data_id not in annotations) or (data_id.split('_')[0] in ['IQ-R', 'IQ-O', 'IQ-A', 'TA-C', 'TA-R', 'TA-S', 'D-K', 'D-A']):
+            if (data_id not in annotations) or (data_id.split('_')[0] in ['R-T', 'R-B']):
                 continue
             data_list.append({
                 "data_id": data_id,
