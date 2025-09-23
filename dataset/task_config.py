@@ -770,10 +770,11 @@ class ReasonItwClsNegVisualTask:
 
 class TRIGVisualTask:
 
-    def __init__(self, temperature, max_tokens, top_p):
+    def __init__(self, temperature, max_tokens, top_p, top_k=15):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
+        self.top_k = top_k
 
 
     def logprobs_score(self, top_logprobs_dict, confidence=False):
