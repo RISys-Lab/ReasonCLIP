@@ -879,7 +879,7 @@ class TRIGVisualTask:
             })
 
         # 使用 ray.data.from_items 创建 Ray Dataset
-        ds = ray.data.from_items(data_list[200])
+        ds = ray.data.from_items(data_list[:200])
 
         print("=" * 60)
         print(ds.schema())  # {'id': str, 'image_path': str}
