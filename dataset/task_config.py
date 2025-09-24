@@ -879,7 +879,7 @@ class TRIGVisualTask:
             })
 
         # 使用 ray.data.from_items 创建 Ray Dataset
-        ds = ray.data.from_items(data_list)
+        ds = ray.data.from_items(data_list[200])
 
         print("=" * 60)
         print(ds.schema())  # {'id': str, 'image_path': str}
@@ -962,7 +962,6 @@ class TRIGVisualTask:
                 or row.get("generated_token_top_logprobs")
                 or []
         )
-        # 只看首 token 的候选分布
         top0 = {}
         if isinstance(top_list, list) and len(top_list) > 0 and isinstance(top_list[0], dict):
             top0 = top_list[0]
@@ -976,6 +975,8 @@ class TRIGVisualTask:
             "model_name": row["model_name"],
             "generated_text": row.get("generated_text"),
             "score": score,
+            # 新增：保存原始 top_logprobs
+            "top_logprobs": top0,  # 直接存字典
         }
 
 # 任务注册表 - 将任务名称映射到对应的类
