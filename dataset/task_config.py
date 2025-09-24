@@ -880,7 +880,7 @@ class TRIGVisualTask:
             })
 
         # 使用 ray.data.from_items 创建 Ray Dataset
-        ds = ray.data.from_items(data_list[:200])
+        ds = ray.data.from_items(data_list[:30])
 
         print("=" * 60)
         print(ds.schema())  # {'id': str, 'image_path': str}
@@ -947,8 +947,7 @@ class TRIGVisualTask:
             "max_tokens": self.max_tokens,  # 1 只要一个词
             "top_p": self.top_p,
             "top_k": self.top_k,
-            "logprobs": max(self.top_k, 10),  # 一定要 >= 你要看的候选数
-            "stop": ["\n"],  # 保险：遇换行就停
+            "top_logprobs": 20,
         }
 
         return {
@@ -960,8 +959,9 @@ class TRIGVisualTask:
         top_list = (
                 row.get("top_logprobs")
                 or row.get("generated_token_top_logprobs")
-                or []
+                or row.get("")
         )
+        print(row)
         top0 = {}
         if isinstance(top_list, list) and len(top_list) > 0 and isinstance(top_list[0], dict):
             top0 = top_list[0]
