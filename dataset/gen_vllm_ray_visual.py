@@ -190,6 +190,9 @@ def load_model(
             "min_pixels": 256 * 28 * 28,  # 784 pixels (最小)
             "max_pixels": 1280 * 28 * 28,  # 1,003,520 pixels (最大)
         }
+
+    if "trig" in task_type:
+        engine_kwargs["enable_logprobs"] = True
     
     # 只有在max_num_seqs不为None时才添加到engine_kwargs
     if max_num_seqs is not None:
