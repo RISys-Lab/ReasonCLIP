@@ -3,6 +3,7 @@ import ray
 from datasets import load_dataset
 from dataset.prompts import *
 import re
+import json
 
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
@@ -862,7 +863,7 @@ class TRIGVisualTask:
 
         print(f"Found {len(image_files)} image files total from all directories")
 
-        import json
+
         with open("/leonardo_work/EUHPC_R04_192/fmohamma/TRIG/dataset/TRIG-multilingual/text-to-image-multilingual.json", "r", encoding='utf-8') as f:
             annotations_list = json.load(f)
         annotations = {item["data_id"]: item for item in annotations_list}
@@ -956,7 +957,6 @@ class TRIGVisualTask:
         }
 
     def postprocess(self, row):
-        # 兼容不同字段名
         top_list = (
                 row.get("top_logprobs")
                 or row.get("generated_token_top_logprobs")
@@ -975,8 +975,7 @@ class TRIGVisualTask:
             "model_name": row["model_name"],
             "generated_text": row.get("generated_text"),
             "score": score,
-            # 新增：保存原始 top_logprobs
-            "top_logprobs": top0,  # 直接存字典
+            "top_logprobs_str": json.dumps(top0, ensure_ascii=False),
         }
 
 # 任务注册表 - 将任务名称映射到对应的类
