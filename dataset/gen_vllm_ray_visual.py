@@ -191,8 +191,8 @@ def load_model(
             "max_pixels": 1280 * 28 * 28,  # 1,003,520 pixels (最大)
         }
 
-    if "trig" in task_type:
-        engine_kwargs["disable_logprobs_during_spec_decoding"] = False
+    # if "trig" in task_type:
+    #     engine_kwargs["disable_logprobs_during_spec_decoding"] = False
     
     # 只有在max_num_seqs不为None时才添加到engine_kwargs
     if max_num_seqs is not None:
