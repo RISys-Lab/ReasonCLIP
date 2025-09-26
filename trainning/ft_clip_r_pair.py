@@ -125,7 +125,6 @@ def parse_args():
     return parser.parse_args()
 
 
-
 class BestModelCallback(TrainerCallback):
     def __init__(self):
         self.best_eval_loss = float('inf')
@@ -155,73 +154,136 @@ class CLIPTrainer(Trainer):
         self.tb_weight = tb_alpha
         self.trp_weight = 1.0 - tb_alpha
         # Loss weights already printed in main function
-        
+    
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        """
-        Compute CLIP contrastive loss, calculate image-tb and image-trp loss separately
-        """
 
-        # 简化方法：将两个损失合并到一次前向传播中
         batch_size = inputs["pixel_values"].size(0)
         device = inputs["pixel_values"].device
-        
-        # 将TB和TRP的text inputs拼接起来，一次性计算
-        combined_input_ids = torch.cat([inputs["tb_input_ids"], inputs["trp_input_ids"]], dim=0)
-        combined_attention_mask = torch.cat([inputs["tb_attention_mask"], inputs["trp_attention_mask"]], dim=0)
-        combined_pixel_values = torch.cat([inputs["pixel_values"], inputs["pixel_values"]], dim=0)
-        
-        # 一次前向传播
-        combined_outputs = model(
-            input_ids=combined_input_ids,
-            attention_mask=combined_attention_mask,
-            pixel_values=combined_pixel_values
+
+        image_features = model.get_image_features(
+            pixel_values=inputs["pixel_values"]
+        )  # 默认已 L2 normalize
+
+        # 2) 文本分别跑 TB 与 TRP
+        tb_text_features = model.get_text_features(
+            input_ids=inputs["tb_input_ids"],
+            attention_mask=inputs["tb_attention_mask"],
         )
-        
-        # 分离TB和TRP的输出
-        logits_per_image = combined_outputs.logits_per_image
-        logits_per_text = combined_outputs.logits_per_text
-        
-        # 前半部分是TB，后半部分是TRP
-        tb_logits_per_image  = logits_per_image[:batch_size, :batch_size]
-        tb_logits_per_text   = logits_per_text [:batch_size, :batch_size]
-        trp_logits_per_image = logits_per_image[batch_size:, batch_size:]
-        trp_logits_per_text  = logits_per_text [batch_size:, batch_size:]
-        
-        # 计算损失
+        trp_text_features = model.get_text_features(
+            input_ids=inputs["trp_input_ids"],
+            attention_mask=inputs["trp_attention_mask"],
+        )
+
+        # 3) 手动计算 logits（与 CLIP 前向一致）
+        logit_scale = model.logit_scale.exp()
+        tb_logits_per_image  = logit_scale * (image_features @ tb_text_features.t())
+        tb_logits_per_text   = logit_scale * (tb_text_features @ image_features.t())
+        trp_logits_per_image = logit_scale * (image_features @ trp_text_features.t())
+        trp_logits_per_text  = logit_scale * (trp_text_features @ image_features.t())
+
         labels = torch.arange(batch_size, device=device)
-        
-        # TB损失
+
+        # TB 损失
         tb_loss_i = F.cross_entropy(tb_logits_per_image, labels)
-        tb_loss_t = F.cross_entropy(tb_logits_per_text, labels)
-        tb_loss = (tb_loss_i + tb_loss_t) / 2.0
-        
-        # TRP损失  
+        tb_loss_t = F.cross_entropy(tb_logits_per_text,  labels)
+        tb_loss = 0.5 * (tb_loss_i + tb_loss_t)
+
+        # 及时释放中间张量（进一步降低峰值显存）
+        del tb_logits_per_image, tb_logits_per_text
+
+        # TRP 损失
         trp_loss_i = F.cross_entropy(trp_logits_per_image, labels)
-        trp_loss_t = F.cross_entropy(trp_logits_per_text, labels)
-        trp_loss = (trp_loss_i + trp_loss_t) / 2.0
-        
-        # 组合损失
+        trp_loss_t = F.cross_entropy(trp_logits_per_text,  labels)
+        trp_loss = 0.5 * (trp_loss_i + trp_loss_t)
+
+        # 及时释放TRP中间张量
+        del trp_logits_per_image, trp_logits_per_text
+
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
         if accelerator.is_main_process and "wandb" in self.args.report_to:
-            # commit=False，等 Transformer 自己在 step 末尾再统一提交
+            import wandb
             wandb.log({
                 "train/tb_loss": tb_loss.item(),
                 "train/trp_loss": trp_loss.item(),
                 "train/total_loss": total_loss.item(),
             }, commit=False)
 
-        
         if return_outputs:
-            # 构造一个简单的 Namespace/dict 结构，保存 tb 和 trp 的 logits
             outputs = {
-                "tb_logits_per_image": tb_logits_per_image,
-                "tb_logits_per_text":  tb_logits_per_text,
-                "trp_logits_per_image": trp_logits_per_image,
-                "trp_logits_per_text":  trp_logits_per_text,
+                "tb_image_text_logits":  (image_features @ tb_text_features.t()).detach(),
+                "trp_image_text_logits": (image_features @ trp_text_features.t()).detach(),
             }
             return total_loss, outputs
+
         return total_loss
+
+    # def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    #     """
+    #     Compute CLIP contrastive loss, calculate image-tb and image-trp loss separately
+    #     """
+
+    #     # 简化方法：将两个损失合并到一次前向传播中
+    #     batch_size = inputs["pixel_values"].size(0)
+    #     device = inputs["pixel_values"].device
+        
+    #     # 将TB和TRP的text inputs拼接起来，一次性计算
+    #     combined_input_ids = torch.cat([inputs["tb_input_ids"], inputs["trp_input_ids"]], dim=0)
+    #     combined_attention_mask = torch.cat([inputs["tb_attention_mask"], inputs["trp_attention_mask"]], dim=0)
+    #     combined_pixel_values = torch.cat([inputs["pixel_values"], inputs["pixel_values"]], dim=0)
+        
+    #     # 一次前向传播
+    #     combined_outputs = model(
+    #         input_ids=combined_input_ids,
+    #         attention_mask=combined_attention_mask,
+    #         pixel_values=combined_pixel_values
+    #     )
+        
+    #     # 分离TB和TRP的输出
+    #     logits_per_image = combined_outputs.logits_per_image
+    #     logits_per_text = combined_outputs.logits_per_text
+        
+    #     # 前半部分是TB，后半部分是TRP
+    #     tb_logits_per_image  = logits_per_image[:batch_size, :batch_size]
+    #     tb_logits_per_text   = logits_per_text [:batch_size, :batch_size]
+    #     trp_logits_per_image = logits_per_image[batch_size:, batch_size:]
+    #     trp_logits_per_text  = logits_per_text [batch_size:, batch_size:]
+        
+    #     # 计算损失
+    #     labels = torch.arange(batch_size, device=device)
+        
+    #     # TB损失
+    #     tb_loss_i = F.cross_entropy(tb_logits_per_image, labels)
+    #     tb_loss_t = F.cross_entropy(tb_logits_per_text, labels)
+    #     tb_loss = (tb_loss_i + tb_loss_t) / 2.0
+        
+    #     # TRP损失  
+    #     trp_loss_i = F.cross_entropy(trp_logits_per_image, labels)
+    #     trp_loss_t = F.cross_entropy(trp_logits_per_text, labels)
+    #     trp_loss = (trp_loss_i + trp_loss_t) / 2.0
+        
+    #     # 组合损失
+    #     total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
+
+    #     if accelerator.is_main_process and "wandb" in self.args.report_to:
+    #         # commit=False，等 Transformer 自己在 step 末尾再统一提交
+    #         wandb.log({
+    #             "train/tb_loss": tb_loss.item(),
+    #             "train/trp_loss": trp_loss.item(),
+    #             "train/total_loss": total_loss.item(),
+    #         }, commit=False)
+
+        
+    #     if return_outputs:
+    #         # 构造一个简单的 Namespace/dict 结构，保存 tb 和 trp 的 logits
+    #         outputs = {
+    #             "tb_logits_per_image": tb_logits_per_image,
+    #             "tb_logits_per_text":  tb_logits_per_text,
+    #             "trp_logits_per_image": trp_logits_per_image,
+    #             "trp_logits_per_text":  trp_logits_per_text,
+    #         }
+    #         return total_loss, outputs
+    #     return total_loss
 
     # NEW: override prediction_step to avoid unexpected kwargs during evaluation
     def prediction_step(
@@ -262,12 +324,12 @@ class CLIPRDataset(torch.utils.data.Dataset):
         item = self.dataset[original_idx]
         
         # 读取图像
-        image_path = item["image_path"]
-        image = Image.open(image_path).convert("RGB")
+        # image_path = item["image_path"]
+        # image = Image.open(image_path).convert("RGB")
 
         # 随机生成图像，用于测试
-        # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-        # image = Image.fromarray(random_image)
+        random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        image = Image.fromarray(random_image)
         
         # 获取tb和trp列表
         tb_captions = item["tb"]  # 3个基础caption
@@ -355,50 +417,42 @@ def train_clip(args):
 
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
+    # 替换以下导入处附近：去掉 pandas 的读取用法
+    from datasets import load_dataset
+
+    # ================================ 数据集配置（替换整段 pandas 读取与切分） ================================
     main_print(f"\n📊 Dataset Configuration:")
     main_print(f"   - Loading from: {args.parquet_file}")
-    df = pd.read_parquet(args.parquet_file)
-    main_print(f"   - Total samples: {len(df)}")
-    
-    # 验证数据格式
-    required_columns = ["image_path", "tb", "trp"]
-    for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
-    
-    # 将DataFrame转换为字典格式供CLIPRDataset使用
-    dataset_dict = df.to_dict('records')
-    
-    # 分割训练、验证和测试集 (8:1:1)
-    if args.use_split:
-        # 首先分出训练集和临时集 (8:2)
-        train_data, temp_data = train_test_split(
-            dataset_dict, 
-            test_size=0.2,  # 20% 用于验证+测试
-            random_state=42
-        )
-        
-        # 然后将临时集分为验证集和测试集 (1:1)
-        eval_data, test_data = train_test_split(
-            temp_data,
-            test_size=0.5,  # 50% 的临时数据作为测试集，50% 作为验证集
-            random_state=42
-        )
-        
-        main_print(f"   - Dataset split (8:1:1): {len(train_data)} train, {len(eval_data)} eval, {len(test_data)} test")
-    else:
-        train_data = dataset_dict
-        eval_data = None
-        test_data = None
-        main_print(f"   - Using full dataset for training: {len(train_data)} samples")
 
-    # 创建数据集
-    train_dataset = CLIPRDataset(train_data, processor)
-    eval_dataset = CLIPRDataset(eval_data, processor) if eval_data else None
-    
+    # 1) 直接用 HF Datasets 读取 parquet（Arrow 内存映射，不会把 100 万行全塞进内存）
+    hf_ds = load_dataset(
+        "parquet",
+        data_files=args.parquet_file,
+        split="train",
+        keep_in_memory=False  # 关键：禁用把数据驻留在内存
+    )
+
+    main_print(f"   - Total samples (rows): {len(hf_ds)}")
+
+    # 2) 切分（用 HF 自带的 split，不会复制成 Python 对象）
+    if args.use_split:
+        split1 = hf_ds.train_test_split(test_size=0.2, seed=42)          # 8:2
+        train_hf = split1["train"]
+        tmp     = split1["test"].train_test_split(test_size=0.5, seed=42) # 2 -> 1:1
+        eval_hf, test_hf = tmp["train"], tmp["test"]
+        main_print(f"   - Dataset split (8:1:1): {len(train_hf)} train, {len(eval_hf)} eval, {len(test_hf)} test")
+    else:
+        train_hf, eval_hf, test_hf = hf_ds, None, None
+        main_print(f"   - Using full dataset for training: {len(train_hf)} samples")
+
+    # 3) 用 HF Dataset 构建你的自定义 Dataset（无需 to_dict('records')）
+    train_dataset = CLIPRDataset(train_hf, processor)
+    eval_dataset  = CLIPRDataset(eval_hf, processor) if eval_hf else None
+
     main_print(f"   - Train dataset size: {len(train_dataset)} (with 9x augmentation)")
     if eval_dataset:
         main_print(f"   - Eval dataset size: {len(eval_dataset)} (with 9x augmentation)")
+
     
     # 验证数据样本
     main_print(f"\n🔍 Data Validation:")
