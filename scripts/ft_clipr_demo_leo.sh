@@ -10,13 +10,19 @@
 #SBATCH --output=clipr_ft_s1_test.out
 #SBATCH --error=clipr_ft_s1_test.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 
 export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
 export NCCL_DEBUG=WARN
 
+# 加载模块和环境
+module load profile/deeplrn
+module load openmpi
+# source $WORK/fmohamma/venvs/llm/bin/activate
+source $WORK/fmohamma/venvs/clipr/bin/activate
+cd $WORK/fmohamma/CLIP-R/
 
 # PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/combined_unclassified/cc12m_trl_chunk05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
