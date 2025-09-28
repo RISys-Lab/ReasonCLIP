@@ -2,7 +2,7 @@
 #SBATCH --job-name=clipr_ft_s1_test
 #SBATCH --time=01:00:00
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=1 
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
@@ -15,7 +15,8 @@
 export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
-export NCCL_DEBUG=WARN
+export NCCL_DEBUG=INFO
+export CUDA_LAUNCH_BLOCKING=1
 
 # 加载模块和环境
 module load profile/deeplrn
@@ -40,9 +41,7 @@ mkdir -p "$OUT_DIR" "$BEST_DIR"
 # 分布式参数（从 SLURM 推断）
 ########################
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-MASTER_PORT=29500
-NUM_MACHINES=${SLURM_NNODES:-1}
-GPUS_PER_NODE=${SLURM_GPUS_ON_NODE:-2}
+MASTER_PORT=29501
 NUM_WORKERS=8
 
 echo "[INFO] MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
@@ -55,8 +54,8 @@ srun --ntasks-per-node=1 bash -lc "
 accelerate launch \
   --multi_gpu \
   --mixed_precision=fp16 \
-  --num_machines ${NUM_MACHINES} \
-  --num_processes ${GPUS_PER_NODE} \
+  --num_machines 2 \
+  --num_processes 2 \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
