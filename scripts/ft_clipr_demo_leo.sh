@@ -50,12 +50,12 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
 ########################
 # 启动训练（多机多卡）
 ########################
-srun bash -lc "
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
 accelerate launch \
   --multi_gpu \
   --mixed_precision=fp16 \
   --num_machines 2 \
-  --num_processes 2 \
+  --num_processes 4 \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
