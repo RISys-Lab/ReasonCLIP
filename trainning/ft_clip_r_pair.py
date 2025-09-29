@@ -160,22 +160,23 @@ class CLIPTrainer(Trainer):
         batch_size = inputs["pixel_values"].size(0)
         device = inputs["pixel_values"].device
 
-        image_features = model.get_image_features(
+        backbone = model.module if hasattr(model, "module") else model
+        image_features = backbone.get_image_features(
             pixel_values=inputs["pixel_values"]
         )  # 默认已 L2 normalize
 
         # 2) 文本分别跑 TB 与 TRP
-        tb_text_features = model.get_text_features(
+        tb_text_features = backbone.get_text_features(
             input_ids=inputs["tb_input_ids"],
             attention_mask=inputs["tb_attention_mask"],
         )
-        trp_text_features = model.get_text_features(
+        trp_text_features = backbone.get_text_features(
             input_ids=inputs["trp_input_ids"],
             attention_mask=inputs["trp_attention_mask"],
         )
 
         # 3) 手动计算 logits（与 CLIP 前向一致）
-        logit_scale = model.logit_scale.exp()
+        logit_scale = backbone.logit_scale.exp()
         tb_logits_per_image  = logit_scale * (image_features @ tb_text_features.t())
         tb_logits_per_text   = logit_scale * (tb_text_features @ image_features.t())
         trp_logits_per_image = logit_scale * (image_features @ trp_text_features.t())
@@ -324,12 +325,12 @@ class CLIPRDataset(torch.utils.data.Dataset):
         item = self.dataset[original_idx]
         
         # 读取图像
-        # image_path = item["image_path"]
-        # image = Image.open(image_path).convert("RGB")
+        image_path = item["image_path"]
+        image = Image.open(image_path).convert("RGB")
 
         # 随机生成图像，用于测试
-        random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-        image = Image.fromarray(random_image)
+        # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        # image = Image.fromarray(random_image)
         
         # 获取tb和trp列表
         tb_captions = item["tb"]  # 3个基础caption

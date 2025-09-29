@@ -41,7 +41,7 @@ mkdir -p "$OUT_DIR" "$BEST_DIR"
 # 分布式参数（从 SLURM 推断）
 ########################
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-MASTER_PORT=29501
+MASTER_PORT=$((29000 + SLURM_JOBID % 1000))
 NUM_WORKERS=8
 
 echo "[INFO] MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
@@ -50,7 +50,7 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
 ########################
 # 启动训练（多机多卡）
 ########################
-srun --ntasks-per-node=1 bash -lc "
+srun bash -lc "
 accelerate launch \
   --multi_gpu \
   --mixed_precision=fp16 \
