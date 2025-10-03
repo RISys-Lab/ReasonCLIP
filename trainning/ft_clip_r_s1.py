@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 import numpy as np 
 from typing import Optional, List
+import math
 # import sys
 # sys.stderr.isatty = lambda: True
 # 初始化 accelerator
@@ -54,6 +55,7 @@ def parse_args():
                         help="Learning rate")
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
+    parser.add_argument("--bf16", action="store_true", help="Use bfloat16 (Ampere+ GPUs)")
     
     # Logging parameters - support both percentage and steps
     parser.add_argument("--logging_strategy", type=str, default="ratio", choices=["steps", "epoch", "ratio"],
@@ -109,6 +111,9 @@ def parse_args():
                         help="Path to the parquet file containing image_path, tb, and trp columns")
     parser.add_argument("--use_split", action="store_true",
                         help="Whether to split dataset into train:eval:test = 8:1:1")
+
+    parser.add_argument("--holdout_ratio", type=float, default=0.002,
+                    help="Fraction reserved for eval only (e.g., 0.002 = 0.2%)")
     
     default_workers = min(8, os.cpu_count() // 2)
     parser.add_argument("--num_workers", type=int, default=default_workers,
@@ -156,16 +161,28 @@ class CLIPTrainer(Trainer):
         # Loss weights already printed in main function
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        # ---- helper: gather across GPUs but keep local slice with gradient ----
+        def gather_with_local_grad(x, accelerator):
+            # x: [B, D] with grad on local process; other processes' slices are constants
+            if accelerator.num_processes == 1:
+                return x
+            B = x.size(0)
+            gathered = accelerator.gather(x.detach())  # [world*B, D], no grad
+            parts = []
+            for i in range(accelerator.num_processes):
+                if i == accelerator.process_index:
+                    parts.append(x)  # keep grad for local slice
+                else:
+                    s, e = i * B, (i + 1) * B
+                    parts.append(gathered[s:e])
+            return torch.cat(parts, dim=0)
 
-        batch_size = inputs["pixel_values"].size(0)
+        # ---- unpack ----
         device = inputs["pixel_values"].device
-
         backbone = model.module if hasattr(model, "module") else model
-        image_features = backbone.get_image_features(
-            pixel_values=inputs["pixel_values"]
-        )  # 默认已 L2 normalize
 
-        # 2) 文本分别跑 TB 与 TRP
+        # ---- forward encoders ----
+        image_features = backbone.get_image_features(pixel_values=inputs["pixel_values"])  # L2-normalized
         tb_text_features = backbone.get_text_features(
             input_ids=inputs["tb_input_ids"],
             attention_mask=inputs["tb_attention_mask"],
@@ -175,45 +192,65 @@ class CLIPTrainer(Trainer):
             attention_mask=inputs["trp_attention_mask"],
         )
 
-        # 3) 手动计算 logits（与 CLIP 前向一致）
+        # ---- temperature (clamp to avoid blow-up in large-batch) ----
+        with torch.no_grad():
+            backbone.logit_scale.data.clamp_(max=math.log(100.0))
         logit_scale = backbone.logit_scale.exp()
-        tb_logits_per_image  = logit_scale * (image_features @ tb_text_features.t())
-        tb_logits_per_text   = logit_scale * (tb_text_features @ image_features.t())
-        trp_logits_per_image = logit_scale * (image_features @ trp_text_features.t())
-        trp_logits_per_text  = logit_scale * (trp_text_features @ image_features.t())
 
-        labels = torch.arange(batch_size, device=device)
+        # ---- cross-GPU gather (only local slice keeps grad) ----
+        B = image_features.size(0)
+        rank = accelerator.process_index
+        all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
+        all_tb    = gather_with_local_grad(tb_text_features, accelerator)
+        all_trp   = gather_with_local_grad(trp_text_features, accelerator)
 
-        # TB 损失
-        tb_loss_i = F.cross_entropy(tb_logits_per_image, labels)
-        tb_loss_t = F.cross_entropy(tb_logits_per_text,  labels)
-        tb_loss = 0.5 * (tb_loss_i + tb_loss_t)
+        # global labels: shift by the local slice offset
+        labels_global = torch.arange(B, device=device) + rank * B
 
-        # 及时释放中间张量（进一步降低峰值显存）
+        # ---- TB branch: compute -> loss -> delete (lower peak mem) ----
+        tb_logits_per_image = logit_scale * (image_features   @ all_tb.t())     # [B, world*B]
+        tb_logits_per_text  = logit_scale * (tb_text_features @ all_image.t())  # [B, world*B]
+        tb_loss = 0.5 * (
+            F.cross_entropy(tb_logits_per_image, labels_global) +
+            F.cross_entropy(tb_logits_per_text,  labels_global)
+        )
+        # free logits to reduce peak memory before TRP
         del tb_logits_per_image, tb_logits_per_text
 
-        # TRP 损失
-        trp_loss_i = F.cross_entropy(trp_logits_per_image, labels)
-        trp_loss_t = F.cross_entropy(trp_logits_per_text,  labels)
-        trp_loss = 0.5 * (trp_loss_i + trp_loss_t)
-
-        # 及时释放TRP中间张量
+        # ---- TRP branch ----
+        trp_logits_per_image = logit_scale * (image_features     @ all_trp.t())
+        trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t())
+        trp_loss = 0.5 * (
+            F.cross_entropy(trp_logits_per_image, labels_global) +
+            F.cross_entropy(trp_logits_per_text,  labels_global)
+        )
         del trp_logits_per_image, trp_logits_per_text
 
+        # ---- combine ----
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
+        # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
             import wandb
-            wandb.log({
-                "train/tb_loss": tb_loss.item(),
-                "train/trp_loss": trp_loss.item(),
-                "train/total_loss": total_loss.item(),
-            }, commit=False)
+            wandb.log(
+                {
+                    "train/tb_loss": tb_loss.item(),
+                    "train/trp_loss": trp_loss.item(),
+                    "train/total_loss": total_loss.item(),
+                },
+                commit=False,
+            )
 
+        # ---- optional outputs (detached; using gathered text for global view) ----
         if return_outputs:
+            # Recompute lightweight logits for inspection (detached). If you don't need them,
+            # you can return an empty dict to save time/memory.
+            with torch.no_grad():
+                tb_logits_view  = (image_features @ all_tb.t()).detach()
+                trp_logits_view = (image_features @ all_trp.t()).detach()
             outputs = {
-                "tb_image_text_logits":  (image_features @ tb_text_features.t()).detach(),
-                "trp_image_text_logits": (image_features @ trp_text_features.t()).detach(),
+                "tb_image_text_logits":  tb_logits_view,   # [B, world*B]
+                "trp_image_text_logits": trp_logits_view,  # [B, world*B]
             }
             return total_loss, outputs
 
@@ -443,8 +480,13 @@ def train_clip(args):
         eval_hf, test_hf = tmp["train"], tmp["test"]
         main_print(f"   - Dataset split (8:1:1): {len(train_hf)} train, {len(eval_hf)} eval, {len(test_hf)} test")
     else:
-        train_hf, eval_hf, test_hf = hf_ds, None, None
-        main_print(f"   - Using full dataset for training: {len(train_hf)} samples")
+        if args.holdout_ratio > 0:
+            split = hf_ds.train_test_split(test_size=args.holdout_ratio, seed=42)
+            train_hf, eval_hf = split["train"], split["test"]
+            main_print(f"   - Holdout eval: {len(eval_hf)} ({args.holdout_ratio*100:.2f}%)")
+        else:
+            train_hf, eval_hf = hf_ds, None
+            main_print(f"   - No eval holdout")
 
     # 3) 用 HF Dataset 构建你的自定义 Dataset（无需 to_dict('records')）
     train_dataset = CLIPRDataset(train_hf, processor)
@@ -522,7 +564,8 @@ def train_clip(args):
         output_dir=args.output_dir,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        fp16=args.fp16,
+        bf16=args.bf16,
+        fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_strategy=logging_strategy,
@@ -538,6 +581,7 @@ def train_clip(args):
         weight_decay=args.weight_decay,
         lr_scheduler_type="cosine",
         max_grad_norm=args.max_grad_norm,
+        gradient_checkpointing=True,
         # load_best_model_at_end=True,
         # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
         # greater_is_better=False,       # 损失越小越好

@@ -16,6 +16,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # activate env 
 module load profile/deeplrn

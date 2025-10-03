@@ -1,22 +1,23 @@
 #!/bin/bash
 #SBATCH --job-name=clipr_ft_s1_test
-#SBATCH --time=01:00:00
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=2
+#SBATCH --time=24:00:00
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=clipr_ft_s1_test.out
 #SBATCH --error=clipr_ft_s1_test.err
 #SBATCH --account=EUHPC_R04_192
-#SBATCH --mem=128G
+#SBATCH --mem=256G
 
 export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
 export NCCL_DEBUG=INFO
 export CUDA_LAUNCH_BLOCKING=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 加载模块和环境
 module load profile/deeplrn
@@ -53,9 +54,9 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
 srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
 accelerate launch \
   --multi_gpu \
-  --mixed_precision=fp16 \
-  --num_machines 2 \
-  --num_processes 4 \
+  --mixed_precision=bf16 \
+  --num_machines 8 \
+  --num_processes 32 \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
@@ -64,14 +65,14 @@ accelerate launch \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
     --best_model_dir ${BEST_DIR} \
-    --batch_size 32 \
+    --batch_size 128 \
     --gradient_accumulation_steps 4 \
     --epochs 1 \
-    --learning_rate 3e-5 \
+    --learning_rate 2e-4 \
     --tb_alpha 0.75 \
-    --use_split \
+    --holdout_ratio 0.002 \
     --warmup_ratio 0.03 \
-    --weight_decay 0.01 \
+    --weight_decay 0.05 \
     --fp16 \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
