@@ -21,12 +21,28 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # 加载模块和环境
+module purge
 module load profile/deeplrn
+module load cuda/12.6
 module load openmpi
-module load gcc/12.2.0
-# module load cuda/12.6
+
+which nvcc
+echo $CUDA_HOME
+nvcc -V
+
+export NCCL_SOCKET_IFNAME=ib0
+export NCCL_IB_DISABLE=0
+export NCCL_NET_GDR_LEVEL=2
+export NCCL_ASYNC_ERROR_HANDLING=1
+unset NCCL_BLOCKING_WAIT
+export NCCL_IB_GID_INDEX=3
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_SUBSYS=INIT,ENV,COLL
+
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
+
+
 
 # PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/combined_unclassified/cc12m_trl_chunk05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
