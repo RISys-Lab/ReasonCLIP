@@ -75,7 +75,6 @@ accelerate launch \
     --weight_decay 0.05 \
     --bf16 \
     --deepspeed trainning/ds_zero2.json \
-    --flash_attn \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \
