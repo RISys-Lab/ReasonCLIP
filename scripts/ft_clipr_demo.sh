@@ -23,7 +23,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # 加载模块和环境
 module load profile/deeplrn
 module load openmpi
-module load cuda/12.6
+# module load cuda/12.6
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
@@ -75,7 +75,6 @@ accelerate launch \
     --warmup_ratio 0.03 \
     --weight_decay 0.05 \
     --bf16 \
-    --deepspeed trainning/ds_zero2.json \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \

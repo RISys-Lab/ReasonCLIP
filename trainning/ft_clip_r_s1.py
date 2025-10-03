@@ -390,10 +390,9 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    attn_impl = "flash_attention_2" if args.flash_attn else "sdpa"
     model = CLIPModel.from_pretrained(
         model_name,
-        attn_implementation=attn_impl,
+        # attn_implementation=attn_impl,
         torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
     )
     processor = CLIPProcessor.from_pretrained(model_name)
