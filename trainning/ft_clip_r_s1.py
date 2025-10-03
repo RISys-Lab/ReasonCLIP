@@ -256,73 +256,6 @@ class CLIPTrainer(Trainer):
 
         return total_loss
 
-    # def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-    #     """
-    #     Compute CLIP contrastive loss, calculate image-tb and image-trp loss separately
-    #     """
-
-    #     # 简化方法：将两个损失合并到一次前向传播中
-    #     batch_size = inputs["pixel_values"].size(0)
-    #     device = inputs["pixel_values"].device
-        
-    #     # 将TB和TRP的text inputs拼接起来，一次性计算
-    #     combined_input_ids = torch.cat([inputs["tb_input_ids"], inputs["trp_input_ids"]], dim=0)
-    #     combined_attention_mask = torch.cat([inputs["tb_attention_mask"], inputs["trp_attention_mask"]], dim=0)
-    #     combined_pixel_values = torch.cat([inputs["pixel_values"], inputs["pixel_values"]], dim=0)
-        
-    #     # 一次前向传播
-    #     combined_outputs = model(
-    #         input_ids=combined_input_ids,
-    #         attention_mask=combined_attention_mask,
-    #         pixel_values=combined_pixel_values
-    #     )
-        
-    #     # 分离TB和TRP的输出
-    #     logits_per_image = combined_outputs.logits_per_image
-    #     logits_per_text = combined_outputs.logits_per_text
-        
-    #     # 前半部分是TB，后半部分是TRP
-    #     tb_logits_per_image  = logits_per_image[:batch_size, :batch_size]
-    #     tb_logits_per_text   = logits_per_text [:batch_size, :batch_size]
-    #     trp_logits_per_image = logits_per_image[batch_size:, batch_size:]
-    #     trp_logits_per_text  = logits_per_text [batch_size:, batch_size:]
-        
-    #     # 计算损失
-    #     labels = torch.arange(batch_size, device=device)
-        
-    #     # TB损失
-    #     tb_loss_i = F.cross_entropy(tb_logits_per_image, labels)
-    #     tb_loss_t = F.cross_entropy(tb_logits_per_text, labels)
-    #     tb_loss = (tb_loss_i + tb_loss_t) / 2.0
-        
-    #     # TRP损失  
-    #     trp_loss_i = F.cross_entropy(trp_logits_per_image, labels)
-    #     trp_loss_t = F.cross_entropy(trp_logits_per_text, labels)
-    #     trp_loss = (trp_loss_i + trp_loss_t) / 2.0
-        
-    #     # 组合损失
-    #     total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
-
-    #     if accelerator.is_main_process and "wandb" in self.args.report_to:
-    #         # commit=False，等 Transformer 自己在 step 末尾再统一提交
-    #         wandb.log({
-    #             "train/tb_loss": tb_loss.item(),
-    #             "train/trp_loss": trp_loss.item(),
-    #             "train/total_loss": total_loss.item(),
-    #         }, commit=False)
-
-        
-    #     if return_outputs:
-    #         # 构造一个简单的 Namespace/dict 结构，保存 tb 和 trp 的 logits
-    #         outputs = {
-    #             "tb_logits_per_image": tb_logits_per_image,
-    #             "tb_logits_per_text":  tb_logits_per_text,
-    #             "trp_logits_per_image": trp_logits_per_image,
-    #             "trp_logits_per_text":  trp_logits_per_text,
-    #         }
-    #         return total_loss, outputs
-    #     return total_loss
-
     # NEW: override prediction_step to avoid unexpected kwargs during evaluation
     def prediction_step(
         self,
@@ -450,7 +383,11 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = CLIPModel.from_pretrained(model_name)
+    model = CLIPModel.from_pretrained(
+        model_name,
+        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+    )
     processor = CLIPProcessor.from_pretrained(model_name)
 
     # ================================ 数据集配置 ================================

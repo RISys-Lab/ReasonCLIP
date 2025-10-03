@@ -23,8 +23,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # 加载模块和环境
 module load profile/deeplrn
 module load openmpi
-# source $WORK/fmohamma/venvs/llm/bin/activate
-source $WORK/fmohamma/venvs/clipr/bin/activate
+source $WORK/fmohamma/venvs/dl_train/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/combined_unclassified/cc12m_trl_chunk05.parquet"
@@ -66,8 +65,8 @@ accelerate launch \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
     --best_model_dir ${BEST_DIR} \
-    --batch_size 128 \
-    --gradient_accumulation_steps 4 \
+    --batch_size 768 \
+    --gradient_accumulation_steps 1 \
     --epochs 1 \
     --learning_rate 2e-4 \
     --tb_alpha 0.75 \
