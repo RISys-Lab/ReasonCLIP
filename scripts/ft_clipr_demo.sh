@@ -65,7 +65,7 @@ accelerate launch \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
     --best_model_dir ${BEST_DIR} \
-    --batch_size 768 \
+    --batch_size 256 \
     --gradient_accumulation_steps 1 \
     --epochs 1 \
     --learning_rate 2e-4 \
