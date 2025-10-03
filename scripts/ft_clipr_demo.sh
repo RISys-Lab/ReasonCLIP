@@ -23,6 +23,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # 加载模块和环境
 module load profile/deeplrn
 module load openmpi
+module load gcc/12.2.0
 # module load cuda/12.6
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
