@@ -73,7 +73,8 @@ accelerate launch \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.03 \
     --weight_decay 0.05 \
-    --fp16 \
+    --bf16 \
+    --deepspeed trainning/ds_zero2.json \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \

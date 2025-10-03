@@ -53,9 +53,16 @@ def parse_args():
                         help="Number of training epochs")
     parser.add_argument("--learning_rate", type=float, default=5e-5, 
                         help="Learning rate")
+
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
     parser.add_argument("--bf16", action="store_true", help="Use bfloat16 (Ampere+ GPUs)")
+
+    parser.add_argument("--deepspeed", type=str, default=None,
+                        help="Path to DeepSpeed JSON config (ZeRO, etc.)")
+    parser.add_argument("--flash_attn", action="store_true",
+                        help="Use FlashAttention-2 backend for attention (attn_implementation=flash_attention_2).",
+    )
     
     # Logging parameters - support both percentage and steps
     parser.add_argument("--logging_strategy", type=str, default="ratio", choices=["steps", "epoch", "ratio"],
@@ -383,9 +390,10 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
+    attn_impl = "flash_attention_2" if args.flash_attn else "sdpa"
     model = CLIPModel.from_pretrained(
         model_name,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
         torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
     )
     processor = CLIPProcessor.from_pretrained(model_name)
@@ -528,6 +536,7 @@ def train_clip(args):
         # 分布式训练配置
         ddp_find_unused_parameters=False,  # 关闭unused parameters检测，提高性能
         dataloader_drop_last=True,            # 丢弃训练集最后一个不满 batch
+        deepspeed=args.deepspeed,
     )
     
     main_print(f"\n🎯 Loss Configuration:")

@@ -23,7 +23,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # 加载模块和环境
 module load profile/deeplrn
 module load openmpi
-source $WORK/fmohamma/venvs/dl_train/bin/activate
+source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/combined_unclassified/cc12m_trl_chunk05.parquet"
@@ -74,6 +74,8 @@ accelerate launch \
     --warmup_ratio 0.03 \
     --weight_decay 0.05 \
     --bf16 \
+    --deepspeed trainning/ds_zero2.json \
+    --flash_attn \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \
