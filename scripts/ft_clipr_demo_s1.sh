@@ -80,7 +80,7 @@ accelerate launch \
     --logging_ratio 0.005 \
     --save_strategy ratio \
     --save_ratio 0.25 \
-    --save_total_limit 2 \ 
+    --save_total_limit 2 \
     --eval_strategy ratio \
     --eval_ratio 0.25 \
     --num_workers ${NUM_WORKERS} \
