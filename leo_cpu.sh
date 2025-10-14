@@ -25,4 +25,4 @@ source $WORK/fmohamma/venvs/llm/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 # run python
-python -u dataset/clean/copy_images.py
+python -u utils/a.py
