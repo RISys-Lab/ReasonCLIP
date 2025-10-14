@@ -67,21 +67,22 @@ accelerate launch \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
     --model_type siglip \
-    --batch_size 256 \
-    --gradient_accumulation_steps 1 \
+    --batch_size 384 \
+    --gradient_accumulation_steps 2 \
     --epochs 1 \
-    --learning_rate 2e-4 \
+    --learning_rate 1.2e-4 \
     --tb_alpha 0.75 \
     --holdout_ratio 0.002 \
-    --warmup_ratio 0.03 \
+    --warmup_ratio 0.05 \
     --weight_decay 0.02 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \
-    --save_ratio 0.1 \
+    --save_ratio 0.25 \
+    --save_total_limit 2 \ 
     --eval_strategy ratio \
-    --eval_ratio 0.1 \
+    --eval_ratio 0.25 \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \

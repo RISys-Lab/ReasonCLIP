@@ -26,11 +26,6 @@ module load openmpi
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-# PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/combined_unclassified/cc12m_trl_chunk05.parquet"
-# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-# OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_finetune_demo"
-# BEST_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_best_model_demo"
-
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_combined.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
 MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
