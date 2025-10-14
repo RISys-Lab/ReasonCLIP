@@ -362,22 +362,16 @@ class CLIPRDataset(torch.utils.data.Dataset):
         tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
         
         img_enc = self.processor(images=image, return_tensors="pt")
-        tb_enc = self.processor(
-            text=[tb_caption],
-            return_tensors="pt", padding="max_length", truncation=True
-        )
-        trp_enc = self.processor(
-            text=[trp_caption],
-            return_tensors="pt", padding="max_length", truncation=True
-        )
+        tb_enc = self.processor(text=[tb_caption], return_tensors="pt", padding=True, truncation=True)
+        trp_enc = self.processor(text=[trp_caption], return_tensors="pt", padding=True, truncation=True)
         
         # 构建返回的batch，只包含必要的数据
         return {
             "pixel_values": img_enc["pixel_values"].squeeze(0),
             "tb_input_ids": tb_enc["input_ids"].squeeze(0),
-            "tb_attention_mask": tb_enc["attention_mask"].squeeze(0),
+            "tb_attention_mask": tb_enc.get("attention_mask", torch.ones_like(tb_enc["input_ids"])).squeeze(0),
             "trp_input_ids": trp_enc["input_ids"].squeeze(0),
-            "trp_attention_mask": trp_enc["attention_mask"].squeeze(0),
+            "trp_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
         }
 
 
