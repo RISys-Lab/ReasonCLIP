@@ -5,6 +5,8 @@ from datasets import Dataset, load_dataset
 from transformers import (
     CLIPProcessor,
     CLIPModel,
+    SiglipProcessor,
+    SiglipModel,
     Trainer,
     TrainingArguments,
 )
@@ -13,6 +15,7 @@ from accelerate import Accelerator
 import numpy as np 
 from typing import Optional, List
 import math
+import glob
 # import sys
 # sys.stderr.isatty = lambda: True
 # 初始化 accelerator
@@ -39,6 +42,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
     # Training parameters
     
+    parser.add_argument("--model_type", type=str, default="clip", choices=["clip", "siglip"],
+                        help="Model type: 'clip' or 'siglip'")
     parser.add_argument("--model_name", type=str, default="openai/clip-vit-large-patch14", 
                         help="Pre-trained model name")
     parser.add_argument("--output_dir", type=str, default="./weights/unifire_clip_finetune", 
@@ -114,8 +119,8 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--parquet_file", type=str, required=True,
-                        help="Path to the parquet file containing image_path, tb, and trp columns")
+    parser.add_argument("--parquet_files", type=str, nargs="+", required=True,
+                        help="Paths to one or more parquet files (space-separated or glob)")
     parser.add_argument("--use_split", action="store_true",
                         help="Whether to split dataset into train:eval:test = 8:1:1")
 
@@ -134,8 +139,23 @@ def parse_args():
     parser.add_argument("--wandb_log", action="store_true",
                         help="Enable wandb logging")
     
+    # Resume training parameters
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None,
+                        help="Path to checkpoint directory to resume training from")
+
     return parser.parse_args()
 
+def make_tb_schedule(start=0.70, mid=0.50, end=0.60, t1=0.20, t2=0.80):
+    def _schedule(step, max_steps):
+        p = step / max_steps
+        if p <= t1:
+            return start
+        elif p <= t2:
+            # 线性从 start -> mid
+            return start + (mid - start) * ((p - t1) / (t2 - t1))
+        else:
+            return end
+    return _schedule
 
 class BestModelCallback(TrainerCallback):
     def __init__(self):
@@ -161,16 +181,32 @@ class BestModelCallback(TrainerCallback):
                 main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class CLIPTrainer(Trainer):
-    def __init__(self, tb_alpha=0.5, *args, **kwargs):
+    def __init__(self, tb_alpha=0.5, model_type="clip", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tb_weight = tb_alpha
         self.trp_weight = 1.0 - tb_alpha
-        # Loss weights already printed in main function
+        self.model_type = model_type  # "clip" 或 "siglip"
     
+    @staticmethod
+    def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        SigLIP 风格：对 (B, N) 相似度矩阵做 BCE-with-logits，
+        targets 为 one-hot（对角为 1，其余为 0）。
+        """
+        # logits: [B, N], labels: [B]（每行正样本所在列的索引）
+        targets = torch.zeros_like(logits, dtype=logits.dtype)
+        targets.scatter_(1, labels.unsqueeze(1), 1.0)
+        return F.binary_cross_entropy_with_logits(logits, targets)
+
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        if hasattr(self, "tb_schedule") and self.tb_schedule is not None:
+            gs = getattr(self.state, "global_step", 0)
+            ms = max(1, getattr(self.state, "max_steps", 1))
+            tb_w = self.tb_schedule(gs, ms)
+            self.tb_weight = float(tb_w)
+            self.trp_weight = 1.0 - self.tb_weight
         # ---- helper: gather across GPUs but keep local slice with gradient ----
         def gather_with_local_grad(x, accelerator):
-            # x: [B, D] with grad on local process; other processes' slices are constants
             if accelerator.num_processes == 1:
                 return x
             B = x.size(0)
@@ -189,7 +225,7 @@ class CLIPTrainer(Trainer):
         backbone = model.module if hasattr(model, "module") else model
 
         # ---- forward encoders ----
-        image_features = backbone.get_image_features(pixel_values=inputs["pixel_values"])  # L2-normalized
+        image_features = backbone.get_image_features(pixel_values=inputs["pixel_values"])
         tb_text_features = backbone.get_text_features(
             input_ids=inputs["tb_input_ids"],
             attention_mask=inputs["tb_attention_mask"],
@@ -201,8 +237,10 @@ class CLIPTrainer(Trainer):
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():
-            backbone.logit_scale.data.clamp_(max=math.log(100.0))
-        logit_scale = backbone.logit_scale.exp()
+            # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
+            if hasattr(backbone, "logit_scale"):
+                backbone.logit_scale.data.clamp_(max=math.log(100.0))
+        logit_scale = backbone.logit_scale.exp() if hasattr(backbone, "logit_scale") else 1.0
 
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
@@ -212,25 +250,40 @@ class CLIPTrainer(Trainer):
         all_trp   = gather_with_local_grad(trp_text_features, accelerator)
 
         # global labels: shift by the local slice offset
-        labels_global = torch.arange(B, device=device) + rank * B
+        labels_global = torch.arange(B, device=device) + rank * B  # [B]
 
-        # ---- TB branch: compute -> loss -> delete (lower peak mem) ----
+        # ---- TB branch ----
         tb_logits_per_image = logit_scale * (image_features   @ all_tb.t())     # [B, world*B]
         tb_logits_per_text  = logit_scale * (tb_text_features @ all_image.t())  # [B, world*B]
-        tb_loss = 0.5 * (
-            F.cross_entropy(tb_logits_per_image, labels_global) +
-            F.cross_entropy(tb_logits_per_text,  labels_global)
-        )
-        # free logits to reduce peak memory before TRP
-        del tb_logits_per_image, tb_logits_per_text
+
+        if self.model_type == "clip":
+            tb_loss = 0.5 * (
+                F.cross_entropy(tb_logits_per_image, labels_global) +
+                F.cross_entropy(tb_logits_per_text,  labels_global)
+            )
+        else:  # "siglip"
+            tb_loss = 0.5 * (
+                self._bce_logits_loss(tb_logits_per_image, labels_global) +
+                self._bce_logits_loss(tb_logits_per_text,  labels_global)
+            )
+
+        del tb_logits_per_image, tb_logits_per_text  # 及时释放
 
         # ---- TRP branch ----
         trp_logits_per_image = logit_scale * (image_features     @ all_trp.t())
         trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t())
-        trp_loss = 0.5 * (
-            F.cross_entropy(trp_logits_per_image, labels_global) +
-            F.cross_entropy(trp_logits_per_text,  labels_global)
-        )
+
+        if self.model_type == "clip":
+            trp_loss = 0.5 * (
+                F.cross_entropy(trp_logits_per_image, labels_global) +
+                F.cross_entropy(trp_logits_per_text,  labels_global)
+            )
+        else:  # "siglip"
+            trp_loss = 0.5 * (
+                self._bce_logits_loss(trp_logits_per_image, labels_global) +
+                self._bce_logits_loss(trp_logits_per_text,  labels_global)
+            )
+
         del trp_logits_per_image, trp_logits_per_text
 
         # ---- combine ----
@@ -248,16 +301,14 @@ class CLIPTrainer(Trainer):
                 commit=False,
             )
 
-        # ---- optional outputs (detached; using gathered text for global view) ----
+        # ---- optional outputs (detached; global view) ----
         if return_outputs:
-            # Recompute lightweight logits for inspection (detached). If you don't need them,
-            # you can return an empty dict to save time/memory.
             with torch.no_grad():
                 tb_logits_view  = (image_features @ all_tb.t()).detach()
                 trp_logits_view = (image_features @ all_trp.t()).detach()
             outputs = {
-                "tb_image_text_logits":  tb_logits_view,   # [B, world*B]
-                "trp_image_text_logits": trp_logits_view,  # [B, world*B]
+                "tb_image_text_logits":  tb_logits_view,
+                "trp_image_text_logits": trp_logits_view,
             }
             return total_loss, outputs
 
@@ -271,7 +322,6 @@ class CLIPTrainer(Trainer):
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
     ):
-        """Custom evaluation step that reuses compute_loss logic to prevent forward() kwargs errors."""
         model.eval()
         with torch.no_grad():
             loss, _ = self.compute_loss(model, inputs, return_outputs=True)
@@ -279,8 +329,8 @@ class CLIPTrainer(Trainer):
         if prediction_loss_only:
             return (loss.detach(), None, None)
 
-        # For simplicity, we do not return logits/labels for now.
         return (loss.detach(), None, None)
+
 
 
 class CLIPRDataset(torch.utils.data.Dataset):
@@ -297,11 +347,9 @@ class CLIPRDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # 计算原始样本索引和caption组合索引
         original_idx = idx // self.captions_per_image
-        pair_idx = idx % self.captions_per_image
-        
+        pair_idx = idx % self.captions_per_image   
         item = self.dataset[original_idx]
         
-        # 读取图像
         image_path = item["image_path"]
         image = Image.open(image_path).convert("RGB")
 
@@ -309,93 +357,107 @@ class CLIPRDataset(torch.utils.data.Dataset):
         # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         # image = Image.fromarray(random_image)
         
-        # 获取tb和trp列表
-        tb_captions = item["tb"]  # 3个基础caption
-        trp_captions = item["trp"]  # 3个推理caption
+        tb_captions, trp_captions = item["tb"], item["trp"]
+        tb_idx, trp_idx = pair_idx // 3, pair_idx % 3
+        tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
         
-        # 计算tb和trp的索引（3x3组合）
-        tb_idx = pair_idx // 3  # 0, 0, 0, 1, 1, 1, 2, 2, 2
-        trp_idx = pair_idx % 3   # 0, 1, 2, 0, 1, 2, 0, 1, 2
-        
-        # 获取对应的tb和trp caption
-        tb_caption = tb_captions[tb_idx]
-        trp_caption = trp_captions[trp_idx]
-        
-        # 使用CLIP处理器分别处理图像和两种文本
-        # 处理tb caption
-        tb_encoding = self.processor(
-            text=[tb_caption], 
-            images=image, 
-            return_tensors="pt",
-            padding="max_length",
-            truncation=True,
-            max_length=77,
+        img_enc = self.processor(images=image, return_tensors="pt")
+        tb_enc = self.processor(
+            text=[tb_caption],
+            return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len,
         )
-        
-        # 处理trp caption
-        trp_encoding = self.processor(
-            text=[trp_caption], 
-            images=image, 
-            return_tensors="pt",
-            padding="max_length",
-            truncation=True,
-            max_length=77,
+        trp_enc = self.processor(
+            text=[trp_caption],
+            return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len,
         )
         
         # 构建返回的batch，只包含必要的数据
-        batch = {
-            # 图像信息
-            "pixel_values": tb_encoding["pixel_values"].squeeze(0),
-            
-            # TB文本信息
-            "tb_input_ids": tb_encoding["input_ids"].squeeze(0),
-            "tb_attention_mask": tb_encoding["attention_mask"].squeeze(0),
-            
-            # TRP文本信息
-            "trp_input_ids": trp_encoding["input_ids"].squeeze(0),
-            "trp_attention_mask": trp_encoding["attention_mask"].squeeze(0)
+        return {
+            "pixel_values": img_enc["pixel_values"].squeeze(0),
+            "tb_input_ids": tb_enc["input_ids"].squeeze(0),
+            "tb_attention_mask": tb_enc["attention_mask"].squeeze(0),
+            "trp_input_ids": trp_enc["input_ids"].squeeze(0),
+            "trp_attention_mask": trp_enc["attention_mask"].squeeze(0),
         }
-        
-        return batch
 
 
 def train_clip(args):
     # 获取当前是否为主进程
     is_main_process = accelerator.is_main_process
 
-    
+    # 先取出模型信息，避免后面打印时 NameError
+    model_name = args.model_name
+    model_type = args.model_type
+
     # 打印分布式训练信息
     main_print("="*60)
     main_print("🚀 CLIP-R Training Configuration")
     main_print("="*60)
     main_print(f"🔧 Training setup:")
+    main_print(f"   - Model type: {model_type.upper()}")
+    main_print(f"   - Model name: {model_name}")
     main_print(f"   - Distributed training: {accelerator.num_processes > 1}")
     main_print(f"   - Number of processes: {accelerator.num_processes}")
     main_print(f"   - Mixed precision: {accelerator.mixed_precision}")
     if accelerator.num_processes > 1:
         main_print(f"   - Current process rank: {accelerator.process_index}")
-    
-    # 创建带时间戳的运行名称
-    timestamp = datetime.now().strftime("%m%d_%H%M%S")
-    args.run_name = f"{args.run_name}_{timestamp}"
-    args.output_dir = f"{args.output_dir}_{timestamp}"
-    args.best_model_dir = f"{args.best_model_dir}_{timestamp}"
+
+    # 统一 run_id：仅主进程生成，然后广播给所有进程
+    from datetime import datetime
+    import torch.distributed as dist
+
+    if accelerator.is_main_process:
+        run_id = f"run_{datetime.now().strftime('%m%d_%H%M%S')}"
+    else:
+        run_id = None
+
+    if accelerator.num_processes > 1 and dist.is_available() and dist.is_initialized():
+        obj_list = [run_id]
+        dist.broadcast_object_list(obj_list, src=0)
+        run_id = obj_list[0]
+
+    # 所有进程都使用同一个 save_root
+    save_root = os.path.join("./output_dir", run_id)
+
+    # 只主进程创建目录，其它进程等待
+    if accelerator.is_main_process:
+        os.makedirs(os.path.join(save_root, "finetune_weights"), exist_ok=True)
+        os.makedirs(os.path.join(save_root, "best_model"), exist_ok=True)
+    accelerator.wait_for_everyone()
+
+    # 统一 run 名称和保存路径
+    args.run_name = f"{args.run_name}_{run_id.replace('run_', '')}"
+    args.output_dir = os.path.join(save_root, "finetune_weights")
+    args.best_model_dir = os.path.join(save_root, "best_model")
+
+    # 初始化 WandB（仅主进程；其余进程禁用）
     if args.wandb_log and is_main_process:
         wandb.login()
         wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
-            name=args.run_name  # 使用带时间戳的名称
+            name=args.run_name
         )
-    else: os.environ["WANDB_DISABLED"] = "true"
+    else:
+        os.environ["WANDB_DISABLED"] = "true"
     
-    model_name = args.model_name
-    model = CLIPModel.from_pretrained(
-        model_name,
-        # attn_implementation=attn_impl,
-        torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
-    )
-    processor = CLIPProcessor.from_pretrained(model_name)
+    # 根据模型类型加载相应的模型和处理器
+    if model_type == "clip":
+        model = CLIPModel.from_pretrained(
+            model_name,
+            attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+        )
+        processor = CLIPProcessor.from_pretrained(model_name)
+    elif model_type == "siglip":
+        model = SiglipModel.from_pretrained(
+            model_name,
+            attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+        )
+        processor = SiglipProcessor.from_pretrained(model_name)
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
 
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
@@ -404,16 +466,16 @@ def train_clip(args):
 
     # ================================ 数据集配置（替换整段 pandas 读取与切分） ================================
     main_print(f"\n📊 Dataset Configuration:")
-    main_print(f"   - Loading from: {args.parquet_file}")
+    main_print(f"   - Loading from: {args.parquet_files}")
 
-    # 1) 直接用 HF Datasets 读取 parquet（Arrow 内存映射，不会把 100 万行全塞进内存）
+    files = sorted(args.parquet_files)
+    main_print(f"📊 Loading {len(files)} parquet files...")
     hf_ds = load_dataset(
         "parquet",
-        data_files=args.parquet_file,
+        data_files={"train": files},   # 用 dict 明确 split
         split="train",
-        keep_in_memory=False  # 关键：禁用把数据驻留在内存
+        keep_in_memory=False
     )
-
     main_print(f"   - Total samples (rows): {len(hf_ds)}")
 
     # 2) 切分（用 HF 自带的 split，不会复制成 Python 对象）
@@ -536,24 +598,46 @@ def train_clip(args):
         ddp_find_unused_parameters=False,  # 关闭unused parameters检测，提高性能
         dataloader_drop_last=True,            # 丢弃训练集最后一个不满 batch
         deepspeed=args.deepspeed,
+        seed=42,
+        data_seed=42,
     )
     
     main_print(f"\n🎯 Loss Configuration:")
     main_print(f"   - TB loss weight: {args.tb_alpha:.3f}")
     main_print(f"   - TRP loss weight: {1.0 - args.tb_alpha:.3f}")
     
+    # ================================ 断点恢复配置 ================================
+    resume_from_checkpoint = None
+    
+    if args.resume_from_checkpoint:
+        # 用户指定了具体的checkpoint路径
+        if os.path.exists(args.resume_from_checkpoint):
+            resume_from_checkpoint = args.resume_from_checkpoint
+            main_print(f"\n🔄 Resuming from specified checkpoint: {resume_from_checkpoint}")
+        else:
+            main_print(f"❌ Specified checkpoint not found: {args.resume_from_checkpoint}")
+            main_print("   Starting training from scratch...")
+
+    if resume_from_checkpoint:
+        base = os.path.basename(os.path.normpath(resume_from_checkpoint))
+        step_number = base.split("checkpoint-")[-1] if base.startswith("checkpoint-") else "unknown"
+        main_print(f"   - Resuming from step: {step_number}")
+
+
     main_print(f"\n🚀 Starting Training...")
     main_print("="*60)
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
         tb_alpha=args.tb_alpha,
+        model_type=model_type,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()]
     )
+    trainer.tb_schedule = make_tb_schedule()
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # 手动保存 best model
     best_model_path = args.best_model_dir
@@ -565,15 +649,21 @@ def train_clip(args):
     return best_model_path
 
 
-def push_to_hub(best_model_path, repo_name):
+def push_to_hub(best_model_path, repo_name, model_type="clip"):
     # 只有主进程执行推送操作
     if accelerator.is_main_process:
         main_print(f"\n🤗 Pushing model to HuggingFace Hub: {repo_name}")
         from huggingface_hub import HfApi
         
-        # 自动上传 best model 到 hub
-        model = CLIPModel.from_pretrained(best_model_path)
-        processor = CLIPProcessor.from_pretrained(best_model_path)
+        # 根据模型类型加载相应的模型和处理器
+        if model_type == "clip":
+            model = CLIPModel.from_pretrained(best_model_path)
+            processor = CLIPProcessor.from_pretrained(best_model_path)
+        elif model_type == "siglip":
+            model = SiglipModel.from_pretrained(best_model_path)
+            processor = SiglipProcessor.from_pretrained(best_model_path)
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
 
         model.push_to_hub(repo_name)
         processor.push_to_hub(repo_name)
@@ -593,7 +683,7 @@ def main():
     
     # 推送到HuggingFace Hub
     if args.push_to_hub:
-        push_to_hub(best_model_path, args.hub_model_name)
+        push_to_hub(best_model_path, args.hub_model_name, args.model_type)
     
     # Distributed training cleanup
     accelerator.wait_for_everyone()

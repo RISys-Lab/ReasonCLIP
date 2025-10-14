@@ -21,7 +21,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 加载模块和环境
 module load profile/deeplrn
-# module load openmpi
+module load openmpi
 # source $WORK/fmohamma/venvs/llm/bin/activate
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
@@ -34,11 +34,11 @@ cd $WORK/fmohamma/CLIP-R/
 # BEST_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_best_model_demo"
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_combined.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_finetune_test"
-BEST_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_best_model_test"
+# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1_test"
 
-mkdir -p "$OUT_DIR" "$BEST_DIR"
+mkdir -p "$OUT_DIR"
 
 ########################
 # 分布式参数（从 SLURM 推断）
@@ -63,10 +63,10 @@ accelerate launch \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
   trainning/ft_clip_r_s1.py \
-    --parquet_file ${PARQUET_PATH} \
+    --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --best_model_dir ${BEST_DIR} \
+    --model_type siglip \
     --batch_size 256 \
     --gradient_accumulation_steps 1 \
     --epochs 1 \
@@ -74,7 +74,7 @@ accelerate launch \
     --tb_alpha 0.75 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.03 \
-    --weight_decay 0.05 \
+    --weight_decay 0.02 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
@@ -85,7 +85,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_dual_loss_experiment\"
+    --run_name \"clip_r_s1_test\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."

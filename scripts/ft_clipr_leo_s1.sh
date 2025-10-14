@@ -32,11 +32,11 @@ cd $WORK/fmohamma/CLIP-R/
 # BEST_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_best_model_demo"
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_combined.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_finetune_test"
-BEST_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_best_model_test"
+# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
 
-mkdir -p "$OUT_DIR" "$BEST_DIR"
+mkdir -p "$OUT_DIR"
 
 ########################
 # 分布式参数（从 SLURM 推断）
@@ -60,21 +60,18 @@ accelerate launch \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
-  trainning/ft_clip_r_pair.py \
+  trainning/ft_clip_r_s1.py \
     --parquet_file ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --best_model_dir ${BEST_DIR} \
-    --batch_size 128 \
-    --gradient_accumulation_steps 4 \
+    --batch_size 256 \
+    --gradient_accumulation_steps 1 \
     --epochs 1 \
-    --learning_rate 2e-4 \
-    --tb_alpha 0.75 \
+    --learning_rate 1e-4 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.03 \
-    --weight_decay 0.05 \
+    --weight_decay 0.02 \
     --bf16 \
-    --deepspeed trainning/ds_zero2.json \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \
