@@ -339,11 +339,6 @@ class CLIPRDataset(torch.utils.data.Dataset):
         self.processor = processor
         # 每个样本有3个tb + 3个trp = 6个caption，交叉组合生成3*3=9个图像-文本对
         self.captions_per_image = 9  # 3个tb * 3个trp = 9个组合
-        self.text_max_len = getattr(
-            getattr(processor, "tokenizer", None),
-            "model_max_length",
-            77  # 默认回退
-)
     
     def __len__(self):
         # 每个原始样本生成9个caption pair
@@ -369,11 +364,11 @@ class CLIPRDataset(torch.utils.data.Dataset):
         img_enc = self.processor(images=image, return_tensors="pt")
         tb_enc = self.processor(
             text=[tb_caption],
-            return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len,
+            return_tensors="pt", padding="max_length", truncation=True
         )
         trp_enc = self.processor(
             text=[trp_caption],
-            return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len,
+            return_tensors="pt", padding="max_length", truncation=True
         )
         
         # 构建返回的batch，只包含必要的数据
