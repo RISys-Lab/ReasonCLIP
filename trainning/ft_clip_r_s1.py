@@ -416,7 +416,7 @@ def train_clip(args):
         run_id = obj_list[0]
 
     # 所有进程都使用同一个 save_root
-    save_root = os.path.join("./output_dir", run_id)
+    save_root = os.path.join(args.output_dir, run_id)
 
     # 只主进程创建目录，其它进程等待
     if accelerator.is_main_process:
