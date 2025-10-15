@@ -22,6 +22,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # 加载模块和环境
 module load profile/deeplrn
 module load openmpi
+module load cuda/11.8
+export CUDA_HOME=/leonardo/prod/opt/compilers/cuda/11.8/none
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 # source $WORK/fmohamma/venvs/llm/bin/activate
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
