@@ -458,6 +458,21 @@ def train_clip(args):
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
+    import torch.utils.checkpoint as checkpoint
+
+    # 保存原始函数
+    _old_checkpoint = checkpoint.checkpoint
+
+    def _patched_checkpoint(function, *args, **kwargs):
+        # 默认改成 use_reentrant=False
+        if "use_reentrant" not in kwargs:
+            kwargs["use_reentrant"] = False
+        return _old_checkpoint(function, *args, **kwargs)
+
+    # 替换全局 checkpoint 函数
+    checkpoint.checkpoint = _patched_checkpoint
+    main_print("✅ Patched torch.utils.checkpoint: use_reentrant=False by default")
+
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
     # 替换以下导入处附近：去掉 pandas 的读取用法
