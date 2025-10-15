@@ -363,7 +363,8 @@ class CLIPRDataset(torch.utils.data.Dataset):
         # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         # image = Image.fromarray(random_image)
         
-        tb_captions, trp_captions = item["tb"], item["trp"]
+        tb_captions = [f"a photo of {c}" for c in item["tb"]]
+        trp_captions = item["trl"]
         tb_idx, trp_idx = pair_idx // 3, pair_idx % 3
         tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
         
