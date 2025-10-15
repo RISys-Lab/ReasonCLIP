@@ -19,7 +19,7 @@
     "type": "Lion",
     "params": {
       "lr": "auto",
-      "betas": [0.9, 0.99],
+      "betas": "auto",
       "weight_decay": "auto"
     }
   },
