@@ -76,6 +76,7 @@ accelerate launch \
     --warmup_ratio 0.05 \
     --weight_decay 0.02 \
     --bf16 \
+    --deepspeed trainning/ds_zero2_lion.json \
     --logging_strategy ratio \
     --logging_ratio 0.005 \
     --save_strategy ratio \

@@ -15,7 +15,8 @@
 export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
-export NCCL_DEBUG=INFO
+# change to INFO for debugging
+export NCCL_DEBUG=WARN
 export CUDA_LAUNCH_BLOCKING=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -26,7 +27,7 @@ module load openmpi
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-PARQUET_PATH="$WORK/fmohamma/CLIP-R/data/fesvhtr-CLIPReasonPro200K-Demo/llavacot_combined.parquet"
+PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
 MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
@@ -56,21 +57,24 @@ accelerate launch \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
   trainning/ft_clip_r_s1.py \
-    --parquet_file ${PARQUET_PATH} \
+    --model_type siglip \
+    --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --batch_size 256 \
-    --gradient_accumulation_steps 1 \
+    --batch_size 384 \
+    --gradient_accumulation_steps 2 \
     --epochs 1 \
     --learning_rate 1e-4 \
     --holdout_ratio 0.002 \
-    --warmup_ratio 0.03 \
-    --weight_decay 0.02 \
+    --warmup_ratio 0.1 \
+    --weight_decay 1e-4 \
     --bf16 \
+    --deepspeed trainning/ds_zero2_lion.json
     --logging_strategy ratio \
-    --logging_ratio 0.005 \
+    --logging_ratio 0.0005 \
     --save_strategy ratio \
     --save_ratio 0.1 \
+    --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.1 \
     --num_workers ${NUM_WORKERS} \
