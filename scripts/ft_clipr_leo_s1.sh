@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1_test
+#SBATCH --job-name=clipr_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1_test.out
-#SBATCH --error=clipr_ft_s1_test.err
+#SBATCH --output=clipr_ft_s1.out
+#SBATCH --error=clipr_ft_s1.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -69,7 +69,6 @@ accelerate launch \
     --warmup_ratio 0.1 \
     --weight_decay 1e-4 \
     --bf16 \
-    --deepspeed trainning/ds_zero2_lion.json
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
@@ -80,7 +79,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_dual_loss_experiment\"
+    --run_name \"siglip_r_s1\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."
