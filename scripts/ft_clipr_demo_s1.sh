@@ -28,6 +28,10 @@ module load cuda/11.8
 export CUDA_HOME=/leonardo/prod/opt/compilers/cuda/11.8/none
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+export CC=$(which gcc)
+export CXX=$(which g++)
+export CUDAHOSTCXX=$CXX
 # source $WORK/fmohamma/venvs/llm/bin/activate
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
