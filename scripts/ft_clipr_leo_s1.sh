@@ -73,7 +73,7 @@ accelerate launch \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
-    --save_ratio 0.1 \
+    --save_ratio 0.05 \
     --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.1 \
