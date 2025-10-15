@@ -21,7 +21,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 加载模块和环境
 module load profile/deeplrn
-module load gcc/12.2.0
+module load gcc/11.3.0
 module load openmpi
 module load cuda/11.8
 
