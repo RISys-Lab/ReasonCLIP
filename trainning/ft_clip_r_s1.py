@@ -17,6 +17,7 @@ from typing import Optional, List
 import math
 import glob
 from lion_pytorch import Lion
+import torch.distributed as dist
 # import sys
 # sys.stderr.isatty = lambda: True
 # 初始化 accelerator
@@ -181,23 +182,30 @@ class BestModelCallback(TrainerCallback):
                 self.best_eval_loss = eval_loss
                 main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
-class CLIPTrainer(Trainer):
-    def __init__(self, tb_alpha=0.5, model_type="clip", *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tb_weight = tb_alpha
-        self.trp_weight = 1.0 - tb_alpha
-        self.model_type = model_type  # "clip" 或 "siglip"
+    class CLIPTrainer(Trainer):
+        def __init__(self, tb_alpha=0.5, model_type="clip", *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.tb_weight = tb_alpha
+            self.trp_weight = 1.0 - tb_alpha
+            self.model_type = model_type  # "clip" 或 "siglip"
+            self.orig_state = {n: p.detach().clone().to(device, dtype=torch.float32)
+                    for n, p in self.orig_model.named_parameters()}
     
     @staticmethod
     def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        """
-        SigLIP 风格：对 (B, N) 相似度矩阵做 BCE-with-logits，
-        targets 为 one-hot（对角为 1，其余为 0）。
-        """
-        # logits: [B, N], labels: [B]（每行正样本所在列的索引）
         targets = torch.zeros_like(logits, dtype=logits.dtype)
         targets.scatter_(1, labels.unsqueeze(1), 1.0)
-        return F.binary_cross_entropy_with_logits(logits, targets)
+        pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
+        return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     SigLIP 风格：对 (B, N) 相似度矩阵做 BCE-with-logits，
+    #     targets 为 one-hot（对角为 1，其余为 0）。
+    #     """
+    #     # logits: [B, N], labels: [B]（每行正样本所在列的索引）
+    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
+    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
+    #     return F.binary_cross_entropy_with_logits(logits, targets)
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         if hasattr(self, "tb_schedule") and self.tb_schedule is not None:
@@ -221,6 +229,15 @@ class CLIPTrainer(Trainer):
                     parts.append(gathered[s:e])
             return torch.cat(parts, dim=0)
 
+        def all_gather_with_local_grad(x: torch.Tensor) -> torch.Tensor:
+            if not (dist.is_available() and dist.is_initialized()):
+                return x
+            world = dist.get_world_size()
+            rank = dist.get_rank()
+            xs = [torch.zeros_like(x) for _ in range(world)]
+            dist.all_gather(xs, x.detach())
+            xs[rank] = x
+            return torch.cat(xs, dim=0)
         # ---- unpack ----
         device = inputs["pixel_values"].device
         backbone = model.module if hasattr(model, "module") else model
@@ -235,6 +252,9 @@ class CLIPTrainer(Trainer):
             input_ids=inputs["trp_input_ids"],
             attention_mask=inputs["trp_attention_mask"],
         )
+        image_features = F.normalize(image_features, dim=-1)
+        tb_text_features = F.normalize(tb_text_features, dim=-1)
+        trp_text_features = F.normalize(trp_text_features, dim=-1)
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():
@@ -246,9 +266,12 @@ class CLIPTrainer(Trainer):
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
         rank = accelerator.process_index
-        all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
-        all_tb    = gather_with_local_grad(tb_text_features, accelerator)
-        all_trp   = gather_with_local_grad(trp_text_features, accelerator)
+        # all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
+        # all_tb    = gather_with_local_grad(tb_text_features, accelerator)
+        # all_trp   = gather_with_local_grad(trp_text_features, accelerator)
+        all_image = all_gather_with_local_grad(image_features)
+        all_tb = all_gather_with_local_grad(tb_text_features)
+        all_trp = all_gather_with_local_grad(trp_text_features)
 
         # global labels: shift by the local slice offset
         labels_global = torch.arange(B, device=device) + rank * B  # [B]
@@ -289,6 +312,26 @@ class CLIPTrainer(Trainer):
 
         # ---- combine ----
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
+
+        if hasattr(self, "orig_model") and self.orig_model is not None:
+            beta = 1e-5  # 可调
+            # name -> param 的字典（不含grad）
+            with torch.no_grad():
+                orig_state = {n: p.to(device=backbone.device) for n, p in self.orig_model.named_parameters()}
+
+            l2_reg = torch.zeros((), device=backbone.device, dtype=torch.float32)
+            for name, p in backbone.named_parameters():
+                # 只对encoder的参数加：vision_model.* 或 text_model.*
+                if ("vision_model." in name) or ("text_model." in name):
+                    # 排除 projection/温度等非主干（按需精确些）
+                    if ("projection" in name) or ("logit_scale" in name):
+                        continue
+                    if name in orig_state:
+                        p0 = orig_state[name]
+                        # 用float32算更稳，最后结果会是float32，和total_loss自动对齐
+                        l2_reg = l2_reg + (p.float() - p0.float()).pow(2).sum()
+
+            total_loss = total_loss + beta * l2_reg
 
         # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
@@ -456,23 +499,12 @@ def train_clip(args):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
+        orig_model = SiglipModel.from_pretrained(model_name)
+        for p in orig_model.parameters():
+            p.requires_grad = False
         processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
-
-    # import torch.utils.checkpoint as checkpoint
-
-    # 保存原始函数
-    # _old_checkpoint = checkpoint.checkpoint
-
-    # def _patched_checkpoint(function, *args, **kwargs):
-    #     # 默认改成 use_reentrant=False
-    #     if "use_reentrant" not in kwargs:
-    #         kwargs["use_reentrant"] = False
-    #     return _old_checkpoint(function, *args, **kwargs)
-
-    # checkpoint.checkpoint = _patched_checkpoint
-    # main_print("✅ Patched torch.utils.checkpoint: use_reentrant=False by default")
 
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
@@ -617,6 +649,7 @@ def train_clip(args):
         data_seed=42,
     )
     
+    
     main_print(f"\n🎯 Loss Configuration:")
     main_print(f"   - TB loss weight: {args.tb_alpha:.3f}")
     main_print(f"   - TRP loss weight: {1.0 - args.tb_alpha:.3f}")
@@ -659,6 +692,10 @@ def train_clip(args):
     )
     trainer.tb_schedule = make_tb_schedule()
 
+    # TODO: Add L2 regularization also for clip model
+    if model_type == "siglip":
+        # add orig_model to trainer for L2 regularization
+        trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # 手动保存 best model

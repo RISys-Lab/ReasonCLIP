@@ -4,7 +4,8 @@ from datasets import load_dataset
 from PIL import Image
 import io
 from tqdm import tqdm
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPProcessor, SiglipModel, SiglipProcessor
+from transformers import AutoModel, AutoProcessor
 from torch.utils.data import DataLoader
 import json
 import os
@@ -21,6 +22,13 @@ class RetrievalDataset(torch.utils.data.Dataset):
         self.image_to_captions = {}  # Map image index to caption indices
         self.caption_to_image = {}  # Map caption index to image index
         
+        # Set text max length based on processor type
+        proc_name = processor.__class__.__name__.lower()
+        if "siglip" in proc_name:
+            self.text_max_len = 64  # SigLIP uses 64
+        else:
+            self.text_max_len = 77  # CLIP uses 77
+        
         print(f"Loading {split} split...")
         print(f"Karpathy evaluation mode: {'5 captions per image' if use_all_captions else '1 caption per image'}")
         
@@ -34,11 +42,12 @@ class RetrievalDataset(torch.utils.data.Dataset):
             # Extract all captions for this image
             captions = []
             if 'sentences' in sample:
-                # For COCO Karpathy: extract all captions from sentences
-                if isinstance(sample['sentences'], list):
-                    captions = sample['sentences']
-                elif 'raw' in sample['sentences']:
-                    captions = sample['sentences']['raw']
+                sents = sample['sentences']
+                if isinstance(sents, list):
+                    captions = [ (s['raw'] if isinstance(s, dict) and 'raw' in s else str(s)) for s in sents ]
+                elif isinstance(sents, dict) and 'raw' in sents:
+                    raw = sents['raw']
+                    captions = raw if isinstance(raw, list) else [raw]
             elif 'captions' in sample:
                 captions = sample['captions']
             elif 'caption' in sample:
@@ -117,8 +126,12 @@ def collate_retrieval_fn(batch, processor):
     # Process images (keep on CPU)
     image_inputs = processor(images=list(images), return_tensors="pt")
     
+    # Set text max length based on processor type
+    proc_name = processor.__class__.__name__.lower()
+    text_max_len = 64 if "siglip" in proc_name else 77
+    
     # Process captions (keep on CPU)
-    text_inputs = processor(text=list(captions), return_tensors="pt", padding=True, truncation=True, max_length=77)
+    text_inputs = processor(text=list(captions), return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
     
     indices = torch.tensor(indices)
     
@@ -273,43 +286,65 @@ def compute_retrieval_metrics(image_features, text_features, return_ranks=False)
 
 
 def run_retrieval_evaluation(
-    model_id="openai/clip-vit-base-patch32",
+    model_id="google/siglip2-so400m-patch16-384",
+    model_type="clip",  # "clip" or "siglip"
     dataset_name="mscoco", 
     split="test",
     batch_size=64,
     num_workers=8,
-    use_amp=True,
     max_samples=None,
     save_features=False,
     device=None,
     use_karpathy_eval=True  # Use 5-caption Karpathy evaluation
 ):
     """
-    Run standard CLIP retrieval evaluation
+    Run CLIP/SigLIP retrieval evaluation
     
     Args:
         model_id: HuggingFace model ID or local path
+        model_type: "clip" or "siglip" - determines which model/processor to use
         dataset_name: "mscoco" or "flickr30k"
         split: dataset split ("test", "validation")
         batch_size: batch size for inference
         num_workers: number of data loading workers
-        use_amp: use automatic mixed precision
         max_samples: limit number of samples (for debugging)
         save_features: save computed features for analysis
         device: device to use ("cuda", "cuda:0", "cpu", etc.). If None, auto-detect
+        use_karpathy_eval: Use 5-caption Karpathy evaluation
     """
     
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Auto-detect model type if not specified or if "auto"
+    if model_type == "auto" or model_type is None:
+        model_id_lower = model_id.lower()
+        if "siglip" in model_id_lower:
+            model_type = "siglip"
+        elif "clip" in model_id_lower or "openai" in model_id_lower:
+            model_type = "clip"
+        else:
+            # Default to CLIP if can't determine
+            model_type = "clip"
+            print(f"⚠️  Could not auto-detect model type from '{model_id}', defaulting to CLIP")
+    
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
+    print(f"Model type: {model_type.upper()}")
     print(f"Dataset: {dataset_name} ({split})")
-    print(f"Batch size: {batch_size}, Workers: {num_workers}, AMP: {use_amp}")
+    print(f"Batch size: {batch_size}, Workers: {num_workers}")
     
-    # Load model and processor
-    print("Loading model and processor...")
-    model = CLIPModel.from_pretrained(model_id)
-    processor = CLIPProcessor.from_pretrained(model_id)
+    # Load model and processor based on model type
+    print(f"Loading {model_type.upper()} model and processor...")
+    if model_type.lower() == "clip":
+        model = AutoModel.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained(model_id)
+    elif model_type.lower() == "siglip":
+        model = SiglipModel.from_pretrained(model_id)
+        processor = SiglipProcessor.from_pretrained("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384")
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip' or 'siglip'")
+    
     model.to(device).eval()
     
     # Load dataset using Karpathy splits (standard for retrieval evaluation)
@@ -317,7 +352,7 @@ def run_retrieval_evaluation(
     if dataset_name.lower() == "mscoco":
         print("📥 Using COCO Karpathy split - standard for retrieval evaluation")
         # Karpathy split: validation (5K) and test (5K) - perfect for standard evaluation
-        ds = load_dataset("yerevann/coco-karpathy", split=split)
+        ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
         print(f"✅ Loaded COCO Karpathy {split} split (5K samples)")
     elif dataset_name.lower() == "flickr30k":
         ds = load_dataset("nlphuji/flickr30k", split="test")
@@ -348,13 +383,8 @@ def run_retrieval_evaluation(
             # Move data to device in main process (not in workers)
             image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
             
-            if use_amp:
-                with torch.cuda.amp.autocast():
-                    image_features = model.get_image_features(**image_inputs)
-                    image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-            else:
-                image_features = model.get_image_features(**image_inputs)
-                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+            image_features = model.get_image_features(**image_inputs)
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             
             all_image_features.append(image_features.cpu())
     
@@ -374,17 +404,17 @@ def run_retrieval_evaluation(
             batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
             
             # Process caption batch
-            text_inputs = processor(text=batch_captions, return_tensors="pt", padding=True, truncation=True, max_length=77)
+            proc_name = processor.__class__.__name__.lower()
+            text_max_len = 64 if "siglip" in proc_name else 77
+            if model_type.lower() == "siglip":
+                text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
+            else:
+                text_inputs = processor(text=batch_captions, return_tensors="pt", padding=True, truncation=True, max_length=text_max_len)
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
             
             with torch.no_grad():
-                if use_amp:
-                    with torch.cuda.amp.autocast():
-                        text_features = model.get_text_features(**text_inputs)
-                        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                else:
-                    text_features = model.get_text_features(**text_inputs)
-                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                text_features = model.get_text_features(**text_inputs)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
                 
                 all_text_features.append(text_features.cpu())
         
@@ -397,13 +427,8 @@ def run_retrieval_evaluation(
             for image_inputs, text_inputs, indices in tqdm(dataloader, desc="Processing text batches"):
                 text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
                 
-                if use_amp:
-                    with torch.cuda.amp.autocast():
-                        text_features = model.get_text_features(**text_inputs)
-                        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                else:
-                    text_features = model.get_text_features(**text_inputs)
-                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                text_features = model.get_text_features(**text_inputs)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
                 
                 all_text_features.append(text_features.cpu())
         
@@ -450,6 +475,7 @@ def run_retrieval_evaluation(
     # Save results
     result_info = {
         "model": model_id,
+        "model_type": model_type,
         "dataset": dataset_name,
         "split": split,
         "evaluation_mode": "karpathy" if use_karpathy_eval else "standard",
@@ -457,23 +483,22 @@ def run_retrieval_evaluation(
         "num_captions": len(all_text_features),
         "captions_per_image": len(all_text_features) / len(all_image_features),
         "batch_size": batch_size,
-        "amp_enabled": use_amp,
         **metrics
     }
     
     # Create results directory if it doesn't exist
-    results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
+    results_dir = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/results"
     os.makedirs(results_dir, exist_ok=True)
     
     # Save detailed results
     model_name = model_id.replace("/", "_")
     eval_suffix = "_karpathy" if use_karpathy_eval else "_standard"
-    results_file = os.path.join(results_dir, f"retrieval_results_{model_name}_{dataset_name}_{split}{eval_suffix}.json")
+    results_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.json")
     with open(results_file, "w") as f:
         json.dump(result_info, f, indent=2)
     
     # Save text results
-    text_file = os.path.join(results_dir, f"retrieval_results_{model_name}_{dataset_name}_{split}{eval_suffix}.txt")
+    text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.txt")
     with open(text_file, "w") as f:
         f.write(f"RETRIEVAL RESULTS - {dataset_name.upper()} {split.upper()}\n")
         f.write(f"Evaluation Mode: {eval_mode}\n")
@@ -498,7 +523,7 @@ def run_retrieval_evaluation(
     
     # Optionally save features for further analysis
     if save_features:
-        features_file = os.path.join(results_dir, f"features_{model_name}_{dataset_name}_{split}{eval_suffix}.npz")
+        features_file = os.path.join(results_dir, f"features_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.npz")
         np.savez(features_file, 
                 image_features=all_image_features.numpy(),
                 text_features=all_text_features.numpy())
@@ -509,17 +534,22 @@ def run_retrieval_evaluation(
 
 
 if __name__ == "__main__":
-    # Standard CLIP evaluation on MSCOCO Karpathy split
+    # SigLIP-R evaluation on MSCOCO Karpathy split (optimized for 64GB VRAM)
     print("Running MSCOCO 5K retrieval evaluation (Karpathy 5-caption mode)...")
+    print("Model: SigLIP-R (trained with CLIP-R method)")
+    
+    # 修改这里的模型路径为你训练好的 SigLIP-R 模型
+    MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+    
     coco_results = run_retrieval_evaluation(
-        model_id="fesvhtr/clip_r_best_model_demo_0621_192211",
+        model_id=MODEL_PATH,
+        model_type="siglip",  # SigLIP model
         dataset_name="mscoco",
-        split="test",  # Karpathy validation split (5K samples)
-        batch_size=16,
-        num_workers=16,
-        use_amp=False,
+        split="test",  # Karpathy test split (5K samples)
+        batch_size=128,  # 大batch size，充分利用64GB显存
+        num_workers=16,  # 更多workers加速数据加载
         max_samples=None,  # Use full Karpathy split (exactly 5K)
-        device="cuda:0",  # 可以指定具体的GPU
+        device="cuda:0",
         use_karpathy_eval=True  # 🔥 Enable standard Karpathy 5-caption evaluation
     )
     
