@@ -330,7 +330,7 @@ def run_retrieval_evaluation(
         dataset_name: "mscoco" or "flickr30k"
         split: dataset split ("test", "validation")
         batch_size: batch size for inference
-        num_workers: number of data loading workers
+        num_workers: (deprecated) number of data loading workers - set to 0 to avoid torch pickling issues
         max_samples: limit number of samples (for debugging)
         save_features: save computed features for analysis
         device: device to use ("cuda", "cuda:0", "cpu", etc.). If None, auto-detect
@@ -390,7 +390,7 @@ def run_retrieval_evaluation(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
+        num_workers=0,  # ✅ 修改为 0 避免 pickle 序列化问题
         pin_memory=True,
         collate_fn=lambda batch: collate_retrieval_fn(batch, processor)
     )
@@ -572,7 +572,6 @@ if __name__ == "__main__":
         dataset_name="mscoco",
         split="test",  # Karpathy test split (5K samples)
         batch_size=256,  # 大batch size，充分利用64GB显存
-        num_workers=8,  # 更多workers加速数据加载
         max_samples=None,  # Use full Karpathy split (exactly 5K)
         device="cuda:0",
         use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
