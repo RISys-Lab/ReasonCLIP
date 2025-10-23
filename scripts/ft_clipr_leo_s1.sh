@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=clipr_ft_s1
-#SBATCH --time=24:00:00
+#SBATCH --time=3:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=8

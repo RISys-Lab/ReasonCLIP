@@ -272,12 +272,12 @@ class CLIPTrainer(Trainer):
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
         rank = accelerator.process_index
-        # all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
-        # all_tb    = gather_with_local_grad(tb_text_features, accelerator)
-        # all_trp   = gather_with_local_grad(trp_text_features, accelerator)
-        all_image = all_gather_with_local_grad(image_features)
-        all_tb = all_gather_with_local_grad(tb_text_features)
-        all_trp = all_gather_with_local_grad(trp_text_features)
+        all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
+        all_tb    = gather_with_local_grad(tb_text_features, accelerator)
+        all_trp   = gather_with_local_grad(trp_text_features, accelerator)
+        # all_image = all_gather_with_local_grad(image_features)
+        # all_tb = all_gather_with_local_grad(tb_text_features)
+        # all_trp = all_gather_with_local_grad(trp_text_features)
 
         # global labels: shift by the local slice offset
         labels_global = torch.arange(B, device=device) + rank * B  # [B]
@@ -286,6 +286,11 @@ class CLIPTrainer(Trainer):
         tb_logits_per_image = logit_scale * (image_features   @ all_tb.t())     # [B, world*B]
         tb_logits_per_text  = logit_scale * (tb_text_features @ all_image.t())  # [B, world*B]
 
+        if torch.rand(1).item() < 0.01 and (not dist.is_available() or dist.get_rank()==0):
+            sim_tb = image_features @ tb_text_features.T
+            diag = sim_tb.diag().mean().item()
+            off  = (sim_tb.sum() - sim_tb.diag().sum()).div(sim_tb.numel()-sim_tb.size(0)).item()
+            print(f"[sanity] TB diag={diag:.3f}, off={off:.3f}")
         if self.model_type == "clip":
             tb_loss = 0.5 * (
                 F.cross_entropy(tb_logits_per_image, labels_global) +

@@ -148,7 +148,7 @@ if __name__ == "__main__":
         split="validation",
         max_samples=None,  # 下载全部
         timeout=15,
-        num_threads=8  # 16 个线程并发下载
+        num_threads=16  # 16 个线程并发下载
     )
     
     print("\n" + "="*70)
