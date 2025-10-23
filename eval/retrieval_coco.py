@@ -104,11 +104,38 @@ class RetrievalDataset(torch.utils.data.Dataset):
         elif self.local_image_dir and 'image_id' in sample:
             # ✅ 优先从本地目录加载图片
             image_id = sample['image_id']
-            local_path = os.path.join(self.local_image_dir, f"{image_id}.jpg")
-            try:
-                image = Image.open(local_path).convert("RGB")
-            except FileNotFoundError:
-                print(f"⚠️  本地图片不存在: {local_path}，尝试从 URL 下载...")
+            
+            # 尝试多种文件名格式（处理前导零问题）
+            possible_paths = [
+                os.path.join(self.local_image_dir, f"{image_id}.jpg"),  # 原始格式: 123456.jpg
+                os.path.join(self.local_image_dir, f"{int(image_id):012d}.jpg"),  # 12位零填充: 000000123456.jpg
+                os.path.join(self.local_image_dir, f"{int(image_id):06d}.jpg"),   # 6位零填充: 000123.jpg
+            ]
+            
+            # 如果 image_id 是字符串且包含 COCO_ 前缀，提取数字部分
+            if isinstance(image_id, str) and 'COCO' in image_id.upper():
+                # 格式: COCO_val2017_000000098 -> 98
+                numeric_id = image_id.split('_')[-1].lstrip('0') or '0'
+                possible_paths.extend([
+                    os.path.join(self.local_image_dir, f"{numeric_id}.jpg"),
+                    os.path.join(self.local_image_dir, f"{int(numeric_id):06d}.jpg"),
+                ])
+            
+            image = None
+            loaded_path = None
+            for local_path in possible_paths:
+                try:
+                    if os.path.exists(local_path):
+                        image = Image.open(local_path).convert("RGB")
+                        loaded_path = local_path
+                        break
+                except Exception as e:
+                    continue
+            
+            if image is None:
+                # 没找到本地图片，尝试从 URL 下载
+                print(f"⚠️  本地图片不存在 (ID: {image_id})，尝试从 URL 下载...")
+                print(f"   尝试过的路径: {possible_paths[:2]}")
                 if 'url' in sample:
                     try:
                         response = requests.get(sample['url'], timeout=10)
@@ -118,9 +145,6 @@ class RetrievalDataset(torch.utils.data.Dataset):
                         image = Image.new('RGB', (224, 224), color='black')
                 else:
                     image = Image.new('RGB', (224, 224), color='black')
-            except Exception as e:
-                print(f"Error loading image from local path {local_path}: {e}")
-                image = Image.new('RGB', (224, 224), color='black')
         elif 'url' in sample:
             # For COCO Karpathy: load image from URL
             if img_idx == 0:
