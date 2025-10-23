@@ -148,7 +148,16 @@ class RetrievalDataset(torch.utils.data.Dataset):
                     continue
             
             if image is None:
-                # 没找到本地图片，尝试从 URL 下载
+                # 没找到本地图片，尝试从目录中查找
+                if img_idx == 0:
+                    print(f"\n📁 检查目录中实际存在的文件...")
+                    import glob
+                    files = glob.glob(os.path.join(self.local_image_dir, "*.jpg"))[:5]
+                    print(f"   实际文件样本: {[os.path.basename(f) for f in files]}")
+                    print(f"\n试图查找的 cocoid: {cocoid}")
+                    print(f"尝试的路径: {possible_paths[:3]}\n")
+                
+                # 尝试从 URL 下载
                 print(f"⚠️  本地图片不存在 (cocoid: {image_id})，尝试从 URL 下载...")
                 print(f"   尝试过的路径: {possible_paths[:2]}")
                 if 'url' in sample:
