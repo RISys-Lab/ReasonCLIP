@@ -189,34 +189,31 @@ class CLIPTrainer(Trainer):
         self.trp_weight = 1.0 - tb_alpha
         self.model_type = model_type  # "clip" 或 "siglip"
         self.orig_model = orig_model  # 允许外部传进来
-
-        # 提前缓存原始模型权重（避免每步复制）
-        if self.orig_model is not None:
-            device = next(self.orig_model.parameters()).device
+        self.orig_state = None
+    
+    def _initialize_l2_reg(self):
+        """在模型移动到设备后，安全地初始化原始权重状态"""
+        if self.orig_state is None and self.orig_model is not None:
+            device = self.model.device
+            if self.orig_model.device != device:
+                self.orig_model = self.orig_model.to(device)
             self.orig_state = {
                 n: p.detach().clone().to(device, dtype=torch.float32)
                 for n, p in self.orig_model.named_parameters()
             }
-        else:
-            self.orig_state = None
-    
+            main_print(f"[L2 Reg] Initialized orig_state on device: {device}")
+
     @staticmethod
     def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         targets = torch.zeros_like(logits, dtype=logits.dtype)
         targets.scatter_(1, labels.unsqueeze(1), 1.0)
         pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
         return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
-    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    #     """
-    #     SigLIP 风格：对 (B, N) 相似度矩阵做 BCE-with-logits，
-    #     targets 为 one-hot（对角为 1，其余为 0）。
-    #     """
-    #     # logits: [B, N], labels: [B]（每行正样本所在列的索引）
-    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
-    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
-    #     return F.binary_cross_entropy_with_logits(logits, targets)
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        if self.orig_model is not None and self.orig_state is None:
+            self._initialize_l2_reg()
+
         if hasattr(self, "tb_schedule") and self.tb_schedule is not None:
             gs = getattr(self.state, "global_step", 0)
             ms = max(1, getattr(self.state, "max_steps", 1))
@@ -323,15 +320,20 @@ class CLIPTrainer(Trainer):
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
         if self.orig_state is not None:
-            beta = 1e-5
-            l2_reg = torch.zeros((), device=backbone.device, dtype=torch.float32)
+            beta = 1e-5 # 这是 L2 权重
+            l2_reg = torch.zeros((), device=model.device, dtype=torch.float32)
+            
+            # 确保使用正确的底层模型 (如果被 DDP 包装)
+            backbone = model.module if hasattr(model, "module") else model
+
             for name, p in backbone.named_parameters():
                 if ("vision_model." in name) or ("text_model." in name):
                     if ("projection" in name) or ("logit_scale" in name):
                         continue
                     if name in self.orig_state:
                         p0 = self.orig_state[name]
-                        l2_reg = l2_reg + (p.float() - p0).pow(2).sum()
+                        # 确保 p0 和 p 在同一设备 (虽然 _initialize_l2_reg 应该保证了)
+                        l2_reg = l2_reg + (p.float() - p0.to(p.device)).pow(2).sum()
             total_loss = total_loss + beta * l2_reg
 
         # ---- optional logging ----
