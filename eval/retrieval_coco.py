@@ -39,6 +39,10 @@ class RetrievalDataset(torch.utils.data.Dataset):
         for img_idx, sample in enumerate(tqdm(dataset)):
             if max_samples and img_idx >= max_samples:
                 break
+            
+            # 调试：打印第一个样本的字段
+            if img_idx == 0:
+                print(f"📋 样本字段: {list(sample.keys())}")
                 
             self.image_data.append(sample)
             
@@ -119,6 +123,11 @@ class RetrievalDataset(torch.utils.data.Dataset):
                 image = Image.new('RGB', (224, 224), color='black')
         elif 'url' in sample:
             # For COCO Karpathy: load image from URL
+            if img_idx == 0:
+                print(f"⚠️  未找到本地图片目录或 image_id 字段，使用 URL 下载")
+                print(f"   - local_image_dir: {self.local_image_dir}")
+                print(f"   - 'image_id' in sample: {'image_id' in sample}")
+                print(f"   - sample 字段: {list(sample.keys())}")
             try:
                 response = requests.get(sample['url'], timeout=10)
                 image = Image.open(io.BytesIO(response.content)).convert("RGB")
@@ -575,7 +584,7 @@ if __name__ == "__main__":
         max_samples=None,  # Use full Karpathy split (exactly 5K)
         device="cuda:0",
         use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
-        local_image_dir="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy/images" # 指定本地图片目录
+        local_image_dir="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
     )
     
     print(f"\n🎯 Karpathy Evaluation Results:")
