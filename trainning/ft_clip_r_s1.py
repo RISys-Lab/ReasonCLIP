@@ -182,14 +182,23 @@ class BestModelCallback(TrainerCallback):
                 self.best_eval_loss = eval_loss
                 main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
-    class CLIPTrainer(Trainer):
-        def __init__(self, tb_alpha=0.5, model_type="clip", *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.tb_weight = tb_alpha
-            self.trp_weight = 1.0 - tb_alpha
-            self.model_type = model_type  # "clip" 或 "siglip"
-            self.orig_state = {n: p.detach().clone().to(device, dtype=torch.float32)
-                    for n, p in self.orig_model.named_parameters()}
+class CLIPTrainer(Trainer):
+    def __init__(self, tb_alpha=0.5, model_type="clip",orig_model=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tb_weight = tb_alpha
+        self.trp_weight = 1.0 - tb_alpha
+        self.model_type = model_type  # "clip" 或 "siglip"
+        self.orig_model = orig_model  # 允许外部传进来
+
+        # 提前缓存原始模型权重（避免每步复制）
+        if self.orig_model is not None:
+            device = next(self.orig_model.parameters()).device
+            self.orig_state = {
+                n: p.detach().clone().to(device, dtype=torch.float32)
+                for n, p in self.orig_model.named_parameters()
+            }
+        else:
+            self.orig_state = None
     
     @staticmethod
     def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -313,24 +322,16 @@ class BestModelCallback(TrainerCallback):
         # ---- combine ----
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
-        if hasattr(self, "orig_model") and self.orig_model is not None:
-            beta = 1e-5  # 可调
-            # name -> param 的字典（不含grad）
-            with torch.no_grad():
-                orig_state = {n: p.to(device=backbone.device) for n, p in self.orig_model.named_parameters()}
-
+        if self.orig_state is not None:
+            beta = 1e-5
             l2_reg = torch.zeros((), device=backbone.device, dtype=torch.float32)
             for name, p in backbone.named_parameters():
-                # 只对encoder的参数加：vision_model.* 或 text_model.*
                 if ("vision_model." in name) or ("text_model." in name):
-                    # 排除 projection/温度等非主干（按需精确些）
                     if ("projection" in name) or ("logit_scale" in name):
                         continue
-                    if name in orig_state:
-                        p0 = orig_state[name]
-                        # 用float32算更稳，最后结果会是float32，和total_loss自动对齐
-                        l2_reg = l2_reg + (p.float() - p0.float()).pow(2).sum()
-
+                    if name in self.orig_state:
+                        p0 = self.orig_state[name]
+                        l2_reg = l2_reg + (p.float() - p0).pow(2).sum()
             total_loss = total_loss + beta * l2_reg
 
         # ---- optional logging ----
@@ -688,7 +689,8 @@ def train_clip(args):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
-        optimizers=(optimizer, None) 
+        optimizers=(optimizer, None),
+        orig_model=orig_model if model_type == "siglip" else None,
     )
     trainer.tb_schedule = make_tb_schedule()
 

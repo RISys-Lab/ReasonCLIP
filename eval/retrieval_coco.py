@@ -14,9 +14,10 @@ import requests
 
 class RetrievalDataset(torch.utils.data.Dataset):
     """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption support"""
-    def __init__(self, dataset, processor, split="test", max_samples=None, use_all_captions=True):
+    def __init__(self, dataset, processor, split="test", max_samples=None, use_all_captions=True, local_image_dir=None):
         self.processor = processor
         self.use_all_captions = use_all_captions
+        self.local_image_dir = local_image_dir  # 本地图片目录
         self.image_data = []  # Store image info
         self.caption_data = []  # Store all captions
         self.image_to_captions = {}  # Map image index to caption indices
@@ -31,6 +32,8 @@ class RetrievalDataset(torch.utils.data.Dataset):
         
         print(f"Loading {split} split...")
         print(f"Karpathy evaluation mode: {'5 captions per image' if use_all_captions else '1 caption per image'}")
+        if local_image_dir:
+            print(f"📁 使用本地图片目录: {local_image_dir}")
         
         caption_idx = 0
         for img_idx, sample in enumerate(tqdm(dataset)):
@@ -94,6 +97,26 @@ class RetrievalDataset(torch.utils.data.Dataset):
         elif 'jpg' in sample:
             image_data = sample["jpg"]
             image = image_data.convert("RGB") if hasattr(image_data, "convert") else Image.open(io.BytesIO(image_data)).convert("RGB")
+        elif self.local_image_dir and 'image_id' in sample:
+            # ✅ 优先从本地目录加载图片
+            image_id = sample['image_id']
+            local_path = os.path.join(self.local_image_dir, f"{image_id}.jpg")
+            try:
+                image = Image.open(local_path).convert("RGB")
+            except FileNotFoundError:
+                print(f"⚠️  本地图片不存在: {local_path}，尝试从 URL 下载...")
+                if 'url' in sample:
+                    try:
+                        response = requests.get(sample['url'], timeout=10)
+                        image = Image.open(io.BytesIO(response.content)).convert("RGB")
+                    except Exception as e:
+                        print(f"Error loading image from URL: {e}")
+                        image = Image.new('RGB', (224, 224), color='black')
+                else:
+                    image = Image.new('RGB', (224, 224), color='black')
+            except Exception as e:
+                print(f"Error loading image from local path {local_path}: {e}")
+                image = Image.new('RGB', (224, 224), color='black')
         elif 'url' in sample:
             # For COCO Karpathy: load image from URL
             try:
@@ -295,7 +318,8 @@ def run_retrieval_evaluation(
     max_samples=None,
     save_features=False,
     device=None,
-    use_karpathy_eval=True  # Use 5-caption Karpathy evaluation
+    use_karpathy_eval=True,  # Use 5-caption Karpathy evaluation
+    local_image_dir=None  # ✅ 本地图片目录
 ):
     """
     Run CLIP/SigLIP retrieval evaluation
@@ -311,6 +335,7 @@ def run_retrieval_evaluation(
         save_features: save computed features for analysis
         device: device to use ("cuda", "cuda:0", "cpu", etc.). If None, auto-detect
         use_karpathy_eval: Use 5-caption Karpathy evaluation
+        local_image_dir: ✅ 本地图片目录，如果指定则优先从本地加载
     """
     
     if device is None:
@@ -360,7 +385,7 @@ def run_retrieval_evaluation(
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     
     # Create dataset and dataloader
-    dataset = RetrievalDataset(ds, processor, split, max_samples, use_all_captions=use_karpathy_eval)
+    dataset = RetrievalDataset(ds, processor, split, max_samples, use_all_captions=use_karpathy_eval, local_image_dir=local_image_dir)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -546,11 +571,12 @@ if __name__ == "__main__":
         model_type="siglip",  # SigLIP model
         dataset_name="mscoco",
         split="test",  # Karpathy test split (5K samples)
-        batch_size=128,  # 大batch size，充分利用64GB显存
-        num_workers=16,  # 更多workers加速数据加载
+        batch_size=256,  # 大batch size，充分利用64GB显存
+        num_workers=8,  # 更多workers加速数据加载
         max_samples=None,  # Use full Karpathy split (exactly 5K)
         device="cuda:0",
-        use_karpathy_eval=True  # 🔥 Enable standard Karpathy 5-caption evaluation
+        use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
+        local_image_dir="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy/images" # 指定本地图片目录
     )
     
     print(f"\n🎯 Karpathy Evaluation Results:")
