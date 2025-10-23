@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 import json
 import os
 import requests
-import re
 
 
 class RetrievalDataset(torch.utils.data.Dataset):
@@ -103,58 +102,14 @@ class RetrievalDataset(torch.utils.data.Dataset):
             image_data = sample["jpg"]
             image = image_data.convert("RGB") if hasattr(image_data, "convert") else Image.open(io.BytesIO(image_data)).convert("RGB")
         elif self.local_image_dir and 'filename' in sample:
-            # ✅ 优先从本地目录加载图片 - 直接使用 filename
+            # ✅ 直接用 filename + .jpg，这样就和 download_images.py 保存的文件对应了
             filename = sample['filename']
+            local_path = os.path.join(self.local_image_dir, f"{filename}.jpg")
             
-            # filename 通常是 COCO_val2014_000000391895 这样的格式，需要加 .jpg
-            possible_paths = [
-                os.path.join(self.local_image_dir, f"{filename}.jpg"),  # COCO_val2014_000000391895.jpg
-                os.path.join(self.local_image_dir, os.path.basename(filename) + ".jpg"),  # 去掉路径
-            ]
-            
-            # 也尝试从 filename 提取纯数字
-            # COCO_val2014_000000391895 -> 391895 -> 391895.jpg
-            numeric_match = re.search(r'(\d+)$', str(filename))
-            if numeric_match:
-                numeric_id = numeric_match.group(1)
-                # 尝试纯数字和零填充格式
-                possible_paths.extend([
-                    os.path.join(self.local_image_dir, f"{numeric_id}.jpg"),  # 391895.jpg
-                    os.path.join(self.local_image_dir, f"{int(numeric_id):012d}.jpg"),  # 000000391895.jpg
-                    os.path.join(self.local_image_dir, f"{int(numeric_id):06d}.jpg"),   # 391895.jpg (6位)
-                ])
-            
-            # 如果 cocoid 存在，也加进去（以防万一）
-            if 'cocoid' in sample:
-                cocoid = str(sample['cocoid']).strip()
-                possible_paths.extend([
-                    os.path.join(self.local_image_dir, f"{cocoid}.jpg"),
-                    os.path.join(self.local_image_dir, f"{int(cocoid):012d}.jpg"),
-                ])
-            
-            image = None
-            loaded_path = None
-            for local_path in possible_paths:
-                try:
-                    if os.path.exists(local_path):
-                        image = Image.open(local_path).convert("RGB")
-                        loaded_path = local_path
-                        break
-                except Exception as e:
-                    continue
-            
-            if image is None:
-                # 没找到本地图片，尝试从目录中查找
-                if img_idx == 0:
-                    print(f"\n📁 检查目录中实际存在的文件...")
-                    import glob
-                    files = glob.glob(os.path.join(self.local_image_dir, "*.jpg"))[:5]
-                    print(f"   实际文件样本: {[os.path.basename(f) for f in files]}")
-                    print(f"\n试图查找的 filename: {filename}")
-                    print(f"尝试的路径: {possible_paths[:3]}\n")
-                
-                # 尝试从 URL 下载
-                print(f"⚠️  本地图片不存在 (filename: {filename})，尝试从 URL 下载...")
+            try:
+                image = Image.open(local_path).convert("RGB")
+            except FileNotFoundError:
+                print(f"⚠️  本地图片不存在: {local_path}，尝试从 URL 下载...")
                 if 'url' in sample:
                     try:
                         response = requests.get(sample['url'], timeout=10)
@@ -164,6 +119,9 @@ class RetrievalDataset(torch.utils.data.Dataset):
                         image = Image.new('RGB', (224, 224), color='black')
                 else:
                     image = Image.new('RGB', (224, 224), color='black')
+            except Exception as e:
+                print(f"Error loading image from local path {local_path}: {e}")
+                image = Image.new('RGB', (224, 224), color='black')
         elif 'url' in sample:
             # For COCO Karpathy: load image from URL
             if img_idx == 0:

@@ -91,11 +91,11 @@ def download_coco_images(
             continue
         
         url = sample['url']
-        # 使用 cocoid（COCO 数据集的 ID）或 imgid，不是 image_id（那个字段不存在）
-        image_id = sample.get('cocoid') or sample.get('imgid') or idx
-        save_path = str(output_path / f"{image_id}.jpg")
+        # ✅ 直接从 URL 提取文件名（比如 COCO_train2014_000000057870.jpg）
+        filename = os.path.basename(url)
+        save_path = str(output_path / filename)
         
-        download_tasks.append((image_id, url, save_path, timeout))
+        download_tasks.append((filename, url, save_path, timeout))
     
     print(f"📦 共 {len(download_tasks)} 张图片待下载\n")
     
