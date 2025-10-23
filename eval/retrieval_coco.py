@@ -101,24 +101,39 @@ class RetrievalDataset(torch.utils.data.Dataset):
         elif 'jpg' in sample:
             image_data = sample["jpg"]
             image = image_data.convert("RGB") if hasattr(image_data, "convert") else Image.open(io.BytesIO(image_data)).convert("RGB")
-        elif self.local_image_dir and 'image_id' in sample:
+        elif self.local_image_dir and ('cocoid' in sample or 'imgid' in sample or 'filename' in sample):
             # ✅ 优先从本地目录加载图片
-            image_id = sample['image_id']
+            # COCO Karpathy split 使用 cocoid（就是数字）
+            image_id = sample.get('cocoid') or sample.get('imgid') or sample.get('filename')
             
-            # 尝试多种文件名格式（处理前导零问题）
-            possible_paths = [
-                os.path.join(self.local_image_dir, f"{image_id}.jpg"),  # 原始格式: 123456.jpg
-                os.path.join(self.local_image_dir, f"{int(image_id):012d}.jpg"),  # 12位零填充: 000000123456.jpg
-                os.path.join(self.local_image_dir, f"{int(image_id):06d}.jpg"),   # 6位零填充: 000123.jpg
-            ]
+            # 尝试多种文件名格式
+            possible_paths = []
             
-            # 如果 image_id 是字符串且包含 COCO_ 前缀，提取数字部分
-            if isinstance(image_id, str) and 'COCO' in image_id.upper():
-                # 格式: COCO_val2017_000000098 -> 98
-                numeric_id = image_id.split('_')[-1].lstrip('0') or '0'
+            # 如果 filename 存在，直接用它
+            if 'filename' in sample:
+                filename = sample['filename']
+                possible_paths.append(os.path.join(self.local_image_dir, filename))
+                # 也尝试只用文件名部分（去掉路径）
+                basename = os.path.basename(filename)
+                if basename != filename:
+                    possible_paths.append(os.path.join(self.local_image_dir, basename))
+            
+            # 尝试 cocoid（就是纯数字）
+            if 'cocoid' in sample:
+                cocoid = str(sample['cocoid']).strip()
+                # 数字可能有不同的格式
                 possible_paths.extend([
-                    os.path.join(self.local_image_dir, f"{numeric_id}.jpg"),
-                    os.path.join(self.local_image_dir, f"{int(numeric_id):06d}.jpg"),
+                    os.path.join(self.local_image_dir, f"{cocoid}.jpg"),  # 原始: 391895.jpg
+                    os.path.join(self.local_image_dir, f"{int(cocoid):012d}.jpg"),  # 12位: 000000391895.jpg
+                    os.path.join(self.local_image_dir, f"{int(cocoid):06d}.jpg"),   # 6位: 391895.jpg
+                ])
+            
+            # 尝试 imgid
+            if 'imgid' in sample and 'cocoid' not in sample:
+                imgid = str(sample['imgid']).strip()
+                possible_paths.extend([
+                    os.path.join(self.local_image_dir, f"{imgid}.jpg"),
+                    os.path.join(self.local_image_dir, f"{int(imgid):06d}.jpg"),
                 ])
             
             image = None
@@ -134,7 +149,7 @@ class RetrievalDataset(torch.utils.data.Dataset):
             
             if image is None:
                 # 没找到本地图片，尝试从 URL 下载
-                print(f"⚠️  本地图片不存在 (ID: {image_id})，尝试从 URL 下载...")
+                print(f"⚠️  本地图片不存在 (cocoid: {image_id})，尝试从 URL 下载...")
                 print(f"   尝试过的路径: {possible_paths[:2]}")
                 if 'url' in sample:
                     try:
