@@ -643,9 +643,9 @@ def train_clip(args):
         lr_scheduler_type="cosine",
         max_grad_norm=args.max_grad_norm,
         gradient_checkpointing=True,
-        # load_best_model_at_end=True,
-        # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
-        # greater_is_better=False,       # 损失越小越好
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",  # 使用验证损失作为指标
+        greater_is_better=False,       # 损失越小越好
         dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
         dataloader_pin_memory=True,         # 默认: True
         remove_unused_columns=False,
@@ -707,13 +707,21 @@ def train_clip(args):
         trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    # 手动保存 best model
-    best_model_path = args.best_model_dir
-    trainer.save_model(best_model_path)
-    processor.save_pretrained(best_model_path)
-    main_print(f"\n💾 Best model saved to: {best_model_path}")
- 
+    # trainer.train() 结束后, trainer.model 已经是最佳模型了
+    accelerator.wait_for_everyone() # 等待所有进程完成
 
+    best_model_path = args.best_model_dir
+    
+    # 只有主进程保存
+    if accelerator.is_main_process:
+        trainer.save_model(best_model_path)
+        processor.save_pretrained(best_model_path)
+        main_print(f"\n💾 Best model (eval_loss) saved to: {best_model_path}")
+        if trainer.state.best_model_checkpoint:
+            main_print(f"   (Best checkpoint was: {trainer.state.best_model_checkpoint})")
+
+    accelerator.wait_for_everyone() # 确保保存后再继续
+ 
     return best_model_path
 
 
