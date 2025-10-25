@@ -41,8 +41,8 @@ class RetrievalDataset(torch.utils.data.Dataset):
                 break
             
             # 调试：打印第一个样本的字段
-            if img_idx == 0:
-                print(f"📋 样本字段: {list(sample.keys())}")
+            # if img_idx == 0:
+            #     print(f"📋 样本字段: {list(sample.keys())}")
                 
             self.image_data.append(sample)
             
@@ -104,7 +104,7 @@ class RetrievalDataset(torch.utils.data.Dataset):
         elif self.local_image_dir and 'filename' in sample:
             # ✅ 直接用 filename + .jpg，这样就和 download_images.py 保存的文件对应了
             filename = sample['filename']
-            local_path = os.path.join(self.local_image_dir, f"{filename}.jpg")
+            local_path = os.path.join(self.local_image_dir, f"{filename}")
             
             try:
                 image = Image.open(local_path).convert("RGB")
@@ -319,7 +319,7 @@ def compute_retrieval_metrics(image_features, text_features, return_ranks=False)
 
 
 def run_retrieval_evaluation(
-    model_id="google/siglip2-so400m-patch16-384",
+    model_id="google/siglip2-so400m-patch14-384",
     model_type="clip",  # "clip" or "siglip"
     dataset_name="mscoco", 
     split="test",
@@ -376,7 +376,8 @@ def run_retrieval_evaluation(
         processor = AutoProcessor.from_pretrained(model_id)
     elif model_type.lower() == "siglip":
         model = SiglipModel.from_pretrained(model_id)
-        processor = SiglipProcessor.from_pretrained("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384")
+        # processor = SiglipProcessor.from_pretrained("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384")
+        processor = SiglipProcessor.from_pretrained("google/siglip2-so400m-patch14-384")
     else:
         raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip' or 'siglip'")
     
@@ -387,7 +388,8 @@ def run_retrieval_evaluation(
     if dataset_name.lower() == "mscoco":
         print("📥 Using COCO Karpathy split - standard for retrieval evaluation")
         # Karpathy split: validation (5K) and test (5K) - perfect for standard evaluation
-        ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
+        # ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
+        ds = load_dataset("yerevann/coco-karpathy", split="test")
         print(f"✅ Loaded COCO Karpathy {split} split (5K samples)")
     elif dataset_name.lower() == "flickr30k":
         ds = load_dataset("nlphuji/flickr30k", split="test")
@@ -522,15 +524,12 @@ def run_retrieval_evaluation(
     }
     
     # Create results directory if it doesn't exist
-    results_dir = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/results"
+    results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
     os.makedirs(results_dir, exist_ok=True)
     
     # Save detailed results
     model_name = model_id.replace("/", "_")
     eval_suffix = "_karpathy" if use_karpathy_eval else "_standard"
-    results_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.json")
-    with open(results_file, "w") as f:
-        json.dump(result_info, f, indent=2)
     
     # Save text results
     text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.txt")
@@ -556,15 +555,7 @@ def run_retrieval_evaluation(
         f.write(f"  Avg R@5:  {metrics['avg_r5']:.2f}%\n")
         f.write(f"  Avg R@10: {metrics['avg_r10']:.2f}%\n")
     
-    # Optionally save features for further analysis
-    if save_features:
-        features_file = os.path.join(results_dir, f"features_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.npz")
-        np.savez(features_file, 
-                image_features=all_image_features.numpy(),
-                text_features=all_text_features.numpy())
-        print(f"Features saved to: {features_file}")
     
-    print(f"Results saved to: {results_file}")
     return result_info
 
 
@@ -574,18 +565,18 @@ if __name__ == "__main__":
     print("Model: SigLIP-R (trained with CLIP-R method)")
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
-    MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    
+    # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+    MODEL_PATH = "fesvhtr/siglip-r-s1-run1023-1632"
     coco_results = run_retrieval_evaluation(
         model_id=MODEL_PATH,
         model_type="siglip",  # SigLIP model
         dataset_name="mscoco",
         split="test",  # Karpathy test split (5K samples)
-        batch_size=256,  # 大batch size，充分利用64GB显存
+        batch_size=128,  # 大batch size，充分利用64GB显存
         max_samples=None,  # Use full Karpathy split (exactly 5K)
         device="cuda:0",
         use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
-        local_image_dir="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
+        local_image_dir="/home/muzammal/Projects/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
     )
     
     print(f"\n🎯 Karpathy Evaluation Results:")

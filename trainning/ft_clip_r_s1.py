@@ -682,12 +682,12 @@ def train_clip(args):
 
     main_print(f"\n🚀 Starting Training...")
     main_print("="*60)
-    optimizer = Lion(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-        betas=(0.9, 0.99)
-    )
+    # optimizer = Lion(
+    #     model.parameters(),
+    #     lr=args.learning_rate,
+    #     weight_decay=args.weight_decay,
+    #     betas=(0.9, 0.99)
+    # )
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
@@ -696,7 +696,7 @@ def train_clip(args):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
-        optimizers=(optimizer, None),
+        # optimizers=(optimizer, None),
         orig_model=orig_model if model_type == "siglip" else None,
     )
     trainer.tb_schedule = make_tb_schedule()

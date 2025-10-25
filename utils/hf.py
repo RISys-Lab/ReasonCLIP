@@ -1,26 +1,25 @@
 from huggingface_hub import HfApi
 import os
-# api = HfApi()
-# for file in os.listdir("/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw"):
-#     if file.endswith(".parquet"):
-#         api.upload_file(
-#             path_in_repo=file, 
-#             path_or_fileobj=f"/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItw/{file}",  
-#             repo_id="fesvhtr/CLIPReasonItw", 
-#             repo_type="dataset" 
-#         )
+api = HfApi()
 
-
-from huggingface_hub import hf_hub_download
-repo_id = "fesvhtr/CLIPReasonItwImages"
-path_in_repo = "llavacot_test_images.zip"
-local_file = hf_hub_download(
-    repo_id=repo_id, 
-    filename=path_in_repo, 
-    repo_type="dataset",
-    local_dir="/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItwImages"
+api.upload_file(
+    path_in_repo="coco_images.zip", 
+    path_or_fileobj="/home/muzammal/Projects/CLIP-R/data/coco_images.zip",  
+    repo_id="fesvhtr/tmp_leo", 
+    repo_type="dataset" 
 )
-print(f"文件已下载到: {local_file}")
+
+
+# from huggingface_hub import hf_hub_download
+# repo_id = "fesvhtr/CLIPReasonItwImages"
+# path_in_repo = "llavacot_test_images.zip"
+# local_file = hf_hub_download(
+#     repo_id=repo_id, 
+#     filename=path_in_repo, 
+#     repo_type="dataset",
+#     local_dir="/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItwImages"
+# )
+# print(f"文件已下载到: {local_file}")
 
 
 # import os

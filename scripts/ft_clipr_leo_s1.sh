@@ -74,9 +74,9 @@ accelerate launch \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
     --save_ratio 0.05 \
-    --save_total_limit 5 \
+    --save_total_limit 10 \
     --eval_strategy ratio \
-    --eval_ratio 0.1 \
+    --eval_ratio 0.05 \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \

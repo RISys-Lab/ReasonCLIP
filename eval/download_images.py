@@ -28,13 +28,13 @@ def download_single_image(args):
         return True, image_id
     
     try:
-        response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
-        
-        # 打开图片并转换为 RGB
-        image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        # 保存到本地
-        image.save(save_path, format='JPEG', quality=95)
+        # 使用 stream=True 避免一次性加载整个图片到内存
+        with requests.get(url, timeout=timeout, stream=True) as response:
+            response.raise_for_status()
+            # 直接将内容写入文件，不做转换
+            with open(save_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
         
         with lock:
             success_count += 1
@@ -47,7 +47,7 @@ def download_single_image(args):
 
 
 def download_coco_images(
-    output_dir="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco_images",
+    output_dir="/home/muzammal/Projects/CLIP-R/data/coco_images",  # 保存到本地 data 目录
     split="test",
     max_samples=None,
     timeout=10,
@@ -76,7 +76,7 @@ def download_coco_images(
     print(f"📥 加载 COCO Karpathy {split} split...")
     
     # 加载数据集
-    ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
+    ds = load_dataset("yerevann/coco-karpathy", split=split)
     
     print(f"✅ 加载了 {len(ds)} 张图片")
     print(f"⏳ 准备下载任务...")
@@ -139,8 +139,8 @@ if __name__ == "__main__":
     test_success, test_failed = download_coco_images(
         split="test",
         max_samples=None,  # 下载全部
-        timeout=15,
-        num_threads=16  # 16 个线程并发下载
+        timeout=5,  # 降低超时时间，快速跳过慢的连接
+        num_threads=32  # 增加到 32 线程
     )
     
     # 下载 validation split
@@ -148,8 +148,8 @@ if __name__ == "__main__":
     val_success, val_failed = download_coco_images(
         split="validation",
         max_samples=None,  # 下载全部
-        timeout=15,
-        num_threads=16  # 16 个线程并发下载
+        timeout=5,  # 降低超时时间，快速跳过慢的连接
+        num_threads=32  # 增加到 32 线程
     )
     
     print("\n" + "="*70)
