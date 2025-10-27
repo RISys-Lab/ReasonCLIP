@@ -555,12 +555,12 @@ def main():
     parser.add_argument('--base_path', type=str,
                        default='/home/muzammal/Projects/CLIP-R/data/fesvhtr-CLIPReasonItwImages/llavacot_test_images',
                        help='Base path for images')
-    parser.add_argument('--model_type', type=str, default='clip',
+    parser.add_argument('--model_type', type=str, default='siglip',
                        choices=['clip', 'openclip', 'siglip'],
                        help='Type of model to use')
     parser.add_argument('--model_name', type=str, required=True,
                        help='Model name/path to use')
-    parser.add_argument('--output_dir', type=str, default='./results',
+    parser.add_argument('--output_dir', type=str, default='./results_reasonpro',
                        help='Output directory for results')
     parser.add_argument('--task', type=str, required=True,
                        choices=['logic_val', 'best_reason', 'reason_id'],

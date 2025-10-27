@@ -668,28 +668,24 @@ def train_clip(args):
     
     main_print(f"🔧 Setting up optimizer with different learning rates...")
     # 推荐的学习率: backbone 使用较低的 LR，logit_scale 使用主 LR
-    vision_lr = args.learning_rate / 10.0       # 例如: 1e-5
-    text_lr   = args.learning_rate / 10.0 * 3    # 例如: 3e-5
-    logit_scale_lr = args.learning_rate         # 例如: 1e-4
-    
-    main_print(f"   - Main learning rate (logit_scale): {logit_scale_lr}")
-    main_print(f"   - Backbone learning rate (vision/text encoders): {vision_lr}, {text_lr}")
+    main_lr = args.learning_rate
+    main_print(f"   - Main learning rate: {main_lr}")
 
     optimizer_grouped_parameters = [
         # Vision Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
-            "lr": vision_lr,
+            "lr": main_lr / 10.0,
         },
         # Text Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
-            "lr": text_lr,
+            "lr": main_lr / 10.0 * 3,
         },
         # Logit Scale parameter
         {
             "params": [p for n, p in model.named_parameters() if "logit_scale" in n and p.requires_grad],
-            "lr": logit_scale_lr,
+            "lr": main_lr,
             "weight_decay": 0.0 # 通常不对 logit_scale 应用 weight decay
         },
     ]
@@ -712,7 +708,7 @@ def train_clip(args):
          # 这里简单地将它们添加到默认组 (main_lr)
          default_group = {
              "params": list(unassigned_params),
-             "lr": main_lr,
+             "lr": args.learning_rate,
          }
          optimizer_grouped_parameters.append(default_group)
          main_print(f"   -> Added unassigned parameters to a default group with LR={main_lr}")
