@@ -16,7 +16,7 @@ export TOKENIZERS_PARALLELISM=false
 export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
 # change to INFO for debugging
-export NCCL_DEBUG=INFO
+export NCCL_DEBUG=WARN
 export CUDA_LAUNCH_BLOCKING=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 

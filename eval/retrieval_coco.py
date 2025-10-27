@@ -566,7 +566,7 @@ if __name__ == "__main__":
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
     # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/siglip-r-s1-run1023-1632"
+    MODEL_PATH = "fesvhtr/siglip-r-s1-run1025-1536"
     coco_results = run_retrieval_evaluation(
         model_id=MODEL_PATH,
         model_type="siglip",  # SigLIP model

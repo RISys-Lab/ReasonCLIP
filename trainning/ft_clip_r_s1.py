@@ -16,7 +16,8 @@ import numpy as np
 from typing import Optional, List
 import math
 import glob
-from lion_pytorch import Lion
+# from lion_pytorch import Lion
+from torch.optim import AdamW
 import torch.distributed as dist
 # import sys
 # sys.stderr.isatty = lambda: True
@@ -158,6 +159,14 @@ def make_tb_schedule(start=0.70, mid=0.50, end=0.60, t1=0.20, t2=0.80):
         else:
             return end
     return _schedule
+
+def compute_strategy_steps(strategy, ratio_value, steps_value, ratio_multiplier, steps_per_epoch):
+    if strategy == "epoch":
+        return steps_per_epoch, "epoch"
+    elif strategy == "ratio":
+        return max(1, int(ratio_multiplier * ratio_value)), "steps"
+    else:  # steps
+        return steps_value, "steps"
 
 class BestModelCallback(TrainerCallback):
     def __init__(self):
@@ -582,38 +591,12 @@ def train_clip(args):
     main_print(f"   - Total training steps: {total_steps}")
     
     # 根据策略计算实际步数
-    # Logging steps
-    if args.logging_strategy == "epoch":
-        logging_steps = steps_per_epoch
-        logging_strategy = "epoch"
-    elif args.logging_strategy == "ratio":
-        logging_steps = max(1, int(total_steps * args.logging_ratio))
-        logging_strategy = "steps"
-    else:  # steps
-        logging_steps = args.logging_steps
-        logging_strategy = "steps"
-    
-    # Save steps
-    if args.save_strategy == "epoch":
-        save_steps = steps_per_epoch
-        save_strategy = "epoch"
-    elif args.save_strategy == "ratio":
-        save_steps = max(1, int(total_steps * args.save_ratio))
-        save_strategy = "steps"
-    else:  # steps
-        save_steps = args.save_steps
-        save_strategy = "steps"
-    
-    # Eval steps
-    if args.eval_strategy == "epoch":
-        eval_steps = steps_per_epoch
-        eval_strategy = "epoch"
-    elif args.eval_strategy == "ratio":
-        eval_steps = max(1, int(total_steps * args.eval_ratio))
-        eval_strategy = "steps"
-    else:  # steps
-        eval_steps = args.eval_steps
-        eval_strategy = "steps"
+    logging_steps, logging_strategy = compute_strategy_steps(
+        args.logging_strategy, args.logging_ratio, args.logging_steps, total_steps, steps_per_epoch)
+    save_steps, save_strategy = compute_strategy_steps(
+        args.save_strategy, args.save_ratio, args.save_steps, total_steps, steps_per_epoch)
+    eval_steps, eval_strategy = compute_strategy_steps(
+        args.eval_strategy, args.eval_ratio, args.eval_steps, total_steps, steps_per_epoch)
     
     main_print(f"\n📝 Logging & Evaluation Schedule:")
     main_print(f"   - Logging: every {logging_steps} steps ({args.logging_strategy})")
@@ -682,12 +665,68 @@ def train_clip(args):
 
     main_print(f"\n🚀 Starting Training...")
     main_print("="*60)
-    # optimizer = Lion(
-    #     model.parameters(),
-    #     lr=args.learning_rate,
-    #     weight_decay=args.weight_decay,
-    #     betas=(0.9, 0.99)
-    # )
+    
+    main_print(f"🔧 Setting up optimizer with different learning rates...")
+    # 推荐的学习率: backbone 使用较低的 LR，logit_scale 使用主 LR
+    vision_lr = args.learning_rate / 10.0       # 例如: 1e-5
+    text_lr   = args.learning_rate / 10.0 * 3    # 例如: 3e-5
+    logit_scale_lr = args.learning_rate         # 例如: 1e-4
+    
+    main_print(f"   - Main learning rate (logit_scale): {logit_scale_lr}")
+    main_print(f"   - Backbone learning rate (vision/text encoders): {vision_lr}, {text_lr}")
+
+    optimizer_grouped_parameters = [
+        # Vision Model parameters
+        {
+            "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
+            "lr": vision_lr,
+        },
+        # Text Model parameters
+        {
+            "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
+            "lr": text_lr,
+        },
+        # Logit Scale parameter
+        {
+            "params": [p for n, p in model.named_parameters() if "logit_scale" in n and p.requires_grad],
+            "lr": logit_scale_lr,
+            "weight_decay": 0.0 # 通常不对 logit_scale 应用 weight decay
+        },
+    ]
+
+    # 过滤掉没有参数的组 (以防万一)
+    optimizer_grouped_parameters = [g for g in optimizer_grouped_parameters if g["params"]]
+    
+    # 确保所有参数都被分配了
+    assigned_params = set()
+    for group in optimizer_grouped_parameters:
+        assigned_params.update([p for p in group["params"]])
+    
+    all_params = set(p for p in model.parameters() if p.requires_grad)
+    
+    if all_params != assigned_params:
+         unassigned_params = all_params - assigned_params
+         unassigned_names = [n for n, p in model.named_parameters() if p in unassigned_params]
+         main_print(f"⚠️ WARNING: Some parameters were not assigned a learning rate group: {unassigned_names}")
+         # 可以选择将它们添加到默认组，或报错
+         # 这里简单地将它们添加到默认组 (main_lr)
+         default_group = {
+             "params": list(unassigned_params),
+             "lr": main_lr,
+         }
+         optimizer_grouped_parameters.append(default_group)
+         main_print(f"   -> Added unassigned parameters to a default group with LR={main_lr}")
+
+    optimizer = AdamW(
+        optimizer_grouped_parameters,
+        lr=main_lr, # 默认 lr (虽然每个组都有指定)
+        weight_decay=args.weight_decay,
+        betas=(0.9, 0.999), # AdamW 默认 betas
+        eps=1e-8          # AdamW 默认 epsilon
+    )
+    main_print(f"   - Optimizer: AdamW")
+    main_print(f"   - Default weight decay: {args.weight_decay}")
+
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
@@ -696,7 +735,7 @@ def train_clip(args):
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
-        # optimizers=(optimizer, None),
+        optimizers=(optimizer, None),
         orig_model=orig_model if model_type == "siglip" else None,
     )
     trainer.tb_schedule = make_tb_schedule()
