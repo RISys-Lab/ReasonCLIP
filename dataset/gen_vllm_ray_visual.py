@@ -85,10 +85,17 @@ def parse_args():
                        help="Enable chunked prefill")
     parser.add_argument("--trust_remote_code", action="store_true", default=True,
                        help="Trust remote code in model loading")
+    # Added for Qwen3 with reasoning ability
     parser.add_argument("--enable_reasoning", action="store_true", default=False,
                        help="Enable reasoning parser (default: False)")
     parser.add_argument("--reasoning_parser", type=str, default="deepseek_r1",
                        help="Reasoning parser method")
+
+    # Added for Qwen3VL-235B-A22B
+    parser.add_argument("--mm_encoder_tp_mode", type=str, default=None,
+                       help="Vision encoder tensor parallelism mode (default: None)")
+    parser.add_argument("--mm_processor_cache_gb", type=int, default=None,
+                       help="Size of the MM processor cache in GB (default: None)")
     
     # Input data parameters
     parser.add_argument("--task", type=str, default="llavacot_visual",
@@ -168,6 +175,8 @@ def load_model(
     gpu_memory_utilization: float = 0.6,
     enable_reasoning: bool = False,
     reasoning_parser: str = "deepseek_r1",
+    mm_encoder_tp_mode: str = None,
+    mm_processor_cache_gb: int = None,
     preprocess_fn=None,
     postprocess_fn=None,
 ):
@@ -182,6 +191,7 @@ def load_model(
         "gpu_memory_utilization": gpu_memory_utilization,
         "trust_remote_code": trust_remote_code,
         "dtype": dtype,
+        "async_scheduling": True,
     }
     
     # 视觉任务需要额外的图像处理参数
@@ -206,7 +216,13 @@ def load_model(
     if enable_reasoning:
         engine_kwargs["enable_reasoning"] = enable_reasoning
         engine_kwargs["reasoning_parser"] = reasoning_parser
-
+    
+    # Add mm_encoder_tp_mode and mm_processor_cache_gb parameters
+    if mm_encoder_tp_mode is not None:
+        engine_kwargs["mm_encoder_tp_mode"] = mm_encoder_tp_mode
+    if mm_processor_cache_gb is not None:
+        engine_kwargs["mm_processor_cache_gb"] = mm_processor_cache_gb
+    
     print("Loading model …")
 
     # 根据任务类型配置 vLLM 处理器
@@ -223,6 +239,8 @@ def load_model(
     # 根据任务类型设置不同的配置
     if "visual" in task_type:
         config_kwargs["has_image"] = True
+        ## NOTE: hard code to limit video input
+        engine_kwargs["limit_mm_per_prompt"] = {"video": 0}
     else:
         # 非视觉任务，且启用推理时才启用思维模式
         if enable_reasoning:
@@ -337,6 +355,8 @@ if __name__ == "__main__":
             gpu_memory_utilization=args.gpu_memory_utilization,
             enable_reasoning=args.enable_reasoning,
             reasoning_parser=args.reasoning_parser,
+            mm_encoder_tp_mode=args.mm_encoder_tp_mode,
+            mm_processor_cache_gb=args.mm_processor_cache_gb,
             preprocess_fn=task_config.preprocess,
             postprocess_fn=task_config.postprocess,
         )
