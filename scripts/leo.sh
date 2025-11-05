@@ -45,6 +45,9 @@ python -u dataset/gen_vllm_ray_visual.py \
     --gpu_memory_utilization 0.85 \
     --enable_chunked_prefill \
     --trust_remote_code \
+    --mm-processor-cache-gb 0 \
+    --mm-encoder-tp-mode data \
+    --limit-mm-per-prompt:video 0 \
     --task cc12m_trl_visual \
     --concurrency 1 \
     --num_workers 8 \
