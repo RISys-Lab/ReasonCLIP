@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=gen_cc12m_trp_00
-#SBATCH --time=24:00:00
+#SBATCH --time=4:00:00
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=gen_cc12m_trp_00.out
@@ -33,21 +33,20 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/combined/cc12m_tb_chunk_00.parquet \
     --checkpoint_interval 2000 \
     --ray_batch_size 2000 \
-    --batch_size 32 \
+    --batch_size 16 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 65536 \
-    --max_num_seqs 32 \
+    --max_num_batched_tokens 32768 \
+    --max_num_seqs 16 \
     --max_tokens 1024 \
     --temperature 0.7 \
     --top_p 0.9 \
-    --tensor_parallel_size 4 \
+    --tensor_parallel_size 2 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.85 \
     --enable_chunked_prefill \
     --trust_remote_code \
-    --mm-processor-cache-gb 0 \
-    --mm-encoder-tp-mode data \
-    --limit-mm-per-prompt:video 0 \
+    --mm_processor_cache_gb 0 \
+    --mm_encoder_tp_mode data \
     --task cc12m_trl_visual \
     --concurrency 1 \
     --num_workers 8 \

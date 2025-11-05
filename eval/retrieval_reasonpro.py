@@ -40,7 +40,7 @@ class ModelFactory:
             
         elif model_type.lower() == 'siglip':
             model = AutoModel.from_pretrained(model_name).to(device)
-            processor = AutoProcessor.from_pretrained(model_name)
+            processor = AutoProcessor.from_pretrained("google/siglip2-so400m-patch14-384")
             return model, processor, processor
             
         else:
@@ -117,16 +117,19 @@ class ReasoningClassificationEvaluator:
             文本特征张量
         """
         with torch.no_grad():
-            if self.model_type in ['siglip', 'clip']:
+            if self.model_type== 'clip':
                 # SigLIP和CLIP使用processor处理文本
                 inputs = self.tokenizer(text=texts, return_tensors="pt", padding=True, truncation=True).to(self.device)
+                text_features = self.model.get_text_features(**inputs)
+            elif self.model_type== 'siglip':
+                inputs = self.tokenizer(text=texts, return_tensors="pt", padding="max_length", truncation=True, max_length=64).to(self.device)
                 text_features = self.model.get_text_features(**inputs)
             else:
                 # OpenCLIP
                 text_tokens = self.tokenizer(texts).to(self.device)
                 text_features = self.model.encode_text(text_tokens)
-            
-            # 归一化
+                
+                # 归一化
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         return text_features
     
@@ -558,7 +561,7 @@ def main():
     parser.add_argument('--model_type', type=str, default='siglip',
                        choices=['clip', 'openclip', 'siglip'],
                        help='Type of model to use')
-    parser.add_argument('--model_name', type=str, required=True,
+    parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1027-1926",
                        help='Model name/path to use')
     parser.add_argument('--output_dir', type=str, default='./results_reasonpro',
                        help='Output directory for results')
@@ -572,7 +575,7 @@ def main():
     
     # 设置设备
     if args.device == 'auto':
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
     else:
         device = args.device
     
