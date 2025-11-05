@@ -563,7 +563,7 @@ def main():
                        help='Type of model to use')
     parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1027-1926",
                        help='Model name/path to use')
-    parser.add_argument('--output_dir', type=str, default='./results_reasonpro',
+    parser.add_argument('--output_dir', type=str, default='/home/muzammal/Projects/CLIP-R/eval/results_reasonpro',
                        help='Output directory for results')
     parser.add_argument('--task', type=str, required=True,
                        choices=['logic_val', 'best_reason', 'reason_id'],

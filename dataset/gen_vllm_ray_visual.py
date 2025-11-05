@@ -233,7 +233,6 @@ def load_model(
         "concurrency": concurrency,
         "batch_size": batch_size,
         "apply_chat_template": True,
-        "keep_original_batch": False,
     }
     
     # 根据任务类型设置不同的配置

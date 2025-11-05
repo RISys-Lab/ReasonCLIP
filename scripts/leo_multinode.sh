@@ -90,9 +90,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 2 \
     --gpu_memory_utilization 0.7 \
-    --mm-processor-cache-gb 0 \
-    --mm-encoder-tp-mode data \
-    --limit-mm-per-prompt:video 0 \
+    --mm_processor_cache_gb 0 \
+    --mm_encoder_tp_mode data \
     --enable_chunked_prefill \
     --trust_remote_code \
     --task cc12m_trl_visual \
