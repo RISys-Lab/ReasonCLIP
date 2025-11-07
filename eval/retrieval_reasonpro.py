@@ -561,13 +561,13 @@ def main():
     parser.add_argument('--model_type', type=str, default='siglip',
                        choices=['clip', 'openclip', 'siglip'],
                        help='Type of model to use')
-    parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1027-1926",
+    parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1025-1926",
                        help='Model name/path to use')
     parser.add_argument('--output_dir', type=str, default='/home/muzammal/Projects/CLIP-R/eval/results_reasonpro',
                        help='Output directory for results')
     parser.add_argument('--task', type=str, required=True,
-                       choices=['logic_val', 'best_reason', 'reason_id'],
-                       help='Which task to run')
+                       choices=['logic_val', 'best_reason', 'reason_id', 'all'],
+                       help='Which task to run (or "all" to run all three tasks)')
     parser.add_argument('--device', type=str, default='auto',
                        help='Device to use (auto, cuda, cpu)')
     
@@ -588,13 +588,56 @@ def main():
         device=device
     )
     
-    # 运行单个任务评估
-    results = evaluator.run_single_task(
-        task_name=args.task,
-        data_path=args.data_path,
-        base_path=args.base_path,
-        output_dir=args.output_dir
-    )
+    # 运行任务评估
+    if args.task == 'all':
+        # 运行所有三个任务
+        print("\n" + "="*60)
+        print("🚀 Running ALL tasks")
+        print("="*60 + "\n")
+        
+        all_results = {}
+        for task_name in ['logic_val', 'best_reason', 'reason_id']:
+            results = evaluator.run_single_task(
+                task_name=task_name,
+                data_path=args.data_path,
+                base_path=args.base_path,
+                output_dir=args.output_dir
+            )
+            all_results[task_name] = results
+            print("\n")
+        
+        # 打印所有任务的总结
+        print("\n" + "="*60)
+        print("📊 ALL TASKS SUMMARY")
+        print("="*60)
+        
+        if 'logic_val' in all_results:
+            r = all_results['logic_val']
+            print(f"\n✅ Logic Validation:")
+            print(f"   🎯 Accuracy: {r['accuracy']:.4f} ({r['accuracy']*100:.2f}%)")
+            print(f"   ✓ Correct: {r['correct_predictions']}/{r['total_samples']}")
+        
+        if 'best_reason' in all_results:
+            r = all_results['best_reason']
+            print(f"\n✅ Best Reasoning:")
+            print(f"   🎯 Accuracy: {r['accuracy']:.4f} ({r['accuracy']*100:.2f}%)")
+            print(f"   ✓ Correct: {r['correct_predictions']}/{r['total_samples']}")
+        
+        if 'reason_id' in all_results:
+            r = all_results['reason_id']
+            print(f"\n✅ Reasoning ID:")
+            print(f"   🎯 Top-2 Accuracy: {r['top2_accuracy']:.4f} ({r['top2_accuracy']*100:.2f}%)")
+            print(f"   📈 Rank Difference: {r['rank_difference']:.2f}")
+        
+        print("\n" + "="*60)
+    else:
+        # 运行单个任务
+        results = evaluator.run_single_task(
+            task_name=args.task,
+            data_path=args.data_path,
+            base_path=args.base_path,
+            output_dir=args.output_dir
+        )
 
 
 if __name__ == "__main__":
