@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
 
 
 # activate env 
@@ -39,7 +39,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --max_num_seqs 8 \
     --max_tokens 1024 \
     --temperature 0.7 \
-    --top_p 0.9 \
+    --top_p 0.8 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.85 \
