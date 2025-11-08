@@ -33,10 +33,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/combined/cc12m_tb_chunk_00.parquet \
     --checkpoint_interval 50000 \
     --ray_batch_size 2000 \
-    --batch_size 16 \
+    --batch_size 8 \
     --max_model_len 2048 \
-    --max_num_batched_tokens 32768 \
-    --max_num_seqs 16 \
+    --max_num_batched_tokens 16384 \
+    --max_num_seqs 8 \
     --max_tokens 48 \
     --temperature 0.7 \
     --top_p 0.8 \
