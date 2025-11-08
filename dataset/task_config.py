@@ -4,7 +4,7 @@ from datasets import load_dataset
 from dataset.prompts import *
 import re
 import json
-
+import random
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
         self.temperature = temperature
@@ -611,6 +611,108 @@ class CC12MtrlVisualTask:
             "generated_text": row["generated_text"],
         }
 
+class CC12MtrpClsVisualTask:
+    
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+        self.SYSTEM_PROMPT_CC12M_trp_cls = SYSTEM_PROMPT_CC12M_TRP_CLS
+        self.USER_PROMPT_CC12M_trp_cls = USER_PROMPT_CC12M_TRP_CLS
+
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        # 直接读取parquet文件, each 2 million rows
+        parquet_files = parquet_dir
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Dataset size: {ds.count()}")
+        print(ds.schema())  # {'id': str, 'image_path': str, ...}
+        print("="*60)
+        
+        return ds
+
+    def preprocess(self, row):
+        system_prompt = self.SYSTEM_PROMPT_CC12M_trp_cls
+        user_prompt = self.USER_PROMPT_CC12M_trp_cls
+        from PIL import Image
+        image = Image.open(row["image_path"])
+        image = image.convert('RGB')
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        
+        # 保留原始输出
+        generated_text = row["generated_text"].strip()
+        
+        # 五类的定义
+        all_classes = ["S", "A", "H", "T", "P"]
+        
+        # 解析生成的类别列表 - 支持逗号或空格分隔
+        if "," in generated_text:
+            parsed_classes = [text.strip().upper() for text in generated_text.split(",")]
+        else:
+            # 如果没有逗号,尝试按空格分割
+            parsed_classes = [text.strip().upper() for text in generated_text.split()]
+        
+        # 过滤出有效的类别(只保留 S/A/H/T/P)
+        valid_classes = []
+        for cls in parsed_classes:
+            # 只取第一个字符(处理 "Spatial" -> "S" 的情况)
+            if cls and cls[0] in all_classes:
+                if cls[0] not in valid_classes:  # 去重
+                    valid_classes.append(cls[0])
+        
+        # 处理长度:如果小于3就随机补全,如果大于3就取前3
+        if len(valid_classes) < 3:
+            # 随机选择类别补全到3个
+            available_classes = [c for c in all_classes if c not in valid_classes]
+            needed = 3 - len(valid_classes)
+            valid_classes.extend(random.sample(available_classes, needed))
+        elif len(valid_classes) > 3:
+            # 取前3个
+            valid_classes = valid_classes[:3]
+        
+        trp_cls_ls = valid_classes
+        
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "generated_text": generated_text,
+            "trp_cls_ls": trp_cls_ls,
+        }
+
 class ReasonItwClsVisualTask:
     
     def __init__(self, temperature, max_tokens, top_p):
@@ -979,6 +1081,7 @@ class TRIGVisualTask:
         }
 
 # 任务注册表 - 将任务名称映射到对应的类
+# must use visual in the name if the task is visual
 TASK_REGISTRY = {
     "llavacot": LlavaCotTask,
     "llavacot_visual": LlavaCotVisualTask,
@@ -988,6 +1091,7 @@ TASK_REGISTRY = {
     "reason_itw_cls_neg_visual": ReasonItwClsNegVisualTask,
     "cc12m_trl_visual": CC12MtrlVisualTask,
     "trig_visual": TRIGVisualTask,
+    "cc12m_trp_cls_visual": CC12MtrpClsVisualTask,
 }
 
 def create_task_config(task_name, temperature, max_tokens, top_p, top_k=None):

@@ -153,3 +153,55 @@ USER_PROMPT_HAND_VISUAL_ADVICE_V2 = """
 Please analyze the image and return one sentence describing the hands and their interactions 
 with objects for hand reconstruction (e.g., left hand grasping a cup, right hand resting on the table).
 """
+
+SYSTEM_PROMPT_CC12M_TRP_CLS = """
+You are an expert visual reasoning annotator.
+Your task is to analyze an image and determine which reasoning types are required to understand it.
+You must always choose **exactly three** reasoning types out of the following five.
+
+Each type represents a distinct way of reasoning about visual content:
+
+1. **Spatial / Geometric Reasoning (S)**
+   - Understanding spatial relations between multiple entities: position, direction, distance, occlusion, containment, or accessibility.
+   - Focuses on how objects are arranged and interact in space.
+   - Key idea: how placement or geometry affects visibility, reachability, or motion.
+
+2. **Attribute / State Reasoning (A)**
+   - Understanding intrinsic properties or visible conditions of individual objects.
+   - Includes appearance, surface texture, brightness, transparency, wetness, deformation, openness, integrity, or on/off states.
+   - Key idea: what physical or functional state each object is in, based on visible cues.
+
+3. **Human / Action Reasoning (H)**
+   - Understanding human or animal posture and actions to infer current or immediate behavior.
+   - Involves body orientation, gesture, interaction with objects or others.
+   - Key idea: what the agent is doing or about to do.
+
+4. **Temporal / Phase Reasoning (T)**
+   - Understanding the temporal stage of an event: just happened, ongoing, or about to happen.
+   - Based on motion continuity, trajectory, or dynamic context.
+   - Key idea: what phase or temporal transition the scene represents.
+
+5. **Physical Intuition Reasoning (P)**
+   - Understanding hidden physical constraints and forces: stability, balance, gravity, pressure, tension, overflow, or collision risk.
+   - Focuses on whether a structure or configuration is physically plausible or risky.
+   - Key idea: will it remain stable or something will fall, tilt, or spill.
+
+**Rules:**
+- Always select exactly three reasoning types (no fewer, no more).
+- Choose those most essential for interpreting the core meaning of the image.
+- Base your judgment only on **visible visual evidence**, not on social norms or long-term knowledge.
+- Do not describe the scene or justify your choices; only output the selected type codes.
+
+**Output Format:**
+Return only three type codes separated by commas, such as:
+S,H,P
+No additional text or explanation.
+"""
+
+USER_PROMPT_CC12M_TRP_CLS = """
+Look at the image provided.
+
+Determine which three reasoning types (from S, A, H, T, P) are most relevant to understanding this image according to the definitions you have been given.
+
+Output only the three codes separated by commas.
+"""
