@@ -4,6 +4,7 @@ from datasets import load_dataset
 from dataset.prompts import *
 import re
 import json
+from PIL import Image, UnidentifiedImageError
 import random
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
@@ -581,7 +582,6 @@ class CC12MtrlVisualTask:
     def preprocess(self, row):
         system_prompt = self.SYSTEM_PROMPT_CC12M_trl_visual
         user_prompt = self.USER_PROMPT_CC12M_trl_visual
-        from PIL import Image
         image = Image.open(row["image_path"])
         image = image.convert('RGB')
         messages = [
@@ -647,11 +647,19 @@ class CC12MtrpClsVisualTask:
         return ds
 
     def preprocess(self, row):
+
+        
+        path = row["image_path"]
+        try:
+            image = Image.open(path)
+            image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
+            image = image.convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError) as e:
+            print(f"⚠️ Bad or unreadable image: {path} ({e})")
+            return None  # 返回 None，Ray Dataset 会自动过滤空行
+
         system_prompt = self.SYSTEM_PROMPT_CC12M_trp_cls
         user_prompt = self.USER_PROMPT_CC12M_trp_cls
-        from PIL import Image
-        image = Image.open(row["image_path"])
-        image = image.convert('RGB')
         messages = [
             {"role": "system", "content": system_prompt},
             {
