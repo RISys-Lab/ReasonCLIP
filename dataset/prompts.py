@@ -185,15 +185,21 @@ Each type represents a distinct way of reasoning about visual content:
    - The requirement is a relatively obvious physical relationship.
    - Not relying on semantic common sense, but solely based on visual intuition.
 
+6 - Delete (D)
+   If the content of this image is overly simplistic—such as containing only a single subject with no discernible attributes—or if the image quality is too low to provide a description, 
+   it can be directly assigned to category D, meaning it will be deleted.
+
 **Rules:**
-- Always select exactly three reasoning types (no fewer, no more).
+- Always select exactly three reasoning types or only category D to delete the image.
 - Choose those most essential for interpreting the core meaning of the image.
-- Base your judgment only on **visible visual evidence**, not on social norms or long-term knowledge.
+- Base your judgment only on **visible visual evidence**, not on hard or long-term knowledge.
 - Do not describe the scene or justify your choices; only output the selected type codes.
 
 **Output Format:**
 Return only three type codes separated by commas, such as:
 S,H,P
+or
+D
 No additional text or explanation.
 """
 
@@ -201,6 +207,7 @@ USER_PROMPT_CC12M_TRP_CLS = """
 Look at the image provided.
 
 Determine which three reasoning types (from S, A, H, T, P) are most relevant to understanding this image according to the definitions you have been given.
+Or choose category D to delete the image.
 
-Output only the three codes separated by commas.
+Output only the three codes separated by commas or output D to delete the image.
 """
