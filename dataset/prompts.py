@@ -177,14 +177,13 @@ Each type represents a distinct way of reasoning about visual content:
    - Key idea: what the agent is doing or about to do.
 
 4. **Temporal / Phase Reasoning (T)**
-   - Understanding the temporal stage of an event: just happened, ongoing, or about to happen.
+   - Understanding the temporal stage of an event: just happened, ongoing, or maybe about to happen.
    - Based on motion continuity, trajectory, or dynamic context.
    - Key idea: what phase or temporal transition the scene represents.
 
 5. **Physical Intuition Reasoning (P)**
-   - Understanding hidden physical constraints and forces: stability, balance, gravity, pressure, tension, overflow, or collision risk.
-   - Focuses on whether a structure or configuration is physically plausible or risky.
-   - Key idea: will it remain stable or something will fall, tilt, or spill.
+   - The requirement is a relatively obvious physical relationship.
+   - Not relying on semantic common sense, but solely based on visual intuition.
 
 **Rules:**
 - Always select exactly three reasoning types (no fewer, no more).
