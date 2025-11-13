@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1
+#SBATCH --job-name=clipr_ft_s1_e2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1.out
-#SBATCH --error=clipr_ft_s1.err
+#SBATCH --output=clipr_ft_s1_e2.out
+#SBATCH --error=clipr_ft_s1_e2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -30,7 +30,7 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1/run_1027_071728/finetune_weights/checkpoint-1926"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
 
 mkdir -p "$OUT_DIR"
@@ -69,21 +69,21 @@ accelerate launch \
     --batch_size 384 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
-    --learning_rate 1e-4 \
+    --learning_rate 2e-5 \
     --holdout_ratio 0.002 \
-    --warmup_ratio 0.1 \
+    --warmup_ratio 0.03 \
     --weight_decay 1e-4 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
     --save_ratio 0.05 \
-    --save_total_limit 10 \
+    --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.05 \
-    --tb_start 0.7 \
-    --tb_mid 0.5 \
-    --tb_end 0.6 \
+    --tb_start 0.6 \
+    --tb_mid 0.4 \
+    --tb_end 0.5 \
     --tb_t1 0.2 \
     --tb_t2 0.8 \
     --num_workers ${NUM_WORKERS} \

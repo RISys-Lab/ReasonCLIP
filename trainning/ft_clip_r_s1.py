@@ -110,6 +110,7 @@ def parse_args():
     #                     help="Patience for early stopping")
     
     # Loss weight parameters
+    # deprecated
     parser.add_argument("--tb_alpha", type=float, default=0.5,
                         help="Weight for tb loss (trp weight = 1 - tb_alpha), range [0, 1]")
     
@@ -145,6 +146,17 @@ def parse_args():
     # Resume training parameters
     parser.add_argument("--resume_from_checkpoint", type=str, default=None,
                         help="Path to checkpoint directory to resume training from")
+
+    parser.add_argument("--tb_start", type=float, default=0.6,
+                    help="Initial TB loss weight (default=0.6)")
+    parser.add_argument("--tb_mid", type=float, default=0.4,
+                        help="Middle-phase TB loss weight (default=0.4)")
+    parser.add_argument("--tb_end", type=float, default=0.5,
+                        help="Final TB loss weight (default=0.5)")
+    parser.add_argument("--tb_t1", type=float, default=0.2,
+                        help="Ratio point where TB starts decreasing (default=0.2)")
+    parser.add_argument("--tb_t2", type=float, default=0.8,
+                        help="Ratio point where TB stops decreasing (default=0.8)")
 
     return parser.parse_args()
 
@@ -734,7 +746,7 @@ def train_clip(args):
         optimizers=(optimizer, None),
         orig_model=orig_model if model_type == "siglip" else None,
     )
-    trainer.tb_schedule = make_tb_schedule()
+    trainer.tb_schedule = make_tb_schedule(args.tb_start, args.tb_mid, args.tb_end, args.tb_t1, args.tb_t2)
 
     # TODO: Add L2 regularization also for clip model
     if model_type == "siglip":
