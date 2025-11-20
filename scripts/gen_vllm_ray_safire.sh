@@ -2,9 +2,9 @@
 
 export CUDA_VISIBLE_DEVICES=0,1
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/InternVL3_5-8B-HF \
+    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen3-VL-8B-Instruct \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/UniFire_11K/mcqa \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/InternVL3_5-8B \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-8B-Instruct \
     --checkpoint_interval 30000 \
     --ray_batch_size 3000 \
     --batch_size 24 \
