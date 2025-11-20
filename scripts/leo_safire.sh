@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_safire_qwen3-vl-8b-instruct
+#SBATCH --job-name=gen_safire_internvl3_5-8b
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=2
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_safire_qwen3-vl-8b-instruct.out
-#SBATCH --error=gen_safire_qwen3-vl-8b-instruct.err
+#SBATCH --output=gen_safire_internvl3_5-8b.out
+#SBATCH --error=gen_safire_internvl3_5-8b.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -27,13 +27,13 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen3-VL-8B-Instruct \
+    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/InternVL3_5-8B-HF \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/UniFire_11K/mcqa \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-8B-Instruct \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/InternVL3_5-8B \
     --checkpoint_interval 30000 \
     --ray_batch_size 3000 \
     --batch_size 24 \
-    --max_model_len 4096 \
+    --max_model_len 6192 \
     --max_num_batched_tokens 48000 \
     --max_num_seqs 24 \
     --max_tokens 10 \
