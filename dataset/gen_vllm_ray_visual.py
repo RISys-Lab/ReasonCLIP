@@ -7,7 +7,7 @@ from packaging.version import Version
 from ray.data.llm import build_llm_processor, vLLMEngineProcessorConfig
 from datasets import load_dataset
 import argparse
-from dataset.dataset_utils import process_dataset_with_checkpoints, process_dataset_with_checkpoints_optimized
+from dataset.dataset_utils import process_dataset_with_checkpoints_optimized
 import gc
 
 from PIL import Image
