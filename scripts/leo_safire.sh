@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 
 # activate env 
@@ -32,10 +32,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/InternVL3_5-8B-HF \
     --checkpoint_interval 30000 \
     --ray_batch_size 3000 \
-    --batch_size 16 \
+    --batch_size 12 \
     --max_model_len 4096 \
     --max_num_batched_tokens 32768 \
-    --max_num_seqs 16 \
+    --max_num_seqs 12 \
     --max_tokens 10 \
     --temperature 0.0 \
     --top_p 1.0 \
