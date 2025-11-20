@@ -6,6 +6,7 @@ import re
 import json
 from PIL import Image, UnidentifiedImageError
 import random
+import io
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
         self.temperature = temperature
@@ -309,6 +310,86 @@ class LlavaCotVisualTask:
         return {
             "id": row["id"],
             "image_path": row["image_path"],
+            "generated_text": row["generated_text"],
+        }
+
+class SafireVisualTask:
+    
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        parquet_files = [
+            os.path.join(parquet_dir, fname)
+            for fname in os.listdir(parquet_dir) 
+            if fname.endswith(".parquet")
+        ]
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+
+        
+        print("="*60)
+        print(f"Original dataset size: {ds.count()}")
+        print(ds.schema())
+        return ds
+
+    def preprocess(self, row):
+        question = row["question"]
+        mcqa_prompt = """
+        Answer with the option letter (A, B, C, or D) only from the given choices directly.
+        """
+        options = row["options"]
+        user_prompt = question + "\n" + mcqa_prompt
+        for option in options:
+            user_prompt += "\n" + option
+        user_prompt += "\n" + "Answer:"
+        
+        # 从HF格式的image列加载图像: {"bytes": b'xxx'}
+        image_data = row["image"]
+        if isinstance(image_data, dict) and "bytes" in image_data:
+            image = Image.open(io.BytesIO(image_data["bytes"]))
+        else:
+            # 如果直接是bytes
+            image = Image.open(io.BytesIO(image_data))
+        image = image.convert('RGB')
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        return {
+            "id": row["id"],
+            "scenario": row["scenario"],
+            "question": row["question"],
+            "options": row["options"],
+            "answer": row["answer"],
             "generated_text": row["generated_text"],
         }
 
@@ -1100,6 +1181,7 @@ TASK_REGISTRY = {
     "cc12m_trl_visual": CC12MtrlVisualTask,
     "trig_visual": TRIGVisualTask,
     "cc12m_trp_cls_visual": CC12MtrpClsVisualTask,
+    "safire_visual": SafireVisualTask
 }
 
 def create_task_config(task_name, temperature, max_tokens, top_p, top_k=None):

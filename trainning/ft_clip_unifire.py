@@ -46,6 +46,7 @@ def parse_args():
                         help="Learning rate")
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
+    parser.add_argument("--bf16", action="store_true", help="Use bfloat16 (Ampere+ GPUs)")
     parser.add_argument("--logging_steps", type=int, default=25, 
                         help="Logging steps")
     parser.add_argument("--save_steps", type=int, default=500, 
@@ -227,7 +228,11 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = CLIPModel.from_pretrained(model_name)
+    model = CLIPModel.from_pretrained(
+            model_name,
+            attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+        )
     processor = CLIPProcessor.from_pretrained(model_name)
 
     # Download dataset if specified
@@ -263,7 +268,8 @@ def train_clip(args):
         output_dir=args.output_dir,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        fp16=args.fp16,
+        bf16=args.bf16,
+        fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
