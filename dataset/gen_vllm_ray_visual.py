@@ -61,11 +61,11 @@ def parse_args():
                        help="Maximum number of sequences to process in parallel")
     parser.add_argument("--max_tokens", type=int, default=100,
                        help="Maximum tokens to generate")
-    parser.add_argument("--temperature", type=float, default=0.8,
+    parser.add_argument("--temperature", type=float, 
                        help="Sampling temperature")
-    parser.add_argument("--top_p", type=float, default=0.95,
+    parser.add_argument("--top_p", type=float, 
                        help="Top-p sampling parameter")
-    parser.add_argument("--top_k", type=int, default=20,
+    parser.add_argument("--top_k", type=int,
                        help="Top-k sampling parameter")
     
     # vLLM Parallel parameters

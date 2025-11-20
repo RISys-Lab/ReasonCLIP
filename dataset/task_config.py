@@ -1213,13 +1213,15 @@ def create_task_config(task_name, temperature, max_tokens, top_p, top_k=None):
     
     # 根据参数构造kwargs
     kwargs = {
-        "temperature": temperature,
         "max_tokens": max_tokens,
-        "top_p": top_p,
     }
     
     # 只有当构造函数需要top_k参数时才添加
     if "top_k" in params and top_k is not None:
         kwargs["top_k"] = top_k
     
+    if "top_p" in params and top_p is not None:
+        kwargs["top_p"] = top_p
+    if "temperature" in params and temperature is not None:
+        kwargs["temperature"] = temperature
     return task_class(**kwargs)
