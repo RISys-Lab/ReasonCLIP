@@ -7,6 +7,8 @@ import json
 from PIL import Image, UnidentifiedImageError
 import random
 import io
+import pandas as pd
+import hashlib
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
         self.temperature = temperature
@@ -344,6 +346,24 @@ class SafireVisualTask:
         print("="*60)
         print(f"Original dataset size: {ds.count()}")
         print(ds.schema())
+        
+        # 如果数据没有id字段，基于scenario和question生成唯一ID
+        def add_id_from_content(batch):
+            
+            if "id" not in batch.columns:
+                # 使用pandas内置的hash函数，速度最快（10-100倍快于MD5）
+                # 基于scenario和question的组合生成唯一hash
+                combined = batch["scenario"].astype(str) + "|||" + batch["question"].astype(str)
+                # Python内置hash函数，然后转换为正数并格式化为12位十六进制
+                batch["id"] = combined.apply(lambda x: f"safire_{hash(x) & 0x7FFFFFFFFFFF:012x}")
+            return batch
+        
+        ds = ds.map_batches(
+            add_id_from_content,
+            batch_format="pandas"
+        )
+        
+        print(f"After adding IDs, schema: {ds.schema()}")
         return ds
 
     def preprocess(self, row):
@@ -385,6 +405,7 @@ class SafireVisualTask:
 
     def postprocess(self, row):
         return {
+            "id": row["id"],  # 在prepare_dataset中已经生成了唯一ID
             "scenario": row["scenario"],
             "question": row["question"],
             "options": row["options"],
