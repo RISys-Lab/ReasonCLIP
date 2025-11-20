@@ -202,7 +202,6 @@ def process_dataset_with_checkpoints_optimized(
     ray_batch_size=None, enable_resume=False
 ):
     import datetime, gc, os, math
-    import pandas as pd
     os.makedirs(output_dir_path, exist_ok=True)
 
     # -------- 1) 计算全量与断点 --------
@@ -252,10 +251,8 @@ def process_dataset_with_checkpoints_optimized(
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.join(output_dir_path, f"{task}_ckpt_{processed:07d}_{ts}")
 
-        # 去重，确保同一个 checkpoint 内不会重复写入相同 id
-        df = pd.DataFrame(buffer)
-        df = df.drop_duplicates(subset=["id"])
-        ray.data.from_pandas(df).repartition(1).write_parquet(path)
+        # 直接保存，不去重（数据本身应该没有重复）
+        ray.data.from_items(buffer).repartition(1).write_parquet(path)
 
         print(f"💾 Checkpoint saved: {path}")
         pct = (processed / end_index) * 100 if end_index else 0
