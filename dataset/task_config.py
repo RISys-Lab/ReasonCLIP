@@ -385,7 +385,6 @@ class SafireVisualTask:
 
     def postprocess(self, row):
         return {
-            "id": row["id"],
             "scenario": row["scenario"],
             "question": row["question"],
             "options": row["options"],

@@ -1,6 +1,31 @@
 #!/bin/bash
+#SBATCH --job-name=gen_safire_qwen3-vl-8b-instruct
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:2
+#SBATCH --partition=boost_usr_prod
+#SBATCH --qos=normal
+#SBATCH --output=gen_safire_qwen3-vl-8b-instruct.out
+#SBATCH --error=gen_safire_qwen3-vl-8b-instruct.err
+#SBATCH --account=EUHPC_R04_192
+#SBATCH --mem=256G
 
-export CUDA_VISIBLE_DEVICES=0,1
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  
+export NCCL_DEBUG=WARN
+export WANDB_MODE=offline
+export TOKENIZERS_PARALLELISM=false
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+
+
+# activate env 
+module load profile/deeplrn
+module load openmpi
+source $WORK/fmohamma/venvs/llm/bin/activate
+cd $WORK/fmohamma/CLIP-R/
+
+# run python
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen3-VL-8B-Instruct \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/UniFire_11K/mcqa \
