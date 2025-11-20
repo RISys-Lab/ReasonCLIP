@@ -38,7 +38,8 @@ python -u dataset/gen_vllm_ray_visual.py \
     --max_num_batched_tokens 24576 \
     --max_num_seqs 12 \
     --max_tokens 100\
-    --temperature 1.0 \
+    --temperature 0.0 \
+    --top_p 1.0 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
     --gpu_memory_utilization 0.85 \
