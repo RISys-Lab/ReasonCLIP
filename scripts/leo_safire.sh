@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_safire_qwen3-vl-32b-instruct
+#SBATCH --job-name=gen_safire_qwen3-vl-32b-thinking
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_safire_qwen3-vl-32b-instruct.out
-#SBATCH --error=gen_safire_qwen3-vl-32b-instruct.err
+#SBATCH --output=gen_safire_qwen3-vl-32b-thinking.out
+#SBATCH --error=gen_safire_qwen3-vl-32b-thinking.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -28,16 +28,16 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-VL-32B-Instruct \
+    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-VL-32B-Thinking \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/UniFire_11K/mcqa \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-32B-Instruct \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-32B-Thinking \
     --checkpoint_interval 50000 \
     --ray_batch_size 2000 \
     --batch_size 12 \
-    --max_model_len 2048 \
-    --max_num_batched_tokens 24576 \
+    --max_model_len 4096 \
+    --max_num_batched_tokens 32768 \
     --max_num_seqs 12 \
-    --max_tokens 100\
+    --max_tokens 2048\
     --temperature 0.0 \
     --top_p 1.0 \
     --tensor_parallel_size 4 \
