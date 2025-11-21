@@ -3,9 +3,9 @@ import os
 api = HfApi()
 
 api.upload_file(
-    path_in_repo="coco_images.zip", 
-    path_or_fileobj="/home/muzammal/Projects/CLIP-R/data/coco_images.zip",  
-    repo_id="fesvhtr/tmp_leo", 
+    path_in_repo="safire_llava.json", 
+    path_or_fileobj="/home/muzammal/Projects/CLIP-R/data/safire_llava.json",  
+    repo_id="fesvhtr/iferniu", 
     repo_type="dataset" 
 )
 
