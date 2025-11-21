@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_safire_qwen3-vl-32b-thinking
+#SBATCH --job-name=gen_safire_qwen3-vl-30b-a3b-instruct
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=gen_safire_qwen3-vl-32b-thinking.out
-#SBATCH --error=gen_safire_qwen3-vl-32b-thinking.err
+#SBATCH --output=gen_safire_qwen3-vl-30b-a3b-instruct.out
+#SBATCH --error=gen_safire_qwen3-vl-30b-a3b-instruct.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -28,9 +28,9 @@ cd $WORK/fmohamma/CLIP-R/
 
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
-    --model_source $WORK/fmohamma/CLIP-R/data/Qwen3-VL-32B-Thinking \
+    --model_source /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen3-VL-30B-A3B-Instruct \
     --parquet_dir_path $WORK/fmohamma/CLIP-R/data/UniFire_11K/mcqa \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-32B-Thinking \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Qwen3-VL-30B-A3B-Instruct \
     --checkpoint_interval 50000 \
     --ray_batch_size 2000 \
     --batch_size 16 \
