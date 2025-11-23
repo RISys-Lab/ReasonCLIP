@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=1
 export NCCL_DEBUG=WARN
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 
 # activate env 
@@ -33,10 +33,10 @@ python -u dataset/gen_vllm_ray_visual.py \
     --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/Safire/Safire-Qwen3-VL-32B-Instruct \
     --checkpoint_interval 50000 \
     --ray_batch_size 2000 \
-    --batch_size 24 \
+    --batch_size 16 \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
-    --max_num_seqs 24 \
+    --max_num_seqs 16 \
     --max_tokens 10\
     --temperature 0.0 \
     --top_p 1.0 \

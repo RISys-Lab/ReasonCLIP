@@ -211,3 +211,67 @@ Or choose category D to delete the image.
 
 Output only the three codes separated by commas or output D to delete the image.
 """
+
+SYSTEM_PROMPT_CC12M_TRP = """
+You are an expert visual reasoning annotator.
+Your task is to analyze an image and generate specific types of reasoning captions based on my requirements.
+Each image will be assigned to three of these types of reasoning:
+1. Spatial / Geometric Reasoning (S)
+2. Attribute / State Reasoning (A)
+3. Human / Action Reasoning (H)
+4. Temporal / Phase Reasoning (T)
+5. Physical Intuition Reasoning (P)
+Here are the details of your task:
+1. I will give the detailed definitions of these types of reasoning when I provide the image. At the same time, I will provide the image with the corresponding description.
+2. Then you need to generate three reasoning captions from different perspectives. The captions should be no more than 30 words.
+3. The reasoningcaptions you generate should be based on common sense, with a level of reasoning that exceeds the descriptions I provide, but without requiring complex Chain of Thought.
+4. The output format should be as follows:
+Letter: Caption
+Letter: Caption
+Letter: Caption
+"""
+
+USER_PROMPT_CC12M_TRP = f"""
+Look at the image provided. This is the description of the image:
+{description}
+
+Now generate three reasoning captions from this perspectives. 
+{perspectives}
+The captions should be no more than 30 words.
+The output format should be as follows:
+Letter: Caption
+Letter: Caption
+Letter: Caption
+"""
+
+USER_PROMPT_CC12M_TRP_DICT = {
+    "S": """
+    Spatial / Geometric Reasoning (S)
+    - Understanding spatial relations between multiple entities: position, direction, distance, occlusion, containment, or accessibility.
+    - Focuses on how objects are arranged and interact in space.
+    - Key idea: how placement or geometry affects visibility, reachability, or motion.
+    """,
+    "A": """
+    Attribute / State Reasoning (A)
+    - Understanding intrinsic properties or visible conditions of individual objects.
+    - Includes appearance, surface texture, brightness, transparency, wetness, deformation, openness, integrity, or on/off states.
+    - Key idea: what physical or functional state each object is in and why, based on visible cues.
+    """,
+    "H": """
+    Human / Action Reasoning (H)
+    - Understanding human or animal posture and actions to infer current or immediate behavior.
+    - Involves body orientation, gesture, interaction with objects or others.
+    - Key idea: what the agent is doing or about to do.
+    """,
+    "T": """
+    Temporal / Phase Reasoning (T)
+    - Understanding the temporal stage of an event: just happened, ongoing, or maybe about to happen.
+    - Based on motion continuity, trajectory, or dynamic context.
+    - Key idea: what phase or temporal transition the scene represents.
+    """,
+    "P": """
+    Physical Intuition Reasoning (P)
+    - The requirement is a relatively obvious physical relationship.
+    - Not relying on semantic common sense, but solely based on visual intuition.
+    """,
+}

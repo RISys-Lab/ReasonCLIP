@@ -801,6 +801,99 @@ class CC12MtrpClsVisualTask:
             "trp_cls_ls": trp_cls_ls,
         }
 
+class CC12MtrpVisualTask:
+    
+    def __init__(self, temperature, max_tokens, top_p):
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+
+        self.SYSTEM_PROMPT_CC12M_trp = SYSTEM_PROMPT_CC12M_TRP
+        self.USER_PROMPT_CC12M_trp = USER_PROMPT_CC12M_TRP
+        self.USER_PROMPT_CC12M_trp_dict = USER_PROMPT_CC12M_TRP_DICT
+
+
+    def prepare_dataset(self, parquet_dir, image_dir):
+        # 直接读取parquet文件, each 2 million rows
+        parquet_files = parquet_dir
+        
+        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+        try:
+            ds = ray.data.read_parquet(parquet_files)
+        except Exception as e:
+            print(f"Direct parquet reading failed: {e}")
+            raw_ds = load_dataset(
+                "parquet",
+                data_files={"train": parquet_files}, 
+            )
+            # 转换为 pandas DataFrame 再转换为 Ray Dataset
+            df = raw_ds['train'].to_pandas()
+            ds = ray.data.from_pandas(df)
+        
+        print("="*60)
+        print(f"Dataset size: {ds.count()}")
+        print(ds.schema())  # {'id': str, 'image_path': str, ...}
+        print("="*60)
+        
+        return ds
+
+    def preprocess(self, row):
+
+        
+        path = row["image_path"]
+        try:
+            image = Image.open(path)
+            image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
+            image = image.convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError) as e:
+            print(f"⚠️ Bad or unreadable image: {path} ({e})")
+            return None  # 返回 None，Ray Dataset 会自动过滤空行
+
+        cls = row["cls"]
+        cls_prompt = ''
+        for idx, cls in enumerate(cls):
+            cls_prompt += f"{idx+1}: {self.USER_PROMPT_CC12M_trp_dict[cls]}\n"
+        user_prompt = self.USER_PROMPT_CC12M_trp + "\n" + cls_prompt + \
+            """
+            Your answer should be no more than 30 words, and in the format of:
+            Letter: Caption
+            Letter: Caption
+            Letter: Caption
+            """
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT_CC12M_trp},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image", "image": image}
+                ]
+            },
+        ]
+        return {
+            "messages": messages,
+            "sampling_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "top_p": self.top_p,
+            },
+        }
+
+    def postprocess(self, row):
+        
+        # 保留原始输出
+        generated_text = row["generated_text"].strip()
+        
+        trp = generated_text.split("\n")
+        return {
+            "id": row["id"],
+            "image_path": row["image_path"],
+            "generated_text": generated_text,
+            "trp": trp,
+        }
+
+
+
 class ReasonItwClsVisualTask:
     
     def __init__(self, temperature, max_tokens, top_p):
@@ -1180,6 +1273,7 @@ TASK_REGISTRY = {
     "cc12m_trl_visual": CC12MtrlVisualTask,
     "trig_visual": TRIGVisualTask,
     "cc12m_trp_cls_visual": CC12MtrpClsVisualTask,
+    "cc12m_trp_visual": CC12MtrpVisualTask,
     "safire_visual": SafireVisualTask
 }
 
