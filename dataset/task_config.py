@@ -1288,7 +1288,7 @@ TASK_REGISTRY = {
     "cc12m_trl_visual": CC12MtrlVisualTask,
     "trig_visual": TRIGVisualTask,
     "cc12m_trp_cls_visual": CC12MtrpClsVisualTask,
-    "cc12m_trp_visual": CC12MtrpVisualTask,
+    # "cc12m_trp_visual": CC12MtrpVisualTask,
     "safire_visual": SafireVisualTask
 }
 
