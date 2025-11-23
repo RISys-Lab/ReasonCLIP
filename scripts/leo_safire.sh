@@ -37,12 +37,12 @@ python -u dataset/gen_vllm_ray_visual.py \
     --max_model_len 2048 \
     --max_num_batched_tokens 32768 \
     --max_num_seqs 24 \
-    --max_tokens 2048\
+    --max_tokens 10\
     --temperature 0.0 \
     --top_p 1.0 \
     --tensor_parallel_size 4 \
     --pipeline_parallel_size 1 \
-    --gpu_memory_utilization 0.95 \
+    --gpu_memory_utilization 0.90 \
     --enable_chunked_prefill \
     --trust_remote_code \
     --mm_processor_cache_gb 0 \
