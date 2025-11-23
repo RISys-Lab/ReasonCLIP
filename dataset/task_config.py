@@ -803,108 +803,109 @@ class CC12MtrpClsVisualTask:
             "trp_cls_ls": trp_cls_ls,
         }
 
-class CC12MtrpVisualTask:
+# class CC12MtrpVisualTask:
     
-    def __init__(self, temperature, max_tokens, top_p):
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.top_p = top_p
+#     def __init__(self, temperature, max_tokens, top_p):
+#         self.temperature = temperature
+#         self.max_tokens = max_tokens
+#         self.top_p = top_p
 
-        self.SYSTEM_PROMPT_CC12M_trp = SYSTEM_PROMPT_CC12M_TRP
-        self.USER_PROMPT_CC12M_trp = USER_PROMPT_CC12M_TRP
-        self.USER_PROMPT_CC12M_trp_dict = USER_PROMPT_CC12M_TRP_DICT
+#         self.SYSTEM_PROMPT_CC12M_trp = SYSTEM_PROMPT_CC12M_TRP
+#         self.USER_PROMPT_CC12M_trp = USER_PROMPT_CC12M_TRP
+#         self.USER_PROMPT_CC12M_trp_dict = USER_PROMPT_CC12M_TRP_DICT
 
 
-    def prepare_dataset(self, parquet_dir, image_dir):
-        # 直接读取parquet文件, each 2 million rows
-        parquet_files = parquet_dir
+#     def prepare_dataset(self, parquet_dir, image_dir):
+#         # 直接读取parquet文件, each 2 million rows
+#         parquet_files = parquet_dir
         
-        # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
-        try:
-            ds = ray.data.read_parquet(parquet_files)
-        except Exception as e:
-            print(f"Direct parquet reading failed: {e}")
-            raw_ds = load_dataset(
-                "parquet",
-                data_files={"train": parquet_files}, 
-            )
-            # 转换为 pandas DataFrame 再转换为 Ray Dataset
-            df = raw_ds['train'].to_pandas()
-            ds = ray.data.from_pandas(df)
+#         # 使用 ray.data.read_parquet 直接读取，避免 arrow_table 兼容性问题
+#         try:
+#             ds = ray.data.read_parquet(parquet_files)
+#         except Exception as e:
+#             print(f"Direct parquet reading failed: {e}")
+#             raw_ds = load_dataset(
+#                 "parquet",
+#                 data_files={"train": parquet_files}, 
+#             )
+#             # 转换为 pandas DataFrame 再转换为 Ray Dataset
+#             df = raw_ds['train'].to_pandas()
+#             ds = ray.data.from_pandas(df)
         
-        print("="*60)
-        print(f"Dataset size: {ds.count()}")
-        print(ds.schema())  # {'id': str, 'image_path': str, ...}
-        print("="*60)
+#         print("="*60)
+#         print(f"Dataset size: {ds.count()}")
+#         print(ds.schema())  # {'id': str, 'image_path': str, ...}
+#         print("="*60)
         
-        # 注意：unpickle 会在 preprocess 中懒加载执行，不会一次性加载全部数据
-        # Ray Dataset 是流式处理，所以 20M 数据也不会卡
+#         # 注意：unpickle 会在 preprocess 中懒加载执行，不会一次性加载全部数据
+#         # Ray Dataset 是流式处理，所以 20M 数据也不会卡
         
-        return ds
+#         return ds
 
-    def preprocess(self, row):
-        path = row["image_path"]
-        try:
-            image = Image.open(path)
-            image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
-            image = image.convert("RGB")
-        except (UnidentifiedImageError, OSError, SyntaxError) as e:
-            print(f"⚠️ Bad or unreadable image: {path} ({e})")
-            return None  # 返回 None，Ray Dataset 会自动过滤空行
+#     def preprocess(self, row):
+#         path = row["image_path"]
+#         try:
+#             image = Image.open(path)
+#             image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
+#             image = image.convert("RGB")
+#         except (UnidentifiedImageError, OSError, SyntaxError) as e:
+#             print(f"⚠️ Bad or unreadable image: {path} ({e})")
+#             return None  # 返回 None，Ray Dataset 会自动过滤空行
 
-        # 如果 cls 是字符串，从字符串解析为 list
-        cls = row["cls"]
-        if isinstance(cls, str):
-            # 假设格式是 "S,A,P" 或 "S A P" 或 "SAP"
-            if ',' in cls:
-                cls = cls.split(',')
-            elif ' ' in cls:
-                cls = cls.split()
-            else:
-                cls = list(cls)  # "SAP" -> ['S', 'A', 'P']
-            cls = [c.strip() for c in cls]  # 去除空格
+#         # 如果 cls 是字符串，从字符串解析为 list
+#         cls = row["cls"]
+#         if isinstance(cls, str):
+#             # 假设格式是 "S,A,P" 或 "S A P" 或 "SAP"
+#             if ',' in cls:
+#                 cls = cls.split(',')
+#             elif ' ' in cls:
+#                 cls = cls.split()
+#             else:
+#                 cls = list(cls)  # "SAP" -> ['S', 'A', 'P']
+#             cls = [c.strip() for c in cls]  # 去除空格
         
-        cls_prompt = ''
-        for idx, c in enumerate(cls):
-            cls_prompt += f"{idx+1}: {self.USER_PROMPT_CC12M_trp_dict[c]}\n"
-        user_prompt = self.USER_PROMPT_CC12M_trp + "\n" + cls_prompt + \
-            """
-            Your answer should be no more than 30 words, and in the format of:
-            Letter: Caption
-            Letter: Caption
-            Letter: Caption
-            """
-        messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT_CC12M_trp},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": user_prompt},
-                    {"type": "image", "image": image}
-                ]
-            },
-        ]
-        return {
-            "messages": messages,
-            "sampling_params": {
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-            },
-        }
+#         # 构建 perspectives 部分
+#         perspectives = ''
+#         for idx, c in enumerate(cls, 1):
+#             perspectives += f"{idx}. {self.USER_PROMPT_CC12M_trp_dict[c]}\n"
+        
+#         # 填充模板中的占位符
+#         description = row.get("description", row.get("tb", ""))  # 使用 description 或 tb 字段
+#         user_prompt = self.USER_PROMPT_CC12M_TRP.format(
+#             description=description,
+#             perspectives=perspectives
+#         )
+#         messages = [
+#             {"role": "system", "content": self.SYSTEM_PROMPT_CC12M_trp},
+#             {
+#                 "role": "user",
+#                 "content": [
+#                     {"type": "text", "text": user_prompt},
+#                     {"type": "image", "image": image}
+#                 ]
+#             },
+#         ]
+#         return {
+#             "messages": messages,
+#             "sampling_params": {
+#                 "temperature": self.temperature,
+#                 "max_tokens": self.max_tokens,
+#                 "top_p": self.top_p,
+#             },
+#         }
 
-    def postprocess(self, row):
+#     def postprocess(self, row):
         
-        # 保留原始输出
-        generated_text = row["generated_text"].strip()
+#         # 保留原始输出
+#         generated_text = row["generated_text"].strip()
         
-        trp = generated_text.split("\n")
-        return {
-            "id": row["id"],
-            "image_path": row["image_path"],
-            "generated_text": generated_text,
-            "trp": trp,
-        }
+#         trp = generated_text.split("\n")
+#         return {
+#             "id": row["id"],
+#             "image_path": row["image_path"],
+#             "generated_text": generated_text,
+#             "trp": trp,
+#         }
 
 
 

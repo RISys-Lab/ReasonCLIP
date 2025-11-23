@@ -231,12 +231,13 @@ Letter: Caption
 Letter: Caption
 """
 
-USER_PROMPT_CC12M_TRP = f"""
+USER_PROMPT_CC12M_TRP = """
 Look at the image provided. This is the description of the image:
 {description}
 
-Now generate three reasoning captions from this perspectives. 
+Now generate three reasoning captions from these perspectives:
 {perspectives}
+
 The captions should be no more than 30 words.
 The output format should be as follows:
 Letter: Caption
