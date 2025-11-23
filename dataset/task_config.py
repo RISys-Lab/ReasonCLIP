@@ -7,6 +7,8 @@ import json
 from PIL import Image, UnidentifiedImageError
 import random
 import io
+
+
 class LlavaCotTask:
     def __init__(self, temperature, max_tokens, top_p, top_k):
         self.temperature = temperature
@@ -835,11 +837,12 @@ class CC12MtrpVisualTask:
         print(ds.schema())  # {'id': str, 'image_path': str, ...}
         print("="*60)
         
+        # 注意：unpickle 会在 preprocess 中懒加载执行，不会一次性加载全部数据
+        # Ray Dataset 是流式处理，所以 20M 数据也不会卡
+        
         return ds
 
     def preprocess(self, row):
-
-        
         path = row["image_path"]
         try:
             image = Image.open(path)
@@ -849,10 +852,21 @@ class CC12MtrpVisualTask:
             print(f"⚠️ Bad or unreadable image: {path} ({e})")
             return None  # 返回 None，Ray Dataset 会自动过滤空行
 
+        # 如果 cls 是字符串，从字符串解析为 list
         cls = row["cls"]
+        if isinstance(cls, str):
+            # 假设格式是 "S,A,P" 或 "S A P" 或 "SAP"
+            if ',' in cls:
+                cls = cls.split(',')
+            elif ' ' in cls:
+                cls = cls.split()
+            else:
+                cls = list(cls)  # "SAP" -> ['S', 'A', 'P']
+            cls = [c.strip() for c in cls]  # 去除空格
+        
         cls_prompt = ''
-        for idx, cls in enumerate(cls):
-            cls_prompt += f"{idx+1}: {self.USER_PROMPT_CC12M_trp_dict[cls]}\n"
+        for idx, c in enumerate(cls):
+            cls_prompt += f"{idx+1}: {self.USER_PROMPT_CC12M_trp_dict[c]}\n"
         user_prompt = self.USER_PROMPT_CC12M_trp + "\n" + cls_prompt + \
             """
             Your answer should be no more than 30 words, and in the format of:
