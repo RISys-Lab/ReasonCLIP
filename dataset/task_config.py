@@ -832,27 +832,40 @@ class CC12MtrpVisualTask:
             df = raw_ds['train'].to_pandas()
             ds = ray.data.from_pandas(df)
         
+        # 过滤掉 trp_cls_ls==['D'] 的无效数据
+        def should_keep_sample(row):
+            trp_cls_ls = row.get("trp_cls_ls", [])
+            # 如果 trp_cls_ls 是 ['D']，则不保留
+            if trp_cls_ls == ['D']:
+                return False
+            return True
+        
         print("="*60)
-        print(f"Dataset size: {ds.count()}")
+        print(f"Original dataset size: {ds.count()}")
+        
+        # 先过滤无效数据
+        ds = ds.filter(should_keep_sample)
+        print(f"After filtering trp_cls_ls==['D']: {ds.count()}")
+        
         print(ds.schema())  # {'id': str, 'image_path': str, ...}
         print("="*60)
         return ds
 
     def preprocess(self, row):
         path = row["image_path"]
-        try:
-            image = Image.open(path)
-            image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
-            image = image.convert("RGB")
-        except (UnidentifiedImageError, OSError, SyntaxError) as e:
-            print(f"⚠️ Bad or unreadable image: {path} ({e})")
-            return None  # 返回 None，Ray Dataset 会自动过滤空行
+        image = Image.open(path)
+        image = image.convert("RGB")
+        # try:
+        #     image = Image.open(path)
+        #     image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
+        #     image = image.convert("RGB")
+        # except (UnidentifiedImageError, OSError, SyntaxError) as e:
+        #     return []
 
         trp_cls_ls = row["trp_cls_ls"]
         tb_ls = row["tb_ls"]
         tb0 = tb_ls[0]
-        if trp_cls_ls==['D']:
-            return None
+        # trp_cls_ls==['D'] 的情况已经在 prepare_dataset 中过滤掉了
         
         # 构建 perspectives 部分
         perspectives = ''
