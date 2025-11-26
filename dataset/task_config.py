@@ -861,7 +861,7 @@ class CC12MtrpVisualTask:
         
         # 填充模板中的占位符
         description = tb0
-        user_prompt = self.USER_PROMPT_CC12M_TRP.format(
+        user_prompt = self.USER_PROMPT_CC12M_trp.format(
             description=description,
             perspectives=perspectives
         )
