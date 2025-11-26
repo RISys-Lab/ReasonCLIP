@@ -22,6 +22,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # activate env 
 module load profile/deeplrn
 module load openmpi
+module load gcc/12.2.0 
+module load cuda/12.2
 source $WORK/fmohamma/venvs/llm/bin/activate
 # source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
