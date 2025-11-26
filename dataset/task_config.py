@@ -836,10 +836,6 @@ class CC12MtrpVisualTask:
         print(f"Dataset size: {ds.count()}")
         print(ds.schema())  # {'id': str, 'image_path': str, ...}
         print("="*60)
-        
-        # 注意：unpickle 会在 preprocess 中懒加载执行，不会一次性加载全部数据
-        # Ray Dataset 是流式处理，所以 20M 数据也不会卡
-        
         return ds
 
     def preprocess(self, row):
