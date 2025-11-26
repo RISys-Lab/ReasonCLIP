@@ -3,9 +3,9 @@ import os
 api = HfApi()
 
 api.upload_file(
-    path_in_repo="safire_llava.json", 
-    path_or_fileobj="/home/muzammal/Projects/CLIP-R/data/safire_llava.json",  
-    repo_id="fesvhtr/iferniu", 
+    path_in_repo="scienceqa_alpaca.json", 
+    path_or_fileobj="/home/muzammal/Projects/CLIP-R/data/scienceqa_alpaca.json",  
+    repo_id="fesvhtr/llama_data", 
     repo_type="dataset" 
 )
 
