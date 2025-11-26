@@ -5,8 +5,8 @@
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:4
-#SBATCH --partition=boost_qos_lprod
-#SBATCH --qos=
+#SBATCH --partition=boost_usr_prod
+#SBATCH --qos=boost_qos_lprod
 #SBATCH --output=gen_cc12m_trp_01.out
 #SBATCH --error=gen_cc12m_trp_01.err
 #SBATCH --account=EUHPC_R04_192
@@ -37,7 +37,7 @@ python -u dataset/gen_vllm_ray_visual.py \
     --ray_batch_size 2000 \
     --batch_size 20 \
     --max_model_len 3072 \
-    --max_num_batched_tokens 56000 \
+    --max_num_batched_tokens 5600 \
     --max_num_seqs 20 \
     --max_tokens 1000 \
     --temperature 0.7 \
