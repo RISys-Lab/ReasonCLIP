@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
-#SBATCH --qos=boost_qos_lprod
+#SBATCH --qos=normal
 #SBATCH --output=gen_cc12m_trp_02.out
 #SBATCH --error=gen_cc12m_trp_02.err
 #SBATCH --account=EUHPC_R04_192
