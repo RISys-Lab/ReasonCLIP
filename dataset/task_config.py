@@ -853,14 +853,15 @@ class CC12MtrpVisualTask:
 
     def preprocess(self, row):
         path = row["image_path"]
-        image = Image.open(path)
-        image = image.convert("RGB")
-        # try:
-        #     image = Image.open(path)
-        #     image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
-        #     image = image.convert("RGB")
-        # except (UnidentifiedImageError, OSError, SyntaxError) as e:
-        #     return []
+        # image = Image.open(path)
+        # image = image.convert("RGB")
+        try:
+            image = Image.open(path)
+            image.info.pop("exif", None)  # 删除 EXIF，避免 getexif() 出错
+            image = image.convert("RGB")
+        except (UnidentifiedImageError, OSError, SyntaxError) as e:
+            print(f"⚠️ Bad or unreadable image: {path} ({e})")
+            return None  # 返回 None，Ray Dataset 会自动过滤空行
 
         trp_cls_ls = row["trp_cls_ls"]
         tb_ls = row["tb_ls"]
@@ -902,11 +903,26 @@ class CC12MtrpVisualTask:
         # 保留原始输出
         generated_text = row["generated_text"].strip()
         
+        # 将 numpy 数组转换为 Python 原生列表，避免 Ray 序列化时使用 numpy pickle 格式
+        # 优化：直接尝试 tolist()，如果失败则已经是列表或需要转换
+        # 对于小列表（通常 < 10 元素），这个操作开销 < 1 微秒，可忽略不计
+        tb_ls = row["tb_ls"]
+        try:
+            tb_ls = tb_ls.tolist()  # numpy 数组，最快路径
+        except (AttributeError, TypeError):
+            tb_ls = list(tb_ls) if not isinstance(tb_ls, list) else tb_ls
+        
+        trp_cls_ls = row["trp_cls_ls"]
+        try:
+            trp_cls_ls = trp_cls_ls.tolist()  # numpy 数组，最快路径
+        except (AttributeError, TypeError):
+            trp_cls_ls = list(trp_cls_ls) if not isinstance(trp_cls_ls, list) else trp_cls_ls
+        
         return {
             "id": row["id"],
             "image_path": row["image_path"],
-            "tb_ls": row["tb_ls"],
-            "trp_cls_ls": row["trp_cls_ls"],
+            "tb_ls": tb_ls,
+            "trp_cls_ls": trp_cls_ls,
             "generated_text": generated_text,
         }
 

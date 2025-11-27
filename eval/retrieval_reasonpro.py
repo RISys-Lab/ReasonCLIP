@@ -561,7 +561,7 @@ def main():
     parser.add_argument('--model_type', type=str, default='siglip',
                        choices=['clip', 'openclip', 'siglip'],
                        help='Type of model to use')
-    parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1025-1926",
+    parser.add_argument('--model_name', type=str, default="fesvhtr/siglip-r-s1-run1115-1706",
                        help='Model name/path to use')
     parser.add_argument('--output_dir', type=str, default='/home/muzammal/Projects/CLIP-R/eval/results_reasonpro',
                        help='Output directory for results')

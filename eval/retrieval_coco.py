@@ -566,7 +566,7 @@ if __name__ == "__main__":
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
     # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/siglip-r-s1-run1027-1926"
+    MODEL_PATH = "fesvhtr/siglip-r-s1-run1115-1706"
     coco_results = run_retrieval_evaluation(
         model_id=MODEL_PATH,
         model_type="siglip",  # SigLIP model
@@ -574,7 +574,7 @@ if __name__ == "__main__":
         split="test",  # Karpathy test split (5K samples)
         batch_size=128,  # 大batch size，充分利用64GB显存
         max_samples=None,  # Use full Karpathy split (exactly 5K)
-        device="cuda:0",
+        device="cuda:2",
         use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
         local_image_dir="/home/muzammal/Projects/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
     )
