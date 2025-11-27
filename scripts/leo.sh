@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gen_cc12m_trp_01
+#SBATCH --job-name=gen_cc12m_trp_02
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=boost_qos_lprod
-#SBATCH --output=gen_cc12m_trp_01.out
-#SBATCH --error=gen_cc12m_trp_01.err
+#SBATCH --output=gen_cc12m_trp_02.out
+#SBATCH --error=gen_cc12m_trp_02.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -31,8 +31,8 @@ cd $WORK/fmohamma/CLIP-R/
 # run python
 python -u dataset/gen_vllm_ray_visual.py \
     --model_source  /leonardo_scratch/fast/EUHPC_R04_192/fmohamma/fast_weights/Qwen3-VL-32B-Instruct \
-    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/chunk_01 \
-    --parquet_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_cls_tb/cc12m_cls_tb_chunk_01.parquet  \
+    --output_dir_path  $WORK/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/chunk_02 \
+    --parquet_dir_path $WORK/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_cls_tb/cc12m_cls_tb_chunk_02.parquet  \
     --checkpoint_interval 100000 \
     --ray_batch_size 2000 \
     --batch_size 24 \
