@@ -521,6 +521,10 @@ def train_clip(args):
             attn_implementation="sdpa",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
+        # 加载原始模型用于L2正则化
+        orig_model = CLIPModel.from_pretrained(model_name)
+        for p in orig_model.parameters():
+            p.requires_grad = False
         processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -528,6 +532,7 @@ def train_clip(args):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
+        # 加载原始模型用于L2正则化
         orig_model = SiglipModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
@@ -745,14 +750,12 @@ def train_clip(args):
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
         optimizers=(optimizer, None),
-        orig_model=orig_model if model_type == "siglip" else None,
+        orig_model=orig_model,  # CLIP和SigLIP都使用orig_model进行L2正则化
     )
     trainer.tb_schedule = make_tb_schedule(args.tb_start, args.tb_mid, args.tb_end, args.tb_t1, args.tb_t2)
 
-    # TODO: Add L2 regularization also for clip model
-    if model_type == "siglip":
-        # add orig_model to trainer for L2 regularization
-        trainer.orig_model = orig_model.to(accelerator.device)
+    # 将orig_model移动到设备上用于L2正则化
+    trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # trainer.train() 结束后, trainer.model 已经是最佳模型了

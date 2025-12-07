@@ -28,10 +28,10 @@ module load cuda/11.8
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s1"
+PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk05.parquet"
+# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
 
 mkdir -p "$OUT_DIR"
 
@@ -62,11 +62,11 @@ accelerate launch \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
   trainning/ft_clip_r_s1.py \
-    --model_type clip \
+    --model_type siglip \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --batch_size 512 \
+    --batch_size 384 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --learning_rate 1e-4 \
@@ -78,7 +78,7 @@ accelerate launch \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
     --save_ratio 0.05 \
-    --save_total_limit 3 \
+    --save_total_limit 10 \
     --eval_strategy ratio \
     --eval_ratio 0.05 \
     --tb_start 0.7 \
@@ -89,7 +89,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_s1\"
+    --run_name \"siglip_r_s1\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."
