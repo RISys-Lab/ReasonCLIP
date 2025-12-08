@@ -373,7 +373,7 @@ def run_retrieval_evaluation(
     print(f"Loading {model_type.upper()} model and processor...")
     if model_type.lower() == "clip":
         model = AutoModel.from_pretrained(model_id)
-        processor = AutoProcessor.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained("openai/clip-vit-large-patch14")
     elif model_type.lower() == "siglip":
         model = SiglipModel.from_pretrained(model_id)
         # processor = SiglipProcessor.from_pretrained("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384")
@@ -566,10 +566,10 @@ if __name__ == "__main__":
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
     # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/siglip-r-s1-run1115-1706"
+    MODEL_PATH = "fesvhtr/clip-r-s1-run1208-1280"
     coco_results = run_retrieval_evaluation(
         model_id=MODEL_PATH,
-        model_type="siglip",  # SigLIP model
+        model_type="clip",  # SigLIP model
         dataset_name="mscoco",
         split="test",  # Karpathy test split (5K samples)
         batch_size=128,  # 大batch size，充分利用64GB显存
