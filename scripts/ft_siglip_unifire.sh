@@ -32,7 +32,7 @@ accelerate launch \
   --mixed_precision=bf16 \
   --num_machines 1 \
   --num_processes 4 \
-    trainning/ft_siglip_unifire.py \
+  trainning/ft_siglip_unifire.py \
     --model_name $WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch16-naflex \
     --output_dir $WORK/fmohamma/CLIP-R/weights/siglip2-unifire-so400m-patch16-naflex \
     --batch_size 384 \
