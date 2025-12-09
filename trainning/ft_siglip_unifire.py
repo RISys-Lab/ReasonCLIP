@@ -3,8 +3,8 @@ from PIL import Image
 import torch
 from datasets import Dataset, load_dataset
 from transformers import (
-    SiglipProcessor,
-    SiglipModel,
+    Siglip2Processor,
+    Siglip2Model,
     Trainer,
     TrainingArguments,
 )
@@ -34,7 +34,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tuning and uploading CLIP model to HuggingFace Hub")
     # Training parameters
     
-    parser.add_argument("--model_name", type=str, default="google/siglip-so400m-patch14-384", 
+    parser.add_argument("--model_name", type=str, default="google/siglip2-so400m-patch16-naflex", 
                         help="Pre-trained model name")
     parser.add_argument("--output_dir", type=str, default="./weights/unifire_siglip_finetune", 
                         help="Output directory")
@@ -48,8 +48,16 @@ def parse_args():
                         help="Number of training epochs")
     parser.add_argument("--learning_rate", type=float, default=3e-5, 
                         help="Learning rate")
-    parser.add_argument("--fp16", action="store_true", 
-                        help="Whether to use mixed precision training")
+    parser.add_argument(
+        "--fp16",
+        action="store_true",
+        help="Use float16 mixed precision training",
+    )
+    parser.add_argument(
+        "--bf16",
+        action="store_true",
+        help="Use bfloat16 mixed precision training (Ampere+ GPUs)",
+    )
     parser.add_argument("--logging_steps", type=int, default=25, 
                         help="Logging steps")
     parser.add_argument("--save_steps", type=int, default=500, 
@@ -76,8 +84,19 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--dataset_name", type=str, default="fesvhtr/iferniu",
-                      help="Dataset name on HuggingFace Hub")
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="fesvhtr/iferniu",
+        help="Dataset name on HuggingFace Hub",
+    )
+    parser.add_argument(
+        "--dataset_path",
+        "--dataset-path",
+        type=str,
+        default=None,
+        help="本地 parquet 数据集所在文件夹路径（包含若干 *.parquet 文件）",
+    )
     default_workers = min(8, os.cpu_count() // 2)
     parser.add_argument("--num_workers", type=int, default=default_workers,
                         help="Number of workers for data loading")
@@ -92,56 +111,118 @@ def parse_args():
                         help="Enable wandb logging")
     
     return parser.parse_args()
-
-
-class BestModelCallback(TrainerCallback):
-    def __init__(self):
-        self.best_eval_loss = float('inf')
-        
-    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        if metrics and "eval_loss" in metrics:
-            eval_loss = metrics["eval_loss"]
-
-            is_main_process = not dist.is_initialized() or dist.get_rank() == 0
-            
-            # 手动记录到 Wandb
-            if is_main_process and (args.report_to == "wandb" or (isinstance(args.report_to, list) and "wandb" in args.report_to)):
-                import wandb
-                if wandb.run is not None:
-                    wandb.log({"eval_loss": eval_loss}, step=state.global_step)
-                    print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
-            
-            # 检查是否为新的最佳模型
-            if eval_loss < self.best_eval_loss:
-                print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
-                self.best_eval_loss = eval_loss
-                print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
+    
+    
+# class BestModelCallback(TrainerCallback):
+#     """
+#     原先用于根据 eval_loss 追踪和打印“最优模型”的回调。
+#     现在不再单独保存/追踪最优模型，因此整体注释掉。
+#     如需恢复，只需取消本类以及 Trainer 中 callbacks 的注释。
+#     """
+#     def __init__(self):
+#         self.best_eval_loss = float('inf')
+#         
+#     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+#         if metrics and "eval_loss" in metrics:
+#             eval_loss = metrics["eval_loss"]
+#
+#             is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+#             
+#             # 手动记录到 Wandb
+#             if is_main_process and (args.report_to == "wandb" or (isinstance(args.report_to, list) and "wandb" in args.report_to)):
+#                 import wandb
+#                 if wandb.run is not None:
+#                     wandb.log({"eval_loss": eval_loss}, step=state.global_step)
+#                     print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
+#             
+#             # 检查是否为新的最佳模型
+#             if eval_loss < self.best_eval_loss:
+#                 print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
+#                 self.best_eval_loss = eval_loss
+#                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class SiglipTrainer(Trainer):
+    @staticmethod
+    def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        SigLIP 风格的 logistic 对比损失：
+        - logits: [B, N]，每一行是一个 query 与所有候选的相似度
+        - labels: [B]，每一行中正样本的索引
+        """
+        targets = torch.zeros_like(logits, dtype=logits.dtype)
+        targets.scatter_(1, labels.unsqueeze(1), 1.0)
+        # 简单设置正样本权重为 (#neg)
+        pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
+        return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        # 调用模型，不传 labels
+        """
+        使用全局负样本（跨 GPU all_gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
+        """
+        # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
         outputs = model(
             input_ids=inputs["input_ids"],
-            # attention_mask=inputs["attention_mask"],
             pixel_values=inputs["pixel_values"],
-            return_loss=True,
+            return_dict=True,
         )
-        # logits_per_image = outputs.logits_per_image
-        # logits_per_text  = outputs.logits_per_text
+        image_features = outputs.image_embeds   # [B, D]
+        text_features  = outputs.text_embeds    # [B, D]
 
+        # 2) 归一化特征
+        image_features = F.normalize(image_features, dim=-1)
+        text_features  = F.normalize(text_features, dim=-1)
 
-        # # 构造矩阵形式标签，而非索引
-        # bs = logits_per_image.size(0)
-        # labels = torch.eye(bs, device=logits_per_image.device)
+        # 3) 定义跨卡 all_gather，保留本地梯度
+        def all_gather_with_local_grad(x: torch.Tensor) -> torch.Tensor:
+            if not (dist.is_available() and dist.is_initialized()):
+                return x
+            world = dist.get_world_size()
+            rank = dist.get_rank()
+            xs = [torch.zeros_like(x) for _ in range(world)]
+            # 通信时不需要梯度
+            dist.all_gather(xs, x.detach())
+            # 当前 rank 保留带梯度的本地张量
+            xs[rank] = x
+            return torch.cat(xs, dim=0)
 
-        # # 使用 binary_cross_entropy_with_logits
-        # loss_i = F.binary_cross_entropy_with_logits(logits_per_image, labels)
-        # loss_t = F.binary_cross_entropy_with_logits(logits_per_text, labels)
-        # loss = (loss_i + loss_t) / 2
+        B = image_features.size(0)
+        device = image_features.device
 
-        loss = outputs.loss
+        if dist.is_available() and dist.is_initialized():
+            rank = dist.get_rank()
+        else:
+            rank = 0
 
-        return (loss, outputs) if return_outputs else loss
+        # 4) 聚合得到全局特征
+        all_image = all_gather_with_local_grad(image_features)  # [world*B, D]
+        all_text  = all_gather_with_local_grad(text_features)   # [world*B, D]
+
+        # 全局标签：按照 rank 顺序平移
+        labels = torch.arange(B, device=device) + rank * B
+
+        # SigLIP2 有可能带有温度参数，这里如果存在就用上
+        logit_scale = getattr(model, "logit_scale", None)
+        if logit_scale is not None:
+            logit_scale = logit_scale.exp()
+        else:
+            logit_scale = 1.0
+
+        # 5) 构造对比 logits（每个样本与全局所有样本做对比）
+        logits_per_image = logit_scale * (image_features @ all_text.t())   # [B, world*B]
+        logits_per_text  = logit_scale * (text_features  @ all_image.t())  # [B, world*B]
+
+        # 6) SigLIP 风格的 logistic 对比损失（图->文、文->图 双向）
+        loss_i = self._bce_logits_loss(logits_per_image, labels)
+        loss_t = self._bce_logits_loss(logits_per_text, labels)
+        loss = (loss_i + loss_t) / 2
+
+        if return_outputs:
+            # 可选：把新的 logits 挂到 outputs 上，方便调试/可视化
+            outputs.logits_per_image = logits_per_image.detach()
+            outputs.logits_per_text = logits_per_text.detach()
+            return loss, outputs
+
+        return loss
     
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         # 调用父类的评估方法
@@ -238,27 +319,33 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    model = SiglipModel.from_pretrained(model_name)
-    processor = SiglipProcessor.from_pretrained(model_name)
-    # Download dataset if specified
-    if hasattr(args, 'dataset_name') and args.dataset_name:
-        # 尝试加载数据集
-        dataset_name = args.dataset_name
-        raw_ds = load_dataset(dataset_name)
-    elif hasattr(args, 'dataset_path') and args.dataset_path:
-                # 尝试加载数据集
+    # 使用 Siglip2 模型与处理器进行微调，并启用 flash-attn2（环境需已安装 flash-attn 且 GPU 支持）
+    # 根据 bf16 / fp16 选定权重精度
+    model = Siglip2Model.from_pretrained(
+        model_name,
+        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+    )
+    processor = Siglip2Processor.from_pretrained(model_name)
+    # Download dataset: 优先使用本地 parquet 文件夹，其次使用 Hub 上的数据集名
+    if getattr(args, "dataset_path", None):
         parquet_dir = args.dataset_path
         parquet_files = [
             os.path.join(parquet_dir, fname)
             for fname in os.listdir(parquet_dir)
             if fname.endswith(".parquet")
         ]
+        if not parquet_files:
+            raise ValueError(f"No .parquet files found in folder: {parquet_dir}")
         raw_ds = load_dataset(
-            "parquet",                      # 告诉 datasets 这是一个本地 Parquet 文件集
-            data_files={"train": parquet_files},  # 把所有的 parquet 放在 train 里
+            "parquet",                             # 告诉 datasets 这是一个本地 Parquet 文件集
+            data_files={"train": parquet_files},   # 把所有的 parquet 放在 train 里
         )
+    elif getattr(args, "dataset_name", None):
+        dataset_name = args.dataset_name
+        raw_ds = load_dataset(dataset_name)
     else:
-        raise ValueError("Please specify a dataset name using --dataset_name argument.")
+        raise ValueError("Please specify either --dataset-path (folder with parquet files) or --dataset_name.")
 
     print(f"Dataset structure: {raw_ds}")
     print(f"Column names: {raw_ds['train'].column_names}")
@@ -281,12 +368,13 @@ def train_clip(args):
         output_dir=args.output_dir,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        fp16=args.fp16,
+        bf16=args.bf16,
+        fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        eval_strategy="steps",
+        evaluation_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
@@ -308,25 +396,27 @@ def train_clip(args):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        callbacks=[BestModelCallback()]
+        # 不再追踪/打印“最优模型”，如需恢复可把 BestModelCallback 取消注释后加回下面这一行
+        # callbacks=[BestModelCallback()]
     )
 
     trainer.train()
 
-    # 手动保存 best model
+    # 过去这里会单独保存“最优模型”到 best_model_dir。
+    # 现在改为：只保存最终模型到 output_dir（由 TrainingArguments 控制），并返回该路径。
     if not dist.is_initialized() or dist.get_rank() == 0:
-        best_model_path = args.best_model_dir
-        trainer.save_model(best_model_path)
-        processor.save_pretrained(best_model_path)
-        print(f"Best model saved to {best_model_path}")
+        final_model_path = args.output_dir
+        trainer.save_model(final_model_path)
+        processor.save_pretrained(final_model_path)
+        print(f"Final model saved to {final_model_path}")
     else:
-        best_model_path = args.best_model_dir
-        print(f"Skipping saving best model for rank {dist.get_rank()}")
+        final_model_path = args.output_dir
+        print(f"Skipping saving final model for rank {dist.get_rank()}")
 
-    return best_model_path
+    return final_model_path
 
 
-def push_to_hub(best_model_path, repo_name):
+def push_to_hub(model_path, repo_name):
     # 检查当前进程的rank
     import os
     import torch.distributed as dist
@@ -336,9 +426,9 @@ def push_to_hub(best_model_path, repo_name):
         print(f"Pushing model to HuggingFace Hub: {repo_name}")
         from huggingface_hub import HfApi
         
-        # 自动上传 best model 到 hub
-        model = SiglipModel.from_pretrained(best_model_path)
-        processor = SiglipProcessor.from_pretrained(best_model_path)
+        # 自动上传 SigLIP2 最终模型到 hub
+        model = Siglip2Model.from_pretrained(model_path)
+        processor = Siglip2Processor.from_pretrained(model_path)
 
         model.push_to_hub(repo_name)
         processor.push_to_hub(repo_name)
@@ -354,11 +444,11 @@ def push_to_hub(best_model_path, repo_name):
 
 if __name__ == "__main__":
     args = parse_args()
-    best_model_path = train_clip(args)
+    final_model_path = train_clip(args)
     
     if args.push_to_hub and args.hub_username:
         repo_name = f"{args.hub_username}/{args.hub_model_name}"
-        push_to_hub(best_model_path, repo_name)
+        push_to_hub(final_model_path, repo_name)
 
 
     if dist.is_initialized():

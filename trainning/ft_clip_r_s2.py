@@ -97,30 +97,35 @@ def parse_args():
                         help="Enable wandb logging")
     
     return parser.parse_args()
-
-
-class BestModelCallback(TrainerCallback):
-    def __init__(self):
-        self.best_eval_loss = float('inf')
-        
-    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        if metrics and "eval_loss" in metrics:
-            eval_loss = metrics["eval_loss"]
-
-            is_main_process = not dist.is_initialized() or dist.get_rank() == 0
-            
-            # 手动记录到 Wandb
-            if is_main_process and (args.report_to == "wandb" or (isinstance(args.report_to, list) and "wandb" in args.report_to)):
-                import wandb
-                if wandb.run is not None:
-                    wandb.log({"eval_loss": eval_loss}, step=state.global_step)
-                    print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
-            
-            # 检查是否为新的最佳模型
-            if eval_loss < self.best_eval_loss:
-                print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
-                self.best_eval_loss = eval_loss
-                print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
+    
+    
+# class BestModelCallback(TrainerCallback):
+#     """
+#     原先用于根据 eval_loss 追踪和打印“最优模型”的回调。
+#     现在不再单独保存/追踪最优模型，因此整体注释掉。
+#     如需恢复，只需取消本类以及 Trainer 中 callbacks 的注释。
+#     """
+#     def __init__(self):
+#         self.best_eval_loss = float('inf')
+#         
+#     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+#         if metrics and "eval_loss" in metrics:
+#             eval_loss = metrics["eval_loss"]
+#
+#             is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+#             
+#             # 手动记录到 Wandb
+#             if is_main_process and (args.report_to == "wandb" or (isinstance(args.report_to, list) and "wandb" in args.report_to)):
+#                 import wandb
+#                 if wandb.run is not None:
+#                     wandb.log({"eval_loss": eval_loss}, step=state.global_step)
+#                     print(f"已手动记录 eval_loss={eval_loss:.4f} 到 Wandb (step={state.global_step})")
+#             
+#             # 检查是否为新的最佳模型
+#             if eval_loss < self.best_eval_loss:
+#                 print(f"\n>>> eval_loss: {eval_loss:.4f}\n")
+#                 self.best_eval_loss = eval_loss
+#                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class CLIPTrainer(Trainer):
     def __init__(self, model_type: str = "clip", *args, **kwargs):
@@ -239,11 +244,6 @@ class CLIPTrainer(Trainer):
         return metrics
 
 class ReaonLiteDataset(torch.utils.data.Dataset):
-    """
-    ReasonPro parquet 数据集的基础 finetune 版本：
-    - 使用单路 caption（这里默认用第一条 TRP 文本；如果没有则回退到第一条 TB）
-    - 图像字段为 image_path（与 s1 脚本保持一致）
-    """
 
     def __init__(self, dataset_dict, processor):
         self.dataset = dataset_dict
@@ -264,15 +264,8 @@ class ReaonLiteDataset(torch.utils.data.Dataset):
         image = Image.open(image_path).convert("RGB")
 
         # 纯 finetune：每个样本取一条 caption
-        trp_captions = item["trl"]
-        tb_captions = item["tb"]
-
-        if trp_captions and len(trp_captions) > 0:
-            text = trp_captions[0]
-        elif tb_captions and len(tb_captions) > 0:
-            text = f"a photo of {tb_captions[0]}"
-        else:
-            raise ValueError("Sample missing 'tb' and 'trl' captions.")
+        text = item["trp"]
+        trp_cls = item["trp_cls"]
 
         encoding = self.processor(
             text=[text],
@@ -390,22 +383,24 @@ def train_clip(args):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        callbacks=[BestModelCallback()]
+        # 不再追踪/打印“最优模型”，如需恢复可把 BestModelCallback 取消注释后加回下面这一行
+        # callbacks=[BestModelCallback()]
     )
 
     trainer.train()
 
-    # 手动保存 best model
+    # 过去这里会单独保存“最优模型”到 best_model_dir。
+    # 现在改为：只保存最终模型到 output_dir（由 TrainingArguments 控制），并返回该路径。
     if not dist.is_initialized() or dist.get_rank() == 0:
-        best_model_path = args.best_model_dir
-        trainer.save_model(best_model_path)
-        processor.save_pretrained(best_model_path)
-        print(f"Best model saved to {best_model_path}")
+        final_model_path = args.output_dir
+        trainer.save_model(final_model_path)
+        processor.save_pretrained(final_model_path)
+        print(f"Final model saved to {final_model_path}")
     else:
-        best_model_path = args.best_model_dir
-        print(f"Skipping saving best model for rank {dist.get_rank()}")
+        final_model_path = args.output_dir
+        print(f"Skipping saving final model for rank {dist.get_rank()}")
 
-    return best_model_path
+    return final_model_path
 
 
 def push_to_hub(best_model_path, repo_name, model_type: str = "clip"):
