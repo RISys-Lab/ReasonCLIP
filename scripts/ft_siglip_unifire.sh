@@ -36,13 +36,13 @@ accelerate launch \
     --model_name $WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch16-naflex \
     --output_dir $WORK/fmohamma/CLIP-R/weights/siglip2-unifire-so400m-patch16-naflex \
     --batch_size 128 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 2 \
     --epochs 10 \
-    --learning_rate 1e-5 \
+    --learning_rate 2e-5 \
     --bf16 \
     --logging_steps 25 \
     --save_steps 500 \
-    --eval_steps 250 \
+    --eval_steps 50 \
     --run_name siglip-finetune-unifire \
     --warmup_ratio 0.1 \
     --weight_decay 0.01 \

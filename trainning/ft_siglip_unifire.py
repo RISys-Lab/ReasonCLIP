@@ -10,8 +10,22 @@ from transformers import (
 )
 import torch.nn.functional as F
 import torch.distributed as dist
+
+
 def is_main_process():
-    return not dist.is_initialized() or dist.get_rank() == 0
+    """
+    更稳健地判断当前进程是否为主进程：
+    - 优先读取 accelerate / torchrun / Slurm 设置的环境变量 RANK / SLURM_PROCID
+    - 回退到 torch.distributed 的初始化状态
+    这样可以在导入阶段就正确区分 rank0 / 非 rank0，避免每个进程都各自起一份 wandb run。
+    """
+    rank_env = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+    if rank_env is not None:
+        try:
+            return int(rank_env) == 0
+        except ValueError:
+            pass
+    return not dist.is_initialized() or (dist.is_initialized() and dist.get_rank() == 0)
 
 # 非主进程立即禁用 Wandb（在导入wandb之前）
 if not is_main_process():
@@ -322,16 +336,24 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
 
 
 def train_clip(args):
-    # 获取当前是否为主进程
-    is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+    # 获取当前是否为主进程（基于环境变量 / DDP 状态）
+    main_proc = is_main_process()
 
-    
-    # 创建带时间戳的运行名称
-    timestamp = datetime.now().strftime("%m%d_%H%M%S")
-    args.run_name = f"{args.run_name}_{timestamp}"
-    args.output_dir = f"{args.output_dir}_{timestamp}"
-    args.best_model_dir = f"{args.best_model_dir}_{timestamp}"
-    if args.wandb_log and is_main_process:
+    # 创建统一的 run_id（只由主进程生成一次，其它进程通过 DDP 广播获得）
+    run_id = None
+    if main_proc:
+        run_id = datetime.now().strftime("%m%d_%H%M%S")
+
+    if dist.is_available() and dist.is_initialized():
+        obj_list = [run_id]
+        dist.broadcast_object_list(obj_list, src=0)
+        run_id = obj_list[0]
+
+    # 使用统一的 run_id 构造 run_name 和输出目录，避免每个 rank 各自建一套目录
+    args.run_name = f"{args.run_name}_{run_id}"
+    args.output_dir = f"{args.output_dir}_{run_id}"
+    args.best_model_dir = f"{args.best_model_dir}_{run_id}"
+    if args.wandb_log and main_proc:
         wandb.login()
         wandb.init(
             project=args.wandb_project,
@@ -400,7 +422,7 @@ def train_clip(args):
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
-        save_steps=args.save_steps if is_main_process else 999999,
+        save_steps=args.save_steps if main_proc else 999999,
         eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
@@ -430,15 +452,15 @@ def train_clip(args):
     trainer.train()
 
     # 过去这里会单独保存“最优模型”到 best_model_dir。
-    # 现在改为：只保存最终模型到 output_dir（由 TrainingArguments 控制），并返回该路径。
-    if not dist.is_initialized() or dist.get_rank() == 0:
-        final_model_path = args.output_dir
+    # 现在改为：只由主进程保存最终模型到 output_dir，并返回该路径。
+    final_model_path = args.output_dir
+    if main_proc:
         trainer.save_model(final_model_path)
         processor.save_pretrained(final_model_path)
         print(f"Final model saved to {final_model_path}")
     else:
-        final_model_path = args.output_dir
-        print(f"Skipping saving final model for rank {dist.get_rank()}")
+        # 非主进程不再重复保存，只是复用相同的路径返回值
+        print(f"Skipping saving final model for non-main rank")
 
     return final_model_path
 
