@@ -160,15 +160,19 @@ class SiglipTrainer(Trainer):
         使用全局负样本（跨 GPU all_gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
         """
         # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
-        #    NaFlex 变体需要显式传入 spatial_shapes（以及可选 pixel_attention_mask），否则内部会在
-        #    resize_positional_embeddings 中访问 spatial_shapes.shape[0] 导致 NoneType 报错。
-        outputs = model(
+        #    - FixRes: 只需要 input_ids / pixel_values
+        #    - NaFlex: 还会在 inputs 中带上 spatial_shapes / pixel_attention_mask，我们检测到就一并传进去
+        model_kwargs = dict(
             input_ids=inputs["input_ids"],
             pixel_values=inputs["pixel_values"],
-            spatial_shapes=inputs.get("spatial_shapes", None),
-            pixel_attention_mask=inputs.get("pixel_attention_mask", None),
             return_dict=True,
         )
+        if "spatial_shapes" in inputs:
+            model_kwargs["spatial_shapes"] = inputs["spatial_shapes"]
+        if "pixel_attention_mask" in inputs:
+            model_kwargs["pixel_attention_mask"] = inputs["pixel_attention_mask"]
+
+        outputs = model(**model_kwargs)
         image_features = outputs.image_embeds   # [B, D]
         text_features  = outputs.text_embeds    # [B, D]
 
@@ -264,9 +268,11 @@ class SiglipTrainer(Trainer):
         return metrics
 
 class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, is_naflex: bool = False):
         self.dataset = dataset_dict
         self.processor = processor
+        # 是否为 NaFlex 变体，用于决定是否传 max_num_patches / spatial_shapes 等参数
+        self.is_naflex = is_naflex
     
     def __len__(self):
         return len(self.dataset)
@@ -283,21 +289,32 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
         else:
             image = item["image"]
             
-        label = item["label"] 
+        label = item["label"]
         caption = item["caption"]
         text = f"A photo of {label}, where {caption}"
         
         # 使用 SigLIP2 的 processor 处理图像和文本
-        # 这里额外指定 max_num_patches（类似官方示例），控制 NaFLEX 下图像被切成多少 patch
-        encoding = self.processor(
-            text=[text],
-            images=image,
-            return_tensors="pt",
-            padding="max_length",
-            max_length=64,         # 文本最大长度
-            truncation=True,
-            max_num_patches=256,   # 默认 256，可按显存调整（如 128 / 512）
-        )
+        # - FixRes: 固定分辨率，不需要 max_num_patches / spatial_shapes
+        # - NaFlex: 需要 max_num_patches，processor 会自动生成 spatial_shapes / pixel_attention_mask
+        if self.is_naflex:
+            encoding = self.processor(
+                text=[text],
+                images=image,
+                return_tensors="pt",
+                padding="max_length",
+                max_length=64,       # 官方推荐：文本长度固定 64
+                truncation=True,
+                max_num_patches=256, # 官方 NaFlex 示例：控制最大 patch 数，可按显存调大/调小
+            )
+        else:
+            encoding = self.processor(
+                text=[text],
+                images=image,
+                return_tensors="pt",
+                padding="max_length",
+                max_length=64,
+                truncation=True,
+            )
         
         # 移除批次维度
         batch = {k: v.squeeze(0) for k, v in encoding.items()}
@@ -324,11 +341,16 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    # 使用 Siglip2 模型与处理器进行微调，使用 PyTorch SDPA 注意力（NaFLEX 目前与 flash-attn2 兼容性较差）
-    # 根据 bf16 / fp16 选定权重精度
+    # 简单通过名字判断是否为 NaFlex 变体（名称中包含 "-naflex"）
+    is_naflex = "naflex" in model_name
+
+    # 使用 Siglip2 模型与处理器进行微调
+    # - NaFlex: 使用 SDPA，更稳；配合 max_num_patches + spatial_shapes
+    # - FixRes: 可以安全地开启 flash_attention_2（前提是环境已安装 flash-attn）
+    attn_impl = "sdpa" if is_naflex else "flash_attention_2"
     model = Siglip2Model.from_pretrained(
         model_name,
-        attn_implementation="sdpa",
+        attn_implementation=attn_impl,
         torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
     )
     processor = Siglip2Processor.from_pretrained(model_name)
@@ -363,9 +385,9 @@ def train_clip(args):
     train_dataset = split_ds["train"]
     eval_dataset = split_ds["test"]
         
-    # 包装为CLIP可用的数据集
-    train_dataset = UniFireDataset(train_dataset, processor)
-    eval_dataset = UniFireDataset(eval_dataset, processor)
+    # 包装为 SigLIP2 可用的数据集（根据是否 NaFlex 选择不同预处理）
+    train_dataset = UniFireDataset(train_dataset, processor, is_naflex=is_naflex)
+    eval_dataset = UniFireDataset(eval_dataset, processor, is_naflex=is_naflex)
 
 
     # 训练参数
