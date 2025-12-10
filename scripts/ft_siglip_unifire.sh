@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglip2-unifire-so400m-patch16-naflex
+#SBATCH --job-name=siglip2-so400m-patch14-384
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglip2-unifire-so400m-patch16-naflex.out
-#SBATCH --error=siglip2-unifire-so400m-patch16-naflex.err
+#SBATCH --output=siglip2-so400m-patch14-384.out
+#SBATCH --error=siglip2-so400m-patch14-384.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -33,10 +33,10 @@ accelerate launch \
   --num_machines 1 \
   --num_processes 4 \
   trainning/ft_siglip_unifire.py \
-    --model_name $WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch16-naflex \
-    --output_dir $WORK/fmohamma/CLIP-R/weights/siglip2-unifire-so400m-patch16-naflex \
-    --batch_size 128 \
-    --gradient_accumulation_steps 2 \
+    --model_name $WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384 \
+    --output_dir $WORK/fmohamma/CLIP-R/weights/siglip2-so400m-patch14-384 \
+    --batch_size 384 \
+    --gradient_accumulation_steps 1 \
     --epochs 10 \
     --learning_rate 2e-5 \
     --bf16 \
