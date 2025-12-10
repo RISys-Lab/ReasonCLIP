@@ -160,9 +160,13 @@ class SiglipTrainer(Trainer):
         使用全局负样本（跨 GPU all_gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
         """
         # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
+        #    NaFlex 变体需要显式传入 spatial_shapes（以及可选 pixel_attention_mask），否则内部会在
+        #    resize_positional_embeddings 中访问 spatial_shapes.shape[0] 导致 NoneType 报错。
         outputs = model(
             input_ids=inputs["input_ids"],
             pixel_values=inputs["pixel_values"],
+            spatial_shapes=inputs.get("spatial_shapes", None),
+            pixel_attention_mask=inputs.get("pixel_attention_mask", None),
             return_dict=True,
         )
         image_features = outputs.image_embeds   # [B, D]
@@ -283,15 +287,16 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
         caption = item["caption"]
         text = f"A photo of {label}, where {caption}"
         
-        # 使用CLIP处理器处理图像和文本
+        # 使用 SigLIP2 的 processor 处理图像和文本
+        # 这里额外指定 max_num_patches（类似官方示例），控制 NaFLEX 下图像被切成多少 patch
         encoding = self.processor(
-            text=[text], 
-            images=image, 
+            text=[text],
+            images=image,
             return_tensors="pt",
             padding="max_length",
-            max_length=64,
+            max_length=64,         # 文本最大长度
             truncation=True,
-            # return_attention_mask=True,  
+            max_num_patches=256,   # 默认 256，可按显存调整（如 128 / 512）
         )
         
         # 移除批次维度
@@ -319,11 +324,11 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    # 使用 Siglip2 模型与处理器进行微调，并启用 flash-attn2（环境需已安装 flash-attn 且 GPU 支持）
+    # 使用 Siglip2 模型与处理器进行微调，使用 PyTorch SDPA 注意力（NaFLEX 目前与 flash-attn2 兼容性较差）
     # 根据 bf16 / fp16 选定权重精度
     model = Siglip2Model.from_pretrained(
         model_name,
-        attn_implementation="flash_attention_2",
+        attn_implementation="sdpa",
         torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
     )
     processor = Siglip2Processor.from_pretrained(model_name)
