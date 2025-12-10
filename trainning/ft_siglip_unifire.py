@@ -374,7 +374,7 @@ def train_clip(args):
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps if is_main_process else 999999,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
         report_to="wandb" if args.wandb_log and is_main_process else "none",
