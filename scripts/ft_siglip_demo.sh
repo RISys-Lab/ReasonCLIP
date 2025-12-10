@@ -16,7 +16,7 @@ accelerate launch \
   trainning/ft_siglip_unifire.py \
     --model_name google/siglip2-so400m-patch16-naflex \
     --output_dir ./weights/siglip2-unifire-so400m-patch16-naflex \
-    --batch_size 64 \
+    --batch_size 128 \
     --gradient_accumulation_steps 1 \
     --epochs 1 \
     --learning_rate 1e-5 \
