@@ -38,7 +38,7 @@ accelerate launch \
     --batch_size 256 \
     --gradient_accumulation_steps 1 \
     --epochs 10 \
-    --learning_rate 2e-5 \
+    --learning_rate 1.5e-5 \
     --bf16 \
     --logging_steps 25 \
     --save_steps 500 \
