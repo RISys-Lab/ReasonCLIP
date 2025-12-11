@@ -430,6 +430,7 @@ def train_clip(args):
         output_dir=args.output_dir,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
+        gradient_checkpointing=True,
         bf16=args.bf16,
         fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
