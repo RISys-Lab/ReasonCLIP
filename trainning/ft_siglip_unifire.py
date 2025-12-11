@@ -12,28 +12,20 @@ from transformers import (
     TrainingArguments,
 )
 import torch.nn.functional as F
-import torch.distributed as dist
+from accelerate import Accelerator
 
+# 初始化 accelerator
+accelerator = Accelerator()
 
-def is_main_process():
-    """
-    更稳健地判断当前进程是否为主进程：
-    - 优先读取 accelerate / torchrun / Slurm 设置的环境变量 RANK / SLURM_PROCID
-    - 回退到 torch.distributed 的初始化状态
-    这样可以在导入阶段就正确区分 rank0 / 非 rank0，避免每个进程都各自起一份 wandb run。
-    """
-    rank_env = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
-    if rank_env is not None:
-        try:
-            return int(rank_env) == 0
-        except ValueError:
-            pass
-    return not dist.is_initialized() or (dist.is_initialized() and dist.get_rank() == 0)
+def main_print(*args, **kwargs):
+    """只在主进程打印的函数"""
+    if accelerator.is_main_process:
+        print(*args, **kwargs)
 
 # 非主进程立即禁用 Wandb（在导入wandb之前）
-if not is_main_process():
+if not accelerator.is_main_process:
     os.environ["WANDB_DISABLED"] = "true"
-    print("已禁用非主进程的 Wandb")
+    print("Wandb disabled for non-main processes")
 
 import wandb
 import argparse
@@ -174,7 +166,8 @@ class SiglipTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """
-        使用全局负样本（跨 GPU all_gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
+        使用全局负样本（跨 GPU gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
+        使用 Accelerator 的 gather 方法，而不是底层的 dist.all_gather。
         """
         # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
         #    - FixRes: 只需要 input_ids / pixel_values
@@ -197,30 +190,28 @@ class SiglipTrainer(Trainer):
         image_features = F.normalize(image_features, dim=-1)
         text_features  = F.normalize(text_features, dim=-1)
 
-        # 3) 定义跨卡 all_gather，保留本地梯度
-        def all_gather_with_local_grad(x: torch.Tensor) -> torch.Tensor:
-            if not (dist.is_available() and dist.is_initialized()):
+        # 3) 定义跨卡 gather，保留本地梯度（使用 Accelerator 的方式）
+        def gather_with_local_grad(x, accelerator):
+            if accelerator.num_processes == 1:
                 return x
-            world = dist.get_world_size()
-            rank = dist.get_rank()
-            xs = [torch.zeros_like(x) for _ in range(world)]
-            # 通信时不需要梯度
-            dist.all_gather(xs, x.detach())
-            # 当前 rank 保留带梯度的本地张量
-            xs[rank] = x
-            return torch.cat(xs, dim=0)
+            B = x.size(0)
+            gathered = accelerator.gather(x.detach())  # [world*B, D], no grad
+            parts = []
+            for i in range(accelerator.num_processes):
+                if i == accelerator.process_index:
+                    parts.append(x)  # keep grad for local slice
+                else:
+                    s, e = i * B, (i + 1) * B
+                    parts.append(gathered[s:e])
+            return torch.cat(parts, dim=0)
 
         B = image_features.size(0)
         device = image_features.device
-
-        if dist.is_available() and dist.is_initialized():
-            rank = dist.get_rank()
-        else:
-            rank = 0
+        rank = accelerator.process_index
 
         # 4) 聚合得到全局特征
-        all_image = all_gather_with_local_grad(image_features)  # [world*B, D]
-        all_text  = all_gather_with_local_grad(text_features)   # [world*B, D]
+        all_image = gather_with_local_grad(image_features, accelerator)  # [world*B, D]
+        all_text  = gather_with_local_grad(text_features, accelerator)   # [world*B, D]
 
         # 全局标签：按照 rank 顺序平移
         labels = torch.arange(B, device=device) + rank * B
@@ -339,31 +330,35 @@ class UniFireDataset(torch.utils.data.Dataset):  # 修正继承
 
 
 def train_clip(args):
-    # 获取当前是否为主进程（基于环境变量 / DDP 状态）
-    main_proc = is_main_process()
+    # 获取当前是否为主进程
+    is_main_process = accelerator.is_main_process
 
     # 创建统一的 run_id（只由主进程生成一次，其它进程通过 DDP 广播获得）
-    run_id = None
-    if main_proc:
+    if accelerator.is_main_process:
         run_id = datetime.now().strftime("%m%d_%H%M%S")
+    else:
+        run_id = None
 
-    if dist.is_available() and dist.is_initialized():
-        obj_list = [run_id]
-        dist.broadcast_object_list(obj_list, src=0)
-        run_id = obj_list[0]
+    if accelerator.num_processes > 1:
+        import torch.distributed as dist
+        if dist.is_available() and dist.is_initialized():
+            obj_list = [run_id]
+            dist.broadcast_object_list(obj_list, src=0)
+            run_id = obj_list[0]
 
     # 使用统一的 run_id 构造 run_name 和输出目录，避免每个 rank 各自建一套目录
     args.run_name = f"{args.run_name}_{run_id}"
     args.output_dir = f"{args.output_dir}_{run_id}"
     args.best_model_dir = f"{args.best_model_dir}_{run_id}"
-    if args.wandb_log and main_proc:
+    if args.wandb_log and is_main_process:
         wandb.login()
         wandb.init(
             project=args.wandb_project,
             entity=args.wandb_entity,
             name=args.run_name  # 使用带时间戳的名称
         )
-    else: os.environ["WANDB_DISABLED"] = "true"
+    else: 
+        os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
     # 加载配置以判断是 SigLIP 还是 SigLIP2，以及是否为 NaFlex 变体
@@ -409,8 +404,8 @@ def train_clip(args):
     else:
         raise ValueError("Please specify either --dataset-path (folder with parquet files) or --dataset_name.")
 
-    print(f"Dataset structure: {raw_ds}")
-    print(f"Column names: {raw_ds['train'].column_names}")
+    main_print(f"Dataset structure: {raw_ds}")
+    main_print(f"Column names: {raw_ds['train'].column_names}")
     raw_ds = raw_ds['train']
     # take 1000 for demo test
     # raw_ds = raw_ds.shuffle(seed=42).select(range(1000))  # 仅用于演示测试
@@ -437,12 +432,13 @@ def train_clip(args):
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
-        save_steps=args.save_steps if main_proc else 999999,
+        save_steps=args.save_steps,  # 所有进程使用相同的 save_steps，但只有主进程实际写入
         eval_strategy="steps",
         eval_steps=args.eval_steps,
-        save_total_limit=2,  # 保留更多检查点
+        save_total_limit=3,  # 增加保留的检查点数量，减少删除操作
+        save_only_model=False,  # 如果需要恢复训练，设为 False；如果只需要模型权重，设为 True 可加速保存
         # 只在主进程且未显式禁用 wandb 时上报到 wandb，其它 rank 一律 'none'
-        report_to="wandb" if args.wandb_log and main_proc and not os.environ.get("WANDB_DISABLED") else "none",
+        report_to="wandb" if args.wandb_log and is_main_process and not os.environ.get("WANDB_DISABLED") else "none",
         run_name=args.run_name,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
@@ -453,8 +449,11 @@ def train_clip(args):
         # greater_is_better=False,       # 损失越小越好
         dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
         dataloader_pin_memory=True, 
-        ddp_find_unused_parameters=True,
+        remove_unused_columns=False,  # 与ft_clip_r_s1.py一致
+        ddp_find_unused_parameters=True,  # 关闭unused parameters检测，提高性能（与ft_clip_r_s1.py一致）
         dataloader_drop_last=True,
+        seed=42,  # 与ft_clip_r_s1.py一致
+        data_seed=42,  # 与ft_clip_r_s1.py一致
     )
     
 
@@ -469,28 +468,27 @@ def train_clip(args):
 
     trainer.train()
 
-    # 过去这里会单独保存“最优模型”到 best_model_dir。
+    # 过去这里会单独保存"最优模型"到 best_model_dir。
     # 现在改为：只由主进程保存最终模型到 output_dir，并返回该路径。
+    accelerator.wait_for_everyone()  # 等待所有进程完成训练
+    
     final_model_path = args.output_dir
-    if main_proc:
+    if accelerator.is_main_process:
         trainer.save_model(final_model_path)
         processor.save_pretrained(final_model_path)
-        print(f"Final model saved to {final_model_path}")
+        main_print(f"Final model saved to {final_model_path}")
     else:
         # 非主进程不再重复保存，只是复用相同的路径返回值
-        print(f"Skipping saving final model for non-main rank")
+        pass
 
+    accelerator.wait_for_everyone()  # 确保保存后再继续
     return final_model_path
 
 
 def push_to_hub(model_path, repo_name):
-    # 检查当前进程的rank
-    import os
-    import torch.distributed as dist
-    
-    # 只有rank0进程执行推送操作
-    if not dist.is_initialized() or dist.get_rank() == 0:
-        print(f"Pushing model to HuggingFace Hub: {repo_name}")
+    # 只有主进程执行推送操作
+    if accelerator.is_main_process:
+        main_print(f"Pushing model to HuggingFace Hub: {repo_name}")
         from huggingface_hub import HfApi
         
         # 自动上传 SigLIP2 最终模型到 hub
@@ -500,13 +498,10 @@ def push_to_hub(model_path, repo_name):
         model.push_to_hub(repo_name)
         processor.push_to_hub(repo_name)
 
-        print(f"Model pushed to HuggingFace Hub: https://huggingface.co/{repo_name}")
-    else:
-        print(f"Skipping model push for rank {dist.get_rank()}")
-
-    # Ensure all processes synchronize
-    if dist.is_initialized():
-        dist.barrier()
+        main_print(f"Model pushed to HuggingFace Hub: https://huggingface.co/{repo_name}")
+    
+    # 等待所有进程同步
+    accelerator.wait_for_everyone()
 
 
 if __name__ == "__main__":
@@ -517,8 +512,7 @@ if __name__ == "__main__":
         repo_name = f"{args.hub_username}/{args.hub_model_name}"
         push_to_hub(final_model_path, repo_name)
 
-
-    if dist.is_initialized():
-        dist.barrier()
-        if dist.get_rank() == 0:
-            print("All processes have completed successfully.")
+    # 等待所有进程完成
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        main_print("All processes have completed successfully.")
