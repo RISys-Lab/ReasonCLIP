@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglip2-so400m-patch14-384
+#SBATCH --job-name=siglip2-so400m-patch16-naflex
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglip2-so400m-patch14-384.out
-#SBATCH --error=siglip2-so400m-patch14-384.err
+#SBATCH --output=siglip2-so400m-patch16-naflex.out
+#SBATCH --error=siglip2-so400m-patch16-naflex.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
