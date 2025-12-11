@@ -426,7 +426,8 @@ def train_clip(args):
         eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_total_limit=2,  # 保留更多检查点
-        report_to="wandb" if args.wandb_log and is_main_process else "none",
+        # 只在主进程且未显式禁用 wandb 时上报到 wandb，其它 rank 一律 'none'
+        report_to="wandb" if args.wandb_log and main_proc and not os.environ.get("WANDB_DISABLED") else "none",
         run_name=args.run_name,
         warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
