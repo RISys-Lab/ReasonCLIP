@@ -431,6 +431,7 @@ def train_clip(args):
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         bf16=args.bf16,
         fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
@@ -451,7 +452,9 @@ def train_clip(args):
         # metric_for_best_model="eval_loss",  # 使用验证损失作为指标
         # greater_is_better=False,       # 损失越小越好
         dataloader_num_workers=args.num_workers,           # 默认: 0 (主进程加载)
-        dataloader_pin_memory=True,         # 默认: True
+        dataloader_pin_memory=True, 
+        ddp_find_unused_parameters=True,
+        dataloader_drop_last=True,
     )
     
 

@@ -6,7 +6,7 @@ export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
 
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=0,3
 
 accelerate launch \
   --multi_gpu \
@@ -16,7 +16,7 @@ accelerate launch \
   trainning/ft_siglip_unifire.py \
     --model_name google/siglip2-so400m-patch16-naflex \
     --output_dir ./weights/siglip2-unifire-so400m-patch16-naflex \
-    --batch_size 128 \
+    --batch_size 256 \
     --gradient_accumulation_steps 1 \
     --epochs 1 \
     --learning_rate 1e-5 \
