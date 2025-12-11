@@ -5,6 +5,9 @@ from datasets import Dataset, load_dataset
 from transformers import (
     Siglip2Processor,
     Siglip2Model,
+    SiglipProcessor,
+    SiglipModel,
+    AutoConfig,
     Trainer,
     TrainingArguments,
 )
@@ -363,19 +366,31 @@ def train_clip(args):
     else: os.environ["WANDB_DISABLED"] = "true"
     
     model_name = args.model_name
-    # 简单通过名字判断是否为 NaFlex 变体（名称中包含 "-naflex"）
+    # 加载配置以判断是 SigLIP 还是 SigLIP2，以及是否为 NaFlex 变体
+    cfg = AutoConfig.from_pretrained(model_name)
     is_naflex = "naflex" in model_name
 
-    # 使用 Siglip2 模型与处理器进行微调
     # - NaFlex: 使用 SDPA，更稳；配合 max_num_patches + spatial_shapes
     # - FixRes: 可以安全地开启 flash_attention_2（前提是环境已安装 flash-attn）
     attn_impl = "sdpa" if is_naflex else "flash_attention_2"
-    model = Siglip2Model.from_pretrained(
-        model_name,
-        attn_implementation=attn_impl,
-        torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
-    )
-    processor = Siglip2Processor.from_pretrained(model_name)
+
+    if cfg.model_type == "siglip2":
+        model = Siglip2Model.from_pretrained(
+            model_name,
+            attn_implementation=attn_impl,
+            torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+        )
+        processor = Siglip2Processor.from_pretrained(model_name)
+    elif cfg.model_type == "siglip":
+        # 兼容旧的 SigLIP checkpoint（非 SigLIP2）
+        model = SiglipModel.from_pretrained(
+            model_name,
+            attn_implementation=attn_impl,
+            torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
+        )
+        processor = SiglipProcessor.from_pretrained(model_name)
+    else:
+        raise ValueError(f"Unsupported model_type '{cfg.model_type}' for checkpoint: {model_name}")
     # Download dataset: 优先使用本地 parquet 文件夹，其次使用 Hub 上的数据集名
     if getattr(args, "dataset_path", None):
         parquet_dir = args.dataset_path
