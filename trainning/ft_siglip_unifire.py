@@ -370,9 +370,7 @@ def train_clip(args):
     cfg = AutoConfig.from_pretrained(model_name)
     is_naflex = "naflex" in model_name
 
-    # - NaFlex: 使用 SDPA，更稳；配合 max_num_patches + spatial_shapes
-    # - FixRes: 可以安全地开启 flash_attention_2（前提是环境已安装 flash-attn）
-    attn_impl = "sdpa" if is_naflex else "flash_attention_2"
+    attn_impl = "flash_attention_2"
 
     if cfg.model_type == "siglip2":
         model = Siglip2Model.from_pretrained(
