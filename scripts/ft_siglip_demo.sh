@@ -13,7 +13,7 @@ accelerate launch \
   --mixed_precision=bf16 \
   --num_machines 1 \
   --num_processes 2 \
-  trainning/ft_siglip_unifire_chunked.py \
+  trainning/ft_siglip_unifire.py \
     --model_name google/siglip2-so400m-patch14-384 \
     --output_dir ./weights/siglip2-unifire-so400m-patch14-384 \
     --batch_size 256 \
