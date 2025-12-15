@@ -250,7 +250,7 @@ class SiglipTrainer(Trainer):
 
         # 5) 构造对比 logits（每个样本与全局所有样本做对比）
         logits_per_image = logit_scale * (image_features @ all_text.t()) + bias   # [B, world*B]
-        logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
+        # logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
 
 
         loss = self._siglip_logistic_loss(logits_per_image, labels)
@@ -258,7 +258,7 @@ class SiglipTrainer(Trainer):
         if return_outputs:
             # 可选：把新的 logits 挂到 outputs 上，方便调试/可视化
             outputs.logits_per_image = logits_per_image.detach()
-            outputs.logits_per_text = logits_per_text.detach()
+            # outputs.logits_per_text = logits_per_text.detach()
             return loss, outputs
 
         return loss

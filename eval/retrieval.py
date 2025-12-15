@@ -626,7 +626,7 @@ if __name__ == "__main__":
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
     # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/clip336-r-s1-run1215-1280"
+    MODEL_PATH = "fesvhtr/siglip-r-s1-run1215-1706"
 
     # coco_results = run_retrieval_evaluation(
     #     model_id=MODEL_PATH,
@@ -646,7 +646,7 @@ if __name__ == "__main__":
     print("Running Flickr30K retrieval evaluation...")
     flickr_results = run_retrieval_evaluation(
         model_id=MODEL_PATH,
-        model_type="clip",  # 明确指定模型类型
+        model_type="siglip",  # 明确指定模型类型
         dataset_name="flickr30k",
         split="test",
         batch_size=384,
