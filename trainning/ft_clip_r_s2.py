@@ -132,12 +132,37 @@ class CLIPTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.model_type = model_type
 
+        # @staticmethod
+    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     SigLIP 风格的 logistic 对比损失：
+    #     - logits: [B, N]，每一行是一个 query 与所有候选的相似度
+    #     - labels: [B]，每一行中正样本的索引
+    #     """
+    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
+    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
+    #     # 简单设置正样本权重为 (#neg)
+    #     pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
+    #     return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+
     @staticmethod
-    def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        targets = torch.zeros_like(logits, dtype=logits.dtype)
-        targets.scatter_(1, labels.unsqueeze(1), 1.0)
-        pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
-        return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+    def _siglip_logistic_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        SigLIP 风格的 logistic loss:
+        logits: [B, N]，N = world_size * B
+        labels: [B]，每一行正样本所在的列索引（全局索引）
+        """
+        B = logits.size(0)
+        device = logits.device
+
+        # 构造 +1 / -1 的 label matrix
+        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
+        row_idx = torch.arange(B, device=device)
+        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
+
+        per_pair = -F.logsigmoid(label_matrix * logits)
+        loss = per_pair.sum(dim=1).mean()
+        return loss
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """
@@ -186,17 +211,21 @@ class CLIPTrainer(Trainer):
 
         # 读取 logit_scale（CLIP/SigLIP 通用）
         logit_scale = model.logit_scale.exp() if hasattr(model, "logit_scale") else 1.0
-
-        logits_per_image = logit_scale * (image_features @ all_text.t())   # [B, world*B]
-        logits_per_text  = logit_scale * (text_features  @ all_image.t())  # [B, world*B]
+        logit_bias = getattr(model, "logit_bias", None)
+        if logit_bias is not None:
+            bias = logit_bias.to(image_features.dtype)
+        else:
+            bias = 0.0
+        logits_per_image = logit_scale * (image_features @ all_text.t()) + bias   # [B, world*B]
+        logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
 
         # 计算两边对比损失
         if self.model_type == "clip":
             loss_i = F.cross_entropy(logits_per_image, labels)
             loss_t = F.cross_entropy(logits_per_text, labels)
         else:  # "siglip"
-            loss_i = self._bce_logits_loss(logits_per_image, labels)
-            loss_t = self._bce_logits_loss(logits_per_text, labels)
+            loss_i = self._siglip_logistic_loss(logits_per_image, labels)
+            loss_t = self._siglip_logistic_loss(logits_per_text, labels)
 
         loss = (loss_i + loss_t) / 2
 

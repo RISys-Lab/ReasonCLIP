@@ -230,6 +230,29 @@ class CLIPTrainer(Trainer):
         targets.scatter_(1, labels.unsqueeze(1), 1.0)
         pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
         return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+    
+    @staticmethod
+    def _siglip_logistic_loss(
+        logits: torch.Tensor, 
+        labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        SigLIP 风格的 logistic loss:
+        logits: [B, N]，N = world_size * B
+        labels: [B]，每一行正样本所在的列索引（全局索引）
+        """
+        B = logits.size(0)
+        device = logits.device
+
+        # 构造 +1 / -1 的 label matrix
+        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
+        row_idx = torch.arange(B, device=device)
+        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
+
+        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
+        loss = -F.logsigmoid(label_matrix * logits).mean()
+        return loss
+
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         if self.orig_model is not None and self.orig_state is None:
@@ -290,6 +313,12 @@ class CLIPTrainer(Trainer):
                 backbone.logit_scale.data.clamp_(max=math.log(100.0))
         logit_scale = backbone.logit_scale.exp() if hasattr(backbone, "logit_scale") else 1.0
 
+        logit_bias = getattr(backbone, "logit_bias", None)
+        if logit_bias is not None:
+            bias = logit_bias.to(image_features.dtype)
+        else:
+            bias = 0.0
+
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
         rank = accelerator.process_index
@@ -304,8 +333,8 @@ class CLIPTrainer(Trainer):
         labels_global = torch.arange(B, device=device) + rank * B  # [B]
 
         # ---- TB branch ----
-        tb_logits_per_image = logit_scale * (image_features   @ all_tb.t())     # [B, world*B]
-        tb_logits_per_text  = logit_scale * (tb_text_features @ all_image.t())  # [B, world*B]
+        tb_logits_per_image = logit_scale * (image_features   @ all_tb.t()) + bias # [B, world*B]
+        tb_logits_per_text  = logit_scale * (tb_text_features @ all_image.t()) + bias # [B, world*B]
 
         if torch.rand(1).item() < 0.01 and (not dist.is_available() or dist.get_rank()==0):
             sim_tb = image_features @ tb_text_features.T
@@ -318,16 +347,13 @@ class CLIPTrainer(Trainer):
                 F.cross_entropy(tb_logits_per_text,  labels_global)
             )
         else:  # "siglip"
-            tb_loss = 0.5 * (
-                self._bce_logits_loss(tb_logits_per_image, labels_global) +
-                self._bce_logits_loss(tb_logits_per_text,  labels_global)
-            )
+            tb_loss = self._siglip_logistic_loss(tb_logits_per_image, labels_global)
 
         del tb_logits_per_image, tb_logits_per_text  # 及时释放
 
         # ---- TRP branch ----
-        trp_logits_per_image = logit_scale * (image_features     @ all_trp.t())
-        trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t())
+        trp_logits_per_image = logit_scale * (image_features     @ all_trp.t()) + bias
+        trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t()) + bias
 
         if self.model_type == "clip":
             trp_loss = 0.5 * (
@@ -335,10 +361,7 @@ class CLIPTrainer(Trainer):
                 F.cross_entropy(trp_logits_per_text,  labels_global)
             )
         else:  # "siglip"
-            trp_loss = 0.5 * (
-                self._bce_logits_loss(trp_logits_per_image, labels_global) +
-                self._bce_logits_loss(trp_logits_per_text,  labels_global)
-            )
+            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
 
         del trp_logits_per_image, trp_logits_per_text
 

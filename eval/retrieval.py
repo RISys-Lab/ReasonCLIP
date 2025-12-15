@@ -58,12 +58,13 @@ class RetrievalDataset(torch.utils.data.Dataset):
             elif 'captions' in sample:
                 captions = sample['captions']
             elif 'caption' in sample:
-                captions = [sample['caption']]
+                captions = sample['caption']
             
             # Ensure we have exactly 5 captions (pad or truncate)
             if len(captions) < 5:
                 # Repeat captions to reach 5 (common practice)
                 while len(captions) < 5:
+                    print(f"Padding captions for image {img_idx} with {len(captions)} captions")
                     captions.extend(captions[:5-len(captions)])
             captions = captions[:5]  # Take first 5
             
@@ -171,57 +172,79 @@ def collate_retrieval_fn(batch, processor):
     return image_inputs, text_inputs, indices
 
 
-def compute_retrieval_metrics_karpathy(image_features, text_features, dataset):
+def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, device=None):
     """
     Compute Karpathy-style retrieval metrics with 5 captions per image
     
     Args:
-        image_features: [N_images, D] normalized image features  
-        text_features: [N_captions, D] normalized text features (5x more than images)
+        image_features: [N_images, D] normalized image features (can be on GPU)
+        text_features: [N_captions, D] normalized text features (can be on GPU, 5x more than images)
         dataset: RetrievalDataset instance with mapping info
+        device: device to use for computation (if None, use same device as features)
     
     Returns:
         Dictionary with I2T and T2I metrics following Karpathy evaluation
     """
+    # Determine device
+    if device is None:
+        device = image_features.device
+    
+    # Move features to device if needed
+    image_features = image_features.to(device)
+    text_features = text_features.to(device)
+    
     num_images = len(image_features)
     num_captions = len(text_features)
     
-    print(f"Computing Karpathy metrics: {num_images} images, {num_captions} captions")
+    print(f"Computing Karpathy metrics on {device}: {num_images} images, {num_captions} captions")
     
-    # Compute similarity matrix [N_images, N_captions]
+    # Compute similarity matrix [N_images, N_captions] on GPU
+    print("Computing similarity matrix...")
     sim_matrix = image_features @ text_features.T
     
     # Image-to-Text retrieval (each image queries all captions)
+    print("Computing Image-to-Text ranks...")
     i2t_ranks = []
-    for img_idx in range(num_images):
-        # Get similarities for this image with all captions
-        sims = sim_matrix[img_idx]  # [N_captions]
-        # Sort in descending order and get indices
-        sorted_indices = torch.argsort(sims, descending=True)
+    # Batch process for efficiency
+    batch_size_i2t = 1000  # Process images in batches
+    for batch_start in tqdm(range(0, num_images, batch_size_i2t), desc="I2T ranks"):
+        batch_end = min(batch_start + batch_size_i2t, num_images)
+        batch_sims = sim_matrix[batch_start:batch_end]  # [batch_size, N_captions]
         
-        # Find ranks of the 5 ground-truth captions for this image
-        gt_caption_indices = dataset.image_to_captions[img_idx]
-        ranks = []
-        for cap_idx in gt_caption_indices:
-            rank = torch.where(sorted_indices == cap_idx)[0][0].item() + 1  # 1-indexed
-            ranks.append(rank)
+        # Sort all images in batch at once (on GPU)
+        sorted_indices_batch = torch.argsort(batch_sims, dim=1, descending=True)  # [batch_size, N_captions]
         
-        # Use the best (minimum) rank among the 5 captions (standard practice)
-        best_rank = min(ranks)
-        i2t_ranks.append(best_rank)
+        for local_idx, img_idx in enumerate(range(batch_start, batch_end)):
+            sorted_indices = sorted_indices_batch[local_idx]
+            # Find ranks of the 5 ground-truth captions for this image
+            gt_caption_indices = dataset.image_to_captions[img_idx]
+            ranks = []
+            for cap_idx in gt_caption_indices:
+                rank = torch.where(sorted_indices == cap_idx)[0][0].item() + 1  # 1-indexed
+                ranks.append(rank)
+            
+            # Use the best (minimum) rank among the 5 captions (standard practice)
+            best_rank = min(ranks)
+            i2t_ranks.append(best_rank)
     
     # Text-to-Image retrieval (each caption queries all images)
+    print("Computing Text-to-Image ranks...")
     t2i_ranks = []
-    for cap_idx in range(num_captions):
-        # Get similarities for this caption with all images  
-        sims = sim_matrix[:, cap_idx]  # [N_images]
-        # Sort in descending order and get indices
-        sorted_indices = torch.argsort(sims, descending=True)
+    # Batch process for efficiency
+    batch_size_t2i = 5000  # Process captions in batches (can be larger since fewer operations per caption)
+    for batch_start in tqdm(range(0, num_captions, batch_size_t2i), desc="T2I ranks"):
+        batch_end = min(batch_start + batch_size_t2i, num_captions)
+        batch_sims = sim_matrix[:, batch_start:batch_end]  # [N_images, batch_size]
         
-        # Find rank of the ground-truth image for this caption
-        gt_img_idx = dataset.caption_to_image[cap_idx]
-        rank = torch.where(sorted_indices == gt_img_idx)[0][0].item() + 1  # 1-indexed
-        t2i_ranks.append(rank)
+        # Sort all captions in batch at once (on GPU)
+        sorted_indices_batch = torch.argsort(batch_sims, dim=0, descending=True)  # [N_images, batch_size]
+        
+        for local_idx, cap_idx in enumerate(range(batch_start, batch_end)):
+            sorted_indices = sorted_indices_batch[:, local_idx]
+            # Find rank of the ground-truth image for this caption
+            gt_img_idx = dataset.caption_to_image[cap_idx]
+            rank = torch.where(sorted_indices == gt_img_idx)[0][0].item() + 1  # 1-indexed
+            t2i_ranks.append(rank)
     
     i2t_ranks = np.array(i2t_ranks)
     t2i_ranks = np.array(t2i_ranks)
@@ -251,42 +274,66 @@ def compute_retrieval_metrics_karpathy(image_features, text_features, dataset):
     return metrics
 
 
-def compute_retrieval_metrics(image_features, text_features, return_ranks=False):
+def compute_retrieval_metrics(image_features, text_features, return_ranks=False, device=None):
     """
     Compute standard retrieval metrics (1:1 image-caption pairs)
     
     Args:
-        image_features: [N, D] normalized image features
-        text_features: [N, D] normalized text features
+        image_features: [N, D] normalized image features (can be on GPU)
+        text_features: [N, D] normalized text features (can be on GPU)
         return_ranks: whether to return individual ranks
+        device: device to use for computation (if None, use same device as features)
     
     Returns:
         Dictionary with I2T and T2I metrics
     """
-    # Compute similarity matrix
+    # Determine device
+    if device is None:
+        device = image_features.device
+    
+    # Move features to device if needed
+    image_features = image_features.to(device)
+    text_features = text_features.to(device)
+    
+    # Compute similarity matrix on GPU
+    print("Computing similarity matrix...")
     sim_matrix = image_features @ text_features.T  # [N, N]
     
     # Image-to-Text retrieval
+    print("Computing Image-to-Text ranks...")
     i2t_ranks = []
-    for i in range(len(image_features)):
-        # Get similarities for this image with all texts
-        sims = sim_matrix[i]  # [N]
-        # Sort in descending order and get ranks
-        sorted_indices = torch.argsort(sims, descending=True)
-        # Find rank of correct text (index i)
-        rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
-        i2t_ranks.append(rank)
+    # Batch process for efficiency
+    batch_size_i2t = 1000
+    for batch_start in tqdm(range(0, len(image_features), batch_size_i2t), desc="I2T ranks"):
+        batch_end = min(batch_start + batch_size_i2t, len(image_features))
+        batch_sims = sim_matrix[batch_start:batch_end]  # [batch_size, N]
+        
+        # Sort all images in batch at once (on GPU)
+        sorted_indices_batch = torch.argsort(batch_sims, dim=1, descending=True)  # [batch_size, N]
+        
+        for local_idx, i in enumerate(range(batch_start, batch_end)):
+            sorted_indices = sorted_indices_batch[local_idx]
+            # Find rank of correct text (index i)
+            rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
+            i2t_ranks.append(rank)
     
     # Text-to-Image retrieval  
+    print("Computing Text-to-Image ranks...")
     t2i_ranks = []
-    for i in range(len(text_features)):
-        # Get similarities for this text with all images
-        sims = sim_matrix[:, i]  # [N]
-        # Sort in descending order and get ranks
-        sorted_indices = torch.argsort(sims, descending=True)
-        # Find rank of correct image (index i)
-        rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
-        t2i_ranks.append(rank)
+    # Batch process for efficiency
+    batch_size_t2i = 1000
+    for batch_start in tqdm(range(0, len(text_features), batch_size_t2i), desc="T2I ranks"):
+        batch_end = min(batch_start + batch_size_t2i, len(text_features))
+        batch_sims = sim_matrix[:, batch_start:batch_end]  # [N, batch_size]
+        
+        # Sort all texts in batch at once (on GPU)
+        sorted_indices_batch = torch.argsort(batch_sims, dim=0, descending=True)  # [N, batch_size]
+        
+        for local_idx, i in enumerate(range(batch_start, batch_end)):
+            sorted_indices = sorted_indices_batch[:, local_idx]
+            # Find rank of correct image (index i)
+            rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
+            t2i_ranks.append(rank)
     
     i2t_ranks = np.array(i2t_ranks)
     t2i_ranks = np.array(t2i_ranks)
@@ -389,14 +436,26 @@ def run_retrieval_evaluation(
         print("📥 Using COCO Karpathy split - standard for retrieval evaluation")
         # Karpathy split: validation (5K) and test (5K) - perfect for standard evaluation
         # ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
-        ds = load_dataset("yerevann/coco-karpathy", split="test")
+        ds = load_dataset("yerevann/coco-karpathy", split="validation")
         print(f"✅ Loaded COCO Karpathy {split} split (5K samples)")
     elif dataset_name.lower() == "flickr30k":
         ds = load_dataset("nlphuji/flickr30k", split="test")
+        print(f"📊 Flickr30K test split loaded: {len(ds)} samples")
+        # 检查是否有其他splits可用
+        try:
+            all_splits = load_dataset("nlphuji/flickr30k")
+            print(f"📊 Available splits: {list(all_splits.keys())}")
+            for split_name in all_splits.keys():
+                print(f"   - {split_name}: {len(all_splits[split_name])} samples")
+        except:
+            pass
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     
     # Create dataset and dataloader
+    print(f"📥 Raw dataset size (before max_samples): {len(ds)}")
+    if max_samples:
+        print(f"⚠️  max_samples={max_samples} will limit the dataset")
     dataset = RetrievalDataset(ds, processor, split, max_samples, use_all_captions=use_karpathy_eval, local_image_dir=local_image_dir)
     dataloader = DataLoader(
         dataset,
@@ -407,7 +466,7 @@ def run_retrieval_evaluation(
         collate_fn=lambda batch: collate_retrieval_fn(batch, processor)
     )
     
-    print(f"Dataset size: {len(dataset)}")
+    print(f"✅ Final dataset size: {len(dataset)} images, {dataset.get_num_captions()} captions")
     
     # Extract features
     all_image_features = []
@@ -425,9 +484,9 @@ def run_retrieval_evaluation(
             
             all_image_features.append(image_features.cpu())
     
-    # Concatenate image features
-    all_image_features = torch.cat(all_image_features, dim=0)
-    print(f"Image features shape: {all_image_features.shape}")
+    # Concatenate image features (keep on GPU)
+    all_image_features = torch.cat(all_image_features, dim=0).to(device)
+    print(f"Image features shape: {all_image_features.shape} (on {device})")
     
     # Second pass: extract ALL caption features (if using Karpathy evaluation)
     if use_karpathy_eval:
@@ -451,10 +510,10 @@ def run_retrieval_evaluation(
                 text_features = model.get_text_features(**text_inputs)
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)
                 
-                all_text_features.append(text_features.cpu())
+                all_text_features.append(text_features)  # Keep on GPU
         
-        # Concatenate all text features
-        all_text_features = torch.cat(all_text_features, dim=0)
+        # Concatenate all text features (keep on GPU)
+        all_text_features = torch.cat(all_text_features, dim=0).to(device)
     else:
         # Standard evaluation: use only first caption per image
         print("Extracting text features (1 per image)...")
@@ -465,20 +524,20 @@ def run_retrieval_evaluation(
                 text_features = model.get_text_features(**text_inputs)
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)
                 
-                all_text_features.append(text_features.cpu())
+                all_text_features.append(text_features)  # Keep on GPU
         
-        all_text_features = torch.cat(all_text_features, dim=0)
+        all_text_features = torch.cat(all_text_features, dim=0).to(device)
     
-    print(f"Text features shape: {all_text_features.shape}")
+    print(f"Text features shape: {all_text_features.shape} (on {device})")
     
-    # Compute retrieval metrics
+    # Compute retrieval metrics (on GPU for speed)
     print("Computing retrieval metrics...")
     if use_karpathy_eval:
         print("Using Karpathy-style evaluation (5 captions per image)")
-        metrics = compute_retrieval_metrics_karpathy(all_image_features, all_text_features, dataset)
+        metrics = compute_retrieval_metrics_karpathy(all_image_features, all_text_features, dataset, device=device)
     else:
         print("Using standard 1:1 evaluation")
-        metrics = compute_retrieval_metrics(all_image_features, all_text_features)
+        metrics = compute_retrieval_metrics(all_image_features, all_text_features, device=device)
     
     # Print results in standard format
     eval_mode = "Karpathy (5 captions/image)" if use_karpathy_eval else "Standard (1:1)"
@@ -564,33 +623,32 @@ if __name__ == "__main__":
     
     # 修改这里的模型路径为你训练好的 SigLIP-R 模型
     # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/clip-r-s1-run1208-1280"
-    coco_results = run_retrieval_evaluation(
-        model_id=MODEL_PATH,
-        model_type="clip",  # SigLIP model
-        dataset_name="mscoco",
-        split="test",  # Karpathy test split (5K samples)
-        batch_size=128,  # 大batch size，充分利用64GB显存
-        max_samples=None,  # Use full Karpathy split (exactly 5K)
-        device="cuda:2",
-        use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
-        local_image_dir="/home/muzammal/Projects/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
-    )
+    MODEL_PATH = "fesvhtr/siglip-r-s1-run1027-1536"
+
+    # coco_results = run_retrieval_evaluation(
+    #     model_id=MODEL_PATH,
+    #     model_type="clip",  # SigLIP model
+    #     dataset_name="mscoco",
+    #     split="test",  # Karpathy test split (5K samples)
+    #     batch_size=128,  # 大batch size，充分利用64GB显存
+    #     max_samples=None,  # Use full Karpathy split (exactly 5K)
+    #     device="cuda:2",
+    #     use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
+    #     local_image_dir="/home/muzammal/Projects/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
+    # )
     
-    print(f"\n🎯 Karpathy Evaluation Results:")
-    print(f"Image→Text: R@1={coco_results['i2t_r1']:.2f}%, R@5={coco_results['i2t_r5']:.2f}%, R@10={coco_results['i2t_r10']:.2f}%")
-    print(f"Text→Image: R@1={coco_results['t2i_r1']:.2f}%, R@5={coco_results['t2i_r5']:.2f}%, R@10={coco_results['t2i_r10']:.2f}%")
-    print(f"Average: R@1={coco_results['avg_r1']:.2f}%, R@5={coco_results['avg_r5']:.2f}%, R@10={coco_results['avg_r10']:.2f}%")
     
     # Also test on Flickr30K
-    # print("\n" + "="*80)
-    # print("Running Flickr30K 1K retrieval evaluation...")
-    # flickr_results = run_retrieval_evaluation(
-    #     model_id="openai/clip-vit-base-patch32", 
-    #     dataset_name="flickr30k",
-    #     split="test",
-    #     batch_size=64,
-    #     num_workers=8,
-    #     use_amp=True,
-    #     max_samples=1000  # Standard 1K evaluation
-    # ) 
+    print("\n" + "="*80)
+    print("Running Flickr30K retrieval evaluation...")
+    flickr_results = run_retrieval_evaluation(
+        model_id=MODEL_PATH,
+        model_type="siglip",  # 明确指定模型类型
+        dataset_name="flickr30k",
+        split="test",
+        batch_size=384,
+        max_samples=None,  # 使用全部数据（不限制）
+        device="cuda:1",
+        use_karpathy_eval=True,  # 使用 5-caption Karpathy 评估
+        # local_image_dir="/path/to/flickr30k/images"  # 如果需要本地图片目录，取消注释并设置路径
+    ) 

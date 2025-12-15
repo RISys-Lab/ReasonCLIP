@@ -13,6 +13,8 @@ from transformers import (
 )
 import torch.nn.functional as F
 from accelerate import Accelerator
+import math
+import torch.distributed as dist
 
 # 初始化 accelerator
 accelerator = Accelerator()
@@ -151,46 +153,28 @@ def parse_args():
 #                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class SiglipTrainer(Trainer):
-    # @staticmethod
-    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    #     """
-    #     SigLIP 风格的 logistic 对比损失：
-    #     - logits: [B, N]，每一行是一个 query 与所有候选的相似度
-    #     - labels: [B]，每一行中正样本的索引
-    #     """
-    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
-    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
-    #     # 简单设置正样本权重为 (#neg)
-    #     pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
-    #     return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
-
     @staticmethod
-    def _siglip_logistic_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _siglip_logistic_loss_full(label_matrix: torch.Tensor,
+                                   logits: torch.Tensor) -> torch.Tensor:
         """
-        SigLIP 风格的 logistic loss:
-        logits: [B, N]，N = world_size * B
-        labels: [B]，每一行正样本所在的列索引（全局索引）
+        对给定的 (+1 / -1) label_matrix 和 logits 做 SigLIP logistic：
+        L = - 1/B * sum_i sum_j log σ(y_ij * s_ij)
+        这里不关心正样本的位置，调用方自己构造 label_matrix。
         """
-        B = logits.size(0)
-        device = logits.device
-
-        # 构造 +1 / -1 的 label matrix
-        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
-        row_idx = torch.arange(B, device=device)
-        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
-
-        per_pair = -F.logsigmoid(label_matrix * logits)
+        per_pair = -F.logsigmoid(label_matrix * logits)  # [B, B]
+        # 和论文一样：sum over j，再对 batch 做 mean，等价于 sum / B
         loss = per_pair.sum(dim=1).mean()
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """
-        使用全局负样本（跨 GPU gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
-        使用 Accelerator 的 gather 方法，而不是底层的 dist.all_gather。
+        按 SigLIP 3.3 节的思路做“chunked / ring”实现：
+        - 只保留本卡的 image/text，永远不物化 |B_global|×|B_global| 的大矩阵；
+        - 第 0 轮用本卡 text（含正样本，带梯度）；
+        - 之后 world_size-1 轮用 ring 方式交换 text（只做负样本，detach()）。
         """
-        # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
-        #    - FixRes: 只需要 input_ids / pixel_values
-        #    - NaFlex: 还会在 inputs 中带上 spatial_shapes / pixel_attention_mask，我们检测到就一并传进去
+
+        # ---------- 1. forward：取 image / text features ----------
         model_kwargs = dict(
             input_ids=inputs["input_ids"],
             pixel_values=inputs["pixel_values"],
@@ -205,62 +189,77 @@ class SiglipTrainer(Trainer):
         image_features = outputs.image_embeds   # [B, D]
         text_features  = outputs.text_embeds    # [B, D]
 
-        # 2) 归一化特征
+        # normalize
         image_features = F.normalize(image_features, dim=-1)
-        text_features  = F.normalize(text_features, dim=-1)
-
-        # 3) 定义跨卡 gather，保留本地梯度（使用 Accelerator 的方式）
-        def gather_with_local_grad(x, accelerator):
-            if accelerator.num_processes == 1:
-                return x
-            B = x.size(0)
-            gathered = accelerator.gather(x.detach())  # [world*B, D], no grad
-            parts = []
-            for i in range(accelerator.num_processes):
-                if i == accelerator.process_index:
-                    parts.append(x)  # keep grad for local slice
-                else:
-                    s, e = i * B, (i + 1) * B
-                    parts.append(gathered[s:e])
-            return torch.cat(parts, dim=0)
+        text_features  = F.normalize(text_features,  dim=-1)
 
         B = image_features.size(0)
         device = image_features.device
+        world_size = accelerator.num_processes
         rank = accelerator.process_index
 
-        # 4) 聚合得到全局特征
-        all_image = gather_with_local_grad(image_features, accelerator)  # [world*B, D]
-        all_text  = gather_with_local_grad(text_features, accelerator)   # [world*B, D]
+        # ---------- 2. 取 backbone + clamp logit_scale ----------
+        backbone = model.module if hasattr(model, "module") else model
 
-        # 全局标签：按照 rank 顺序平移
-        labels = torch.arange(B, device=device) + rank * B
-
-        # SigLIP2 有可能带有温度参数，这里如果存在就用上
         with torch.no_grad():
-            # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
-            if hasattr(model, "logit_scale"):
-                model.logit_scale.data.clamp_(max=math.log(100.0))
-        logit_scale = model.logit_scale.exp() if hasattr(model, "logit_scale") else 1.0
+            if hasattr(backbone, "logit_scale"):
+                backbone.logit_scale.data.clamp_(max=math.log(100.0))
 
-        logit_bias = getattr(model, "logit_bias", None)
-        if logit_bias is not None:
-            bias = logit_bias.to(image_features.dtype)
+        if hasattr(backbone, "logit_scale"):
+            logit_scale = backbone.logit_scale.exp()
+        else:
+            logit_scale = image_features.new_tensor(1.0)
+
+        logit_bias_param = getattr(backbone, "logit_bias", None)
+        if logit_bias_param is not None:
+            bias = logit_bias_param.to(image_features.dtype)
         else:
             bias = 0.0
 
-        # 5) 构造对比 logits（每个样本与全局所有样本做对比）
-        logits_per_image = logit_scale * (image_features @ all_text.t()) + bias   # [B, world*B]
-        logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
+        # ---------- 3. ring-chunk loss：第 0 轮本地块，后面轮负样本块 ----------
+        # 第 0 轮：本卡 text（带梯度），既有正样本又有本地负样本
+        logits_local = logit_scale * (image_features @ text_features.t()) + bias  # [B, B]
 
+        # 构造本地块的 label_matrix：对角线 +1，其余 -1
+        label_matrix_local = logits_local.new_full(logits_local.shape, -1.0)
+        idx = torch.arange(B, device=device)
+        label_matrix_local[idx, idx] = 1.0
 
-        loss = self._siglip_logistic_loss(logits_per_image, labels)
+        loss = self._siglip_logistic_loss_full(label_matrix_local, logits_local)
+
+        # 之后 world_size-1 轮：只交换负样本块（全 -1），不需要梯度
+        if world_size > 1:
+            neg_chunk = text_features.detach()          # 当前持有的负样本块
+            origin_rank = rank                          # neg_chunk 来自哪个 rank
+
+            for _ in range(world_size - 1):
+                # ring 交换：把当前块发给 next，从 prev 收一块
+                next_rank = (rank + 1) % world_size
+                prev_rank = (rank - 1 + world_size) % world_size
+
+                send_buf = neg_chunk
+                recv_buf = torch.empty_like(neg_chunk)
+
+                dist.send(send_buf, dst=next_rank)
+                dist.recv(recv_buf, src=prev_rank)
+
+                neg_chunk = recv_buf
+                origin_rank = (origin_rank - 1 + world_size) % world_size
+
+                # 对这块 neg_chunk 计算 logits；所有 pair 都是负样本（label = -1）
+                logits_neg = logit_scale * (image_features @ neg_chunk.t()) + bias
+                label_matrix_neg = logits_neg.new_full(logits_neg.shape, -1.0)
+
+                loss = loss + self._siglip_logistic_loss_full(
+                    label_matrix_neg, logits_neg
+                )
+
+        # loss 现在已经是 sum_{all chunks} (1/B * sum_j per_pair_ij)，
+        # 等价于论文里的 1/|B_global| * sum_i sum_j L_ij（这里 |B_global| = B * world_size，
+        # 但每个样本只在各自 rank 上除以 B；DDP 同步梯度后是等价的）。
 
         if return_outputs:
-            # 可选：把新的 logits 挂到 outputs 上，方便调试/可视化
-            outputs.logits_per_image = logits_per_image.detach()
-            outputs.logits_per_text = logits_per_text.detach()
             return loss, outputs
-
         return loss
     
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
