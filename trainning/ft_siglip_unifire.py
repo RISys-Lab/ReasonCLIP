@@ -13,6 +13,7 @@ from transformers import (
 )
 import torch.nn.functional as F
 from accelerate import Accelerator
+import math
 
 # 初始化 accelerator
 accelerator = Accelerator()
@@ -29,7 +30,6 @@ if not accelerator.is_main_process:
 
 import wandb
 import argparse
-from PIL import Image
 import io
 from transformers import TrainerCallback
 from datetime import datetime

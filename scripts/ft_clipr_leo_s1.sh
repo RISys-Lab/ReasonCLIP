@@ -29,7 +29,7 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14-336"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s1"
 
