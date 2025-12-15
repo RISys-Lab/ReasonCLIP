@@ -35,7 +35,7 @@ accelerate launch \
   trainning/ft_siglip_unifire.py \
     --model_name $WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384 \
     --output_dir $WORK/fmohamma/CLIP-R/weights/siglip2-so400m-patch14-384 \
-    --batch_size 256 \
+    --batch_size 384 \
     --gradient_accumulation_steps 1 \
     --epochs 10 \
     --learning_rate 1.5e-5 \
