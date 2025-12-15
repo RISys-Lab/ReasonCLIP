@@ -80,7 +80,7 @@ accelerate launch \
     --save_ratio 0.25 \
     --save_total_limit 5 \
     --eval_strategy ratio \
-    --eval_ratio 0.05 \
+    --eval_ratio 0.25 \
     --tb_start 0.7 \
     --tb_mid 0.5 \
     --tb_end 0.6 \
