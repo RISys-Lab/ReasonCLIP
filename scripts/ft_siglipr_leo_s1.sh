@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1
+#SBATCH --job-name=siglipr_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1.out
-#SBATCH --error=clipr_ft_s1.err
+#SBATCH --output=siglipr_ft_s1.out
+#SBATCH --error=siglipr_ft_s1.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -77,8 +77,8 @@ accelerate launch \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
-    --save_ratio 0.05 \
-    --save_total_limit 10 \
+    --save_ratio 0.25 \
+    --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.05 \
     --tb_start 0.7 \

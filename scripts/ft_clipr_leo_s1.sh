@@ -29,7 +29,7 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14-336"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s1"
 
@@ -77,8 +77,8 @@ accelerate launch \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
-    --save_ratio 0.05 \
-    --save_total_limit 3 \
+    --save_ratio 0.25 \
+    --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.05 \
     --tb_start 0.7 \
