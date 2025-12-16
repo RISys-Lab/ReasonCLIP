@@ -211,7 +211,42 @@ class CLIPTrainer(Trainer):
         self.model_type = model_type  # "clip" 或 "siglip"
         self.orig_model = orig_model  # 允许外部传进来
         self.orig_state = None
-    
+        self.l2_pairs = None
+        
+    def _prepare_l2_pairs(self, model):
+        """
+        惰性初始化：只在第一次 compute_loss 时运行。
+        此时 model 已经在 GPU 上，确保 p0 也在 GPU 上，避免每一步的 CPU->GPU 拷贝。
+        """
+        if self.orig_model is None:
+            return
+
+        device = model.device
+        # 1. 确保 orig_model 在正确的设备上
+        if self.orig_model.device != device:
+            self.orig_model = self.orig_model.to(device)
+        
+        # 2. 构建状态字典
+        if self.orig_state is None:
+            self.orig_state = {
+                n: p.detach().clone() # 已经在 device 上了
+                for n, p in self.orig_model.named_parameters()
+            }
+
+        # 3. 构建参数对列表 (避免每次 forward 都做字符串匹配)
+        self.l2_pairs = []
+        backbone = model.module if hasattr(model, "module") else model
+        
+        for name, p in backbone.named_parameters():
+            # 过滤逻辑：只针对 Vision/Text Tower，排除 Projection 和 Scale/Bias
+            if ("vision_model." in name or "text_model." in name) and \
+               ("projection" not in name) and ("logit_scale" not in name) and ("logit_bias" not in name):
+                if name in self.orig_state:
+                    # p 是新参数（带梯度），p0 是原始参数（无梯度，在 GPU）
+                    self.l2_pairs.append((p, self.orig_state[name]))
+        
+        main_print(f"✅ [L2 Reg] Prepared {len(self.l2_pairs)} parameter pairs on {device}")
+
     def _initialize_l2_reg(self):
         """在模型移动到设备后，安全地初始化原始权重状态"""
         if self.orig_state is None and self.orig_model is not None:
@@ -254,9 +289,9 @@ class CLIPTrainer(Trainer):
         return loss
 
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        if self.orig_model is not None and self.orig_state is None:
-            self._initialize_l2_reg()
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None, use_sigmoid_loss=False):
+        if self.l2_pairs is None and self.orig_model is not None:
+            self._prepare_l2_pairs(model)
 
         if hasattr(self, "tb_schedule") and self.tb_schedule is not None:
             gs = getattr(self.state, "global_step", 0)
@@ -279,15 +314,6 @@ class CLIPTrainer(Trainer):
                     parts.append(gathered[s:e])
             return torch.cat(parts, dim=0)
 
-        def all_gather_with_local_grad(x: torch.Tensor) -> torch.Tensor:
-            if not (dist.is_available() and dist.is_initialized()):
-                return x
-            world = dist.get_world_size()
-            rank = dist.get_rank()
-            xs = [torch.zeros_like(x) for _ in range(world)]
-            dist.all_gather(xs, x.detach())
-            xs[rank] = x
-            return torch.cat(xs, dim=0)
         # ---- unpack ----
         device = inputs["pixel_values"].device
         backbone = model.module if hasattr(model, "module") else model
@@ -313,11 +339,11 @@ class CLIPTrainer(Trainer):
                 backbone.logit_scale.data.clamp_(max=math.log(100.0))
         logit_scale = backbone.logit_scale.exp() if hasattr(backbone, "logit_scale") else 1.0
 
-        logit_bias = getattr(backbone, "logit_bias", None)
-        if logit_bias is not None:
-            bias = logit_bias.to(image_features.dtype)
+        if use_sigmoid_loss and self.model_type == "siglip":
+            logit_bias = getattr(backbone, "logit_bias", None)
+            bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
         else:
-            bias = 0.0
+            bias = 0.0  # CLIP 模式强制无 Bias
 
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
@@ -325,9 +351,6 @@ class CLIPTrainer(Trainer):
         all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
         all_tb    = gather_with_local_grad(tb_text_features, accelerator)
         all_trp   = gather_with_local_grad(trp_text_features, accelerator)
-        # all_image = all_gather_with_local_grad(image_features)
-        # all_tb = all_gather_with_local_grad(tb_text_features)
-        # all_trp = all_gather_with_local_grad(trp_text_features)
 
         # global labels: shift by the local slice offset
         labels_global = torch.arange(B, device=device) + rank * B  # [B]
@@ -341,13 +364,15 @@ class CLIPTrainer(Trainer):
             diag = sim_tb.diag().mean().item()
             off  = (sim_tb.sum() - sim_tb.diag().sum()).div(sim_tb.numel()-sim_tb.size(0)).item()
             print(f"[sanity] TB diag={diag:.3f}, off={off:.3f}")
-        if self.model_type == "clip":
+            
+        if use_sigmoid_loss and self.model_type == "siglip":
+            tb_loss = self._siglip_logistic_loss(tb_logits_per_image, labels_global)
+        else:
+            # we also use cross entropy loss for siglip
             tb_loss = 0.5 * (
                 F.cross_entropy(tb_logits_per_image, labels_global) +
                 F.cross_entropy(tb_logits_per_text,  labels_global)
             )
-        else:  # "siglip"
-            tb_loss = self._siglip_logistic_loss(tb_logits_per_image, labels_global)
 
         del tb_logits_per_image, tb_logits_per_text  # 及时释放
 
@@ -355,35 +380,27 @@ class CLIPTrainer(Trainer):
         trp_logits_per_image = logit_scale * (image_features     @ all_trp.t()) + bias
         trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t()) + bias
 
-        if self.model_type == "clip":
+        if use_sigmoid_loss and self.model_type == "siglip":
+            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
+        else:
+            # we also use cross entropy loss for siglip
             trp_loss = 0.5 * (
                 F.cross_entropy(trp_logits_per_image, labels_global) +
                 F.cross_entropy(trp_logits_per_text,  labels_global)
             )
-        else:  # "siglip"
-            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
 
         del trp_logits_per_image, trp_logits_per_text
 
         # ---- combine ----
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
-        if self.orig_state is not None:
-            beta = 1e-5 # 这是 L2 权重
-            l2_reg = torch.zeros((), device=model.device, dtype=torch.float32)
-            
-            # 确保使用正确的底层模型 (如果被 DDP 包装)
-            backbone = model.module if hasattr(model, "module") else model
-
-            for name, p in backbone.named_parameters():
-                if ("vision_model." in name) or ("text_model." in name):
-                    if ("projection" in name) or ("logit_scale" in name):
-                        continue
-                    if name in self.orig_state:
-                        p0 = self.orig_state[name]
-                        # 确保 p0 和 p 在同一设备 (虽然 _initialize_l2_reg 应该保证了)
-                        l2_reg = l2_reg + (p.float() - p0.to(p.device)).pow(2).sum()
-            total_loss = total_loss + beta * l2_reg
+        if self.l2_pairs:
+            beta = 1e-5
+            l2_reg = 0.0 # 使用 Python scalar 累加，自动广播
+            for p, p0 in self.l2_pairs:
+                # p0 已经在 GPU 上了，直接减
+                l2_reg += (p - p0).pow(2).sum()
+            total_loss += beta * l2_reg
 
         # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
