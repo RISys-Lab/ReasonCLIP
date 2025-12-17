@@ -585,9 +585,9 @@ def train_clip(args):
     backbone = model.module if hasattr(model, "module") else model
     embed_dim = backbone.config.text_config.hidden_size
     num_classes = 5 
-    text_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device)
+    text_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device).to(torch.bfloat16)
     backbone.text_classifier = text_classifier
-    image_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device)
+    image_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device).to(torch.bfloat16)
     backbone.image_classifier = image_classifier
     main_print(f"   - Text classifier initialized: {text_classifier}")
     main_print(f"   - Image classifier initialized: {image_classifier}")
