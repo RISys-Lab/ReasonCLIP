@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import json
 import os
 import requests
+import argparse
 
 
 class RetrievalDataset(torch.utils.data.Dataset):
@@ -379,7 +380,8 @@ def run_retrieval_evaluation(
     save_features=False,
     device=None,
     use_karpathy_eval=True,  # Use 5-caption Karpathy evaluation
-    local_image_dir=None  # ✅ 本地图片目录
+    local_image_dir=None,  # ✅ 本地图片目录
+    results_dir=None  # 结果保存目录
 ):
     """
     Run CLIP/SigLIP retrieval evaluation
@@ -584,7 +586,8 @@ def run_retrieval_evaluation(
     }
     
     # Create results directory if it doesn't exist
-    results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
+    if results_dir is None:
+        results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
     os.makedirs(results_dir, exist_ok=True)
     
     # Save detailed results
@@ -619,39 +622,116 @@ def run_retrieval_evaluation(
     return result_info
 
 
-if __name__ == "__main__":
-    # SigLIP-R evaluation on MSCOCO Karpathy split (optimized for 64GB VRAM)
-    print("Running MSCOCO 5K retrieval evaluation (Karpathy 5-caption mode)...")
-    print("Model: SigLIP-R (trained with CLIP-R method)")
+def parse_args():
+    parser = argparse.ArgumentParser(description="CLIP/SigLIP Retrieval Evaluation")
     
-    # 修改这里的模型路径为你训练好的 SigLIP-R 模型
-    # MODEL_PATH = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-    MODEL_PATH = "fesvhtr/siglip-r-s1-run1215-1706"
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="fesvhtr/siglip-r-s1-run1216-1706",
+        help="HuggingFace model ID or local path)"
+    )
+    
+    parser.add_argument(
+        "--model_name",
+        type=str,
+        default="siglip",
+        choices=["clip", "siglip"],
+        help="Model type: 'clip' or 'siglip'"
+    )
+    
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="flickr30k",
+        choices=["mscoco", "flickr30k"],
+        help="Dataset name: 'mscoco' or 'flickr30k'"
+    )
+    
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        help="Dataset split (default: 'test')"
+    )
+    
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=128,
+        help="Batch size for inference (default: 64)"
+    )
+    
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda:1",
+        help="Device to use (e.g., 'cuda:0', 'cuda:1'). If None, auto-detect"
+    )
+    
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit number of samples for debugging (default: None, use all)"
+    )
+    
+    parser.add_argument(
+        "--local_image_dir",
+        type=str,
+        default=None,
+        help="Local image directory path (optional, for faster loading)"
+    )
+    
+    parser.add_argument(
+        "--use_karpathy_eval",
+        action="store_true",
+        default=True,
+        help="Use Karpathy-style evaluation with 5 captions per image (default: True)"
+    )
+    
+    parser.add_argument(
+        "--no_karpathy_eval",
+        dest="use_karpathy_eval",
+        action="store_false",
+        help="Disable Karpathy evaluation (use standard 1:1 evaluation)"
+    )
+    
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default="/home/muzammal/Projects/CLIP-R/eval/results",
+        help="Directory to save evaluation results (default: '/home/muzammal/Projects/CLIP-R/eval/results')"
+    )
+    
+    return parser.parse_args()
 
-    # coco_results = run_retrieval_evaluation(
-    #     model_id=MODEL_PATH,
-    #     model_type="clip",  # SigLIP model
-    #     dataset_name="mscoco",
-    #     split="test",  # Karpathy test split (5K samples)
-    #     batch_size=128,  # 大batch size，充分利用64GB显存
-    #     max_samples=None,  # Use full Karpathy split (exactly 5K)
-    #     device="cuda:2",
-    #     use_karpathy_eval=True,  # 🔥 Enable standard Karpathy 5-caption evaluation
-    #     local_image_dir="/home/muzammal/Projects/CLIP-R/data/coco_images" # ✅ 改为正确的下载目录
-    # )
+
+if __name__ == "__main__":
+    args = parse_args()
     
+    print("="*80)
+    print("CLIP/SigLIP Retrieval Evaluation")
+    print("="*80)
+    print(f"Model Path: {args.model_path}")
+    print(f"Model Type: {args.model_name.upper()}")
+    print(f"Dataset: {args.dataset_name.upper()}")
+    print(f"Split: {args.split}")
+    print(f"Batch Size: {args.batch_size}")
+    print(f"Karpathy Eval: {args.use_karpathy_eval}")
+    print("="*80)
     
-    # Also test on Flickr30K
-    print("\n" + "="*80)
-    print("Running Flickr30K retrieval evaluation...")
-    flickr_results = run_retrieval_evaluation(
-        model_id=MODEL_PATH,
-        model_type="siglip",  # 明确指定模型类型
-        dataset_name="flickr30k",
-        split="test",
-        batch_size=384,
-        max_samples=None,  # 使用全部数据（不限制）
-        device="cuda:1",
-        use_karpathy_eval=True,  # 使用 5-caption Karpathy 评估
-        # local_image_dir="/path/to/flickr30k/images"  # 如果需要本地图片目录，取消注释并设置路径
-    ) 
+    results = run_retrieval_evaluation(
+        model_id=args.model_path,
+        model_type=args.model_name,
+        dataset_name=args.dataset_name,
+        split=args.split,
+        batch_size=args.batch_size,
+        device=args.device,
+        max_samples=args.max_samples,
+        use_karpathy_eval=args.use_karpathy_eval,
+        local_image_dir=args.local_image_dir,
+        results_dir=args.results_dir
+    )
+    
+    print("\n✅ Evaluation completed!") 

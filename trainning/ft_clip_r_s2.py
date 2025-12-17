@@ -62,8 +62,14 @@ def parse_args():
                         help="Number of gradient accumulation steps")
     parser.add_argument("--epochs", type=int, default=1, 
                         help="Number of training epochs")
-    parser.add_argument("--learning_rate", type=float, default=5e-5, 
-                        help="Learning rate")
+    parser.add_argument("--visual_lr", type=float, default=1e-5, 
+                            help="Learning rate")
+    parser.add_argument("--text_lr", type=float, default=2e-5, 
+                            help="Learning rate")
+    parser.add_argument("--logit_scale_lr", type=float, default=5e-4, 
+                            help="Learning rate")
+    parser.add_argument("--classifier_lr", type=float, default=1e-4, 
+                            help="Learning rate")
 
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
@@ -112,10 +118,6 @@ def parse_args():
     # parser.add_argument("--early_stopping_patience", type=int, default=3,
     #                     help="Patience for early stopping")
     
-    # Loss weight parameters
-    # deprecated
-    parser.add_argument("--tb_alpha", type=float, default=0.5,
-                        help="Weight for tb loss (trp weight = 1 - tb_alpha), range [0, 1]")
     
     # Hub push parameters
     parser.add_argument("--push_to_hub", action="store_true", 
@@ -150,17 +152,8 @@ def parse_args():
     parser.add_argument("--resume_from_checkpoint", type=str, default=None,
                         help="Path to checkpoint directory to resume training from")
 
-    parser.add_argument("--tb_start", type=float, default=0.6,
-                    help="Initial TB loss weight (default=0.6)")
-    parser.add_argument("--tb_mid", type=float, default=0.4,
-                        help="Middle-phase TB loss weight (default=0.4)")
-    parser.add_argument("--tb_end", type=float, default=0.5,
-                        help="Final TB loss weight (default=0.5)")
-    parser.add_argument("--tb_t1", type=float, default=0.2,
-                        help="Ratio point where TB starts decreasing (default=0.2)")
-    parser.add_argument("--tb_t2", type=float, default=0.8,
-                        help="Ratio point where TB stops decreasing (default=0.8)")
-
+    parser.add_argument("--gamma_adv", type=float, default=0.1,
+                        help="Gamma for adversarial classification loss")
     return parser.parse_args()
 
 def make_tb_schedule(start=0.70, mid=0.50, end=0.60, t1=0.20, t2=0.80):
@@ -183,19 +176,19 @@ def compute_strategy_steps(strategy, ratio_value, steps_value, ratio_multiplier,
     else:  # steps
         return steps_value, "steps"
 
-class GradReverse(Function):
-    @staticmethod
-    def forward(ctx, x, lambd):
-        ctx.lambd = lambd
-        return x.view_as(x)
+# class GradReverse(Function):
+#     @staticmethod
+#     def forward(ctx, x, lambd):
+#         ctx.lambd = lambd
+#         return x.view_as(x)
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        # 对 backbone 的梯度乘上 -lambda，实现“最大化 classifier loss”
-        return -ctx.lambd * grad_output, None
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         # 对 backbone 的梯度乘上 -lambda，实现“最大化 classifier loss”
+#         return -ctx.lambd * grad_output, None
 
-def grad_reverse(x, lambd=1.0):
-    return GradReverse.apply(x, lambd)
+# def grad_reverse(x, lambd=1.0):
+#     return GradReverse.apply(x, lambd)
 
 class BestModelCallback(TrainerCallback):
     def __init__(self):
@@ -237,16 +230,22 @@ class CLIPTrainer(Trainer):
         self.model_type = model_type  # "clip" 或 "siglip"
         self.orig_model = orig_model  # 允许外部传进来
         self.orig_state = None
-        self.backbone = self.model.module if hasattr(self.model, "module") else self.model
-        embed_dim = self.backbone.config.text_config.hidden_size
-        self.classifier = ReasoningClassifier(embed_dim, self.num_classes).to(self.model.device)
-        self.backbone.reasoning_classifier = self.classifier
+        self.backbone = None  # 延迟初始化，在 compute_loss 中获取（此时 model 已经被 DDP 包装）
+        self.classifier = None  # 延迟初始化
     
-    def _initialize_l2_reg(self):
+    def _initialize_l2_reg(self, model=None):
         """在模型移动到设备后，安全地初始化原始权重状态"""
         if self.orig_state is None and self.orig_model is not None:
-            device = self.model.device
-            if self.orig_model.device != device:
+            # 获取模型所在设备（兼容 DDP 包装的模型）
+            if model is not None:
+                backbone = model.module if hasattr(model, "module") else model
+            elif self.backbone is not None:
+                backbone = self.backbone
+            else:
+                backbone = self.model.module if hasattr(self.model, "module") else self.model
+            device = next(backbone.parameters()).device
+            orig_device = next(self.orig_model.parameters()).device
+            if orig_device != device:
                 self.orig_model = self.orig_model.to(device)
             self.orig_state = {
                 n: p.detach().clone().to(device, dtype=torch.float32)
@@ -285,8 +284,16 @@ class CLIPTrainer(Trainer):
 
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        # 动态获取 backbone（此时 model 已经被 DDP 包装）
+        if self.backbone is None:
+            self.backbone = model.module if hasattr(model, "module") else model
+            if hasattr(self.backbone, "reasoning_classifier"):
+                self.classifier = self.backbone.reasoning_classifier
+            else:
+                raise ValueError("Classifier not found in backbone! Make sure to init it in train_clip.")
+        
         if self.orig_model is not None and self.orig_state is None:
-            self._initialize_l2_reg()
+            self._initialize_l2_reg(model)
 
         # ---- helper: gather across GPUs but keep local slice with gradient ----
         def gather_with_local_grad(x, accelerator):
@@ -324,24 +331,18 @@ class CLIPTrainer(Trainer):
         image_features = F.normalize(image_features, dim=-1)
         trp_text_features = F.normalize(trp_text_features, dim=-1)
 
-        # ---- adversarial classifier branch (Stage 2) ----
-        # 选一个中间表征 E，这里用 TB 文本分支的特征当作 E
-        E = trp_text_features                     # [B, D]
 
-        # 通过梯度反转层：对 backbone 的梯度 * (-gamma_adv)，
-        # 对 classifier 的梯度不变（仍然是“最小化 CE”）
-        E_rev = grad_reverse(E, self.gamma_adv)
-
-        # 分类器预测推理类别 c
-        cls_logits = self.classifier(E_rev)      # [B, num_classes]
         cls_labels = inputs["trp_cls"].to(cls_logits.device).long()
-        cls_loss = F.cross_entropy(cls_logits, cls_labels)
+        text_logits = self.backbone.text_classifier(trp_text_features)
+        loss_cls_text = F.cross_entropy(text_logits, cls_labels)
+        image_logits = self.backbone.image_classifier(image_features)
+        loss_cls_image = F.cross_entropy(image_logits, cls_labels)
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():
             # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
             if hasattr(self.backbone, "logit_scale"):
-                self.backbone.logit_scale.data.clamp_(max=math.log(100.0))
+                self.backbone.logit_scale.data.clamp_(max=math.log(50.0))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
         logit_bias = getattr(self.backbone, "logit_bias", None)
@@ -382,7 +383,10 @@ class CLIPTrainer(Trainer):
 
         if self.orig_state is not None:
             beta = 1e-5 # 这是 L2 权重
-            l2_reg = torch.zeros((), device=model.device, dtype=torch.float32)
+            # 获取模型所在设备（兼容 DDP 包装的模型）
+            backbone = model.module if hasattr(model, "module") else model
+            device = next(backbone.parameters()).device
+            l2_reg = torch.zeros((), device=device, dtype=torch.float32)
             
 
             for name, p in self.backbone.named_parameters():
@@ -396,7 +400,14 @@ class CLIPTrainer(Trainer):
             total_loss = total_loss + beta * l2_reg
         
         # ---- add adversarial classification loss ----
-        total_loss = total_loss + cls_loss
+        total_loss = total_loss + self.gamma_adv * (loss_cls_text + loss_cls_image)
+
+        # ---- compute accuracy ----
+        with torch.no_grad():
+            preds = torch.argmax(text_logits, dim=-1)
+            acc_text = (preds == cls_labels).float().mean()
+            preds = torch.argmax(image_logits, dim=-1)
+            acc_image = (preds == cls_labels).float().mean()
 
         # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
@@ -404,8 +415,10 @@ class CLIPTrainer(Trainer):
             wandb.log(
                 {
                     "train/contrastive_loss": contrastive_loss.item(),
-                    "train/cls_loss": cls_loss.item(),
+                    "train/cls_loss_text": loss_cls_text.item(),
+                    "train/cls_loss_image": loss_cls_image.item(),
                     "train/total_loss": total_loss.item(),
+                    "train/accuracy": acc.item(),
                 },
                 commit=False,
             )
@@ -439,12 +452,17 @@ class CLIPTrainer(Trainer):
         return (loss.detach(), None, None)
 
 
-
+trp_cls_to_idx = {
+    "S": 0,
+    "A": 1,
+    "H": 2,
+    "T": 3,
+    "P": 4,
+}
 class CLIPRDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dict, processor):
         self.dataset = dataset_dict
         self.processor = processor
-        self.captions_per_image = 3
         proc_name = processor.__class__.__name__.lower()
         if "siglip" in proc_name:
             self.text_max_len = 64
@@ -452,38 +470,26 @@ class CLIPRDataset(torch.utils.data.Dataset):
             self.text_max_len = 77
     
     def __len__(self):
-        # 每个原始样本生成9个caption pair
-        return len(self.dataset) * self.captions_per_image
+        return len(self.dataset)
     
     def __getitem__(self, idx):
-        # 计算原始样本索引和caption组合索引
-        original_idx = idx // self.captions_per_image
-        pair_idx = idx % self.captions_per_image   
-        item = self.dataset[original_idx]
+        item = self.dataset[idx]
         
         image_path = item["image_path"]
         image = Image.open(image_path).convert("RGB")
+        
+        trp_caption = item["trp"]
+        trp_cls = item["trp_cls"]
+        trp_cls_idx = trp_cls_to_idx[trp_cls]
 
-        # 随机生成图像，用于测试
-        # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
-        # image = Image.fromarray(random_image)
-        
-        tb_captions = [f"a photo of {c}" for c in item["tb"]]
-        trp_captions = item["trl"]
-        tb_idx, trp_idx = pair_idx // 3, pair_idx % 3
-        tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
-        
         img_enc = self.processor(images=image, return_tensors="pt")
-        tb_enc = self.processor(text=[tb_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
-        trp_enc = self.processor(text=[trp_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
+        trp_enc = self.processor(text=trp_caption, return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
         
-        # 构建返回的batch，只包含必要的数据
         return {
             "pixel_values": img_enc["pixel_values"].squeeze(0),
-            "tb_input_ids": tb_enc["input_ids"].squeeze(0),
-            "tb_attention_mask": tb_enc.get("attention_mask", torch.ones_like(tb_enc["input_ids"])).squeeze(0),
             "trp_input_ids": trp_enc["input_ids"].squeeze(0),
             "trp_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
+            "trp_cls": trp_cls_idx,
         }
 
 
@@ -575,6 +581,17 @@ def train_clip(args):
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
+    main_print(f"🔧 Initializing Reasoning Classifier...")
+    backbone = model.module if hasattr(model, "module") else model
+    embed_dim = backbone.config.text_config.hidden_size
+    num_classes = 5 
+    text_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device)
+    backbone.text_classifier = text_classifier
+    image_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device)
+    backbone.image_classifier = image_classifier
+    main_print(f"   - Text classifier initialized: {text_classifier}")
+    main_print(f"   - Image classifier initialized: {image_classifier}")
+
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
     # 替换以下导入处附近：去掉 pandas 的读取用法
@@ -614,19 +631,20 @@ def train_clip(args):
     train_dataset = CLIPRDataset(train_hf, processor)
     eval_dataset  = CLIPRDataset(eval_hf, processor) if eval_hf else None
 
-    main_print(f"   - Train dataset size: {len(train_dataset)} (with 9x augmentation)")
+    main_print(f"   - Train dataset size: {len(train_dataset)}")
     if eval_dataset:
-        main_print(f"   - Eval dataset size: {len(eval_dataset)} (with 9x augmentation)")
-
+        main_print(f"   - Eval dataset size: {len(eval_dataset)}")
+    
     
     # 验证数据样本
     main_print(f"\n🔍 Data Validation:")
     sample = train_dataset[0]
     main_print(f"   - Sample keys: {list(sample.keys())}")
-    main_print(f"   - TB Input IDs shape: {sample['tb_input_ids'].shape}")
     main_print(f"   - TRP Input IDs shape: {sample['trp_input_ids'].shape}")
+    main_print(f"   - TRP Attention Mask shape: {sample['trp_attention_mask'].shape}")
+    main_print(f"   - TRP Class label: {sample['trp_cls']}")
     main_print(f"   - Pixel values shape: {sample['pixel_values'].shape}")
-    main_print(f"   - ✅ Triplet data format validated: (image, tb_text, trp_text)")
+    main_print(f"   - ✅ Stage 2 data format validated: (image, trp_text, trp_cls)")
     
     # ================================ 训练参数配置 ================================
     # 计算总步数来确定实际的logging、save、eval步数
@@ -694,8 +712,8 @@ def train_clip(args):
     
     
     main_print(f"\n🎯 Loss Configuration:")
-    main_print(f"   - TB loss weight: {args.tb_alpha:.3f}")
-    main_print(f"   - TRP loss weight: {1.0 - args.tb_alpha:.3f}")
+    main_print(f"   - Contrastive loss (TRP): 1.0")
+    main_print(f"   - Adversarial classification loss weight (gamma_adv): {args.gamma_adv:.3f}")
     
     # ================================ 断点恢复配置 ================================
     resume_from_checkpoint = None
@@ -720,25 +738,40 @@ def train_clip(args):
     
     main_print(f"🔧 Setting up optimizer with different learning rates...")
     # 推荐的学习率: backbone 使用较低的 LR，logit_scale 使用主 LR
-    main_lr = args.learning_rate
-    main_print(f"   - Main learning rate: {main_lr}")
+    visual_lr = args.visual_lr
+    text_lr = args.text_lr
+    logit_scale_lr = args.logit_scale_lr
+    classifier_lr = args.classifier_lr
+    main_print(f"   - Visual learning rate: {visual_lr}")
+    main_print(f"   - Text learning rate: {text_lr}")
+    main_print(f"   - Logit scale learning rate: {logit_scale_lr}")
+    main_print(f"   - Classifier learning rate: {classifier_lr}")
 
     optimizer_grouped_parameters = [
         # Vision Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
-            "lr": main_lr / 10.0,
+            "lr": visual_lr,
         },
         # Text Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
-            "lr": main_lr / 10.0 * 3,
+            "lr": text_lr,
         },
         # Logit Scale parameter
         {
             "params": [p for n, p in model.named_parameters() if "logit_scale" in n and p.requires_grad],
-            "lr": main_lr,
+            "lr": logit_scale_lr,
             "weight_decay": 0.0 # 通常不对 logit_scale 应用 weight decay
+        },
+        # Classifier parameters
+        {
+            "params": [p for n, p in model.named_parameters() if "text_classifier" in n and p.requires_grad],
+            "lr": classifier_lr,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if "image_classifier" in n and p.requires_grad],
+            "lr": classifier_lr,
         },
     ]
 
@@ -755,12 +788,12 @@ def train_clip(args):
     if all_params != assigned_params:
          unassigned_params = all_params - assigned_params
          unassigned_names = [n for n, p in model.named_parameters() if p in unassigned_params]
-         main_print(f"⚠️ WARNING: Some parameters were not assigned a learning rate group: {unassigned_names}")
+         main_print(f"!! WARNING !!: Some parameters were not assigned a learning rate group: {unassigned_names}")
          # 可以选择将它们添加到默认组，或报错
          # 这里简单地将它们添加到默认组 (main_lr)
          default_group = {
              "params": list(unassigned_params),
-             "lr": args.learning_rate,
+             "lr": visual_lr,
          }
          optimizer_grouped_parameters.append(default_group)
          main_print(f"   -> Added unassigned parameters to a default group with LR={main_lr}")
@@ -778,15 +811,14 @@ def train_clip(args):
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
-        tb_alpha=args.tb_alpha,
+        gamma_adv=args.gamma_adv,
         model_type=model_type,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
         optimizers=(optimizer, None),
-        orig_model=orig_model,  # CLIP和SigLIP都使用orig_model进行L2正则化
+        orig_model=orig_model,
     )
-    trainer.tb_schedule = make_tb_schedule(args.tb_start, args.tb_mid, args.tb_end, args.tb_t1, args.tb_t2)
 
     # 将orig_model移动到设备上用于L2正则化
     trainer.orig_model = orig_model.to(accelerator.device)

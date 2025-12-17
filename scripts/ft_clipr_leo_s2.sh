@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1_e2
+#SBATCH --job-name=clipr_336_ft_s2
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1_e2.out
-#SBATCH --error=clipr_ft_s1_e2.err
+#SBATCH --output=clipr_336_ft_s2.out
+#SBATCH --error=clipr_336_ft_s2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -28,10 +28,10 @@ module load cuda/11.8
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
-# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s1/run_1207_155136/finetune_weights/checkpoint-1280"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s1"
+PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_tb_trl_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_tb_trl_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_tb_trl_chunk_02.parquet"
+MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_336_s1/run_1215_081150/finetune_weights/checkpoint-1280"
+# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s2"
 
 mkdir -p "$OUT_DIR"
 
@@ -56,12 +56,12 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
 accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
-  --num_machines 8 \
-  --num_processes 32 \
+  --num_machines 2 \
+  --num_processes 4 \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
-  trainning/ft_clip_r_s1.py \
+  trainning/ft_clip_r_s2.py \
     --model_type clip \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
@@ -69,9 +69,13 @@ accelerate launch \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
-    --learning_rate 2e-5 \
+    --visual_lr 1e-5 \
+    --text_lr 2e-5 \
+    --logit_scale_lr 5e-4 \
+    --classifier_lr 1.5e-3 \
+    --gamma_adv 0.1 \
     --holdout_ratio 0.002 \
-    --warmup_ratio 0.03 \
+    --warmup_ratio 0.1 \
     --weight_decay 1e-4 \
     --bf16 \
     --logging_strategy ratio \
@@ -81,15 +85,10 @@ accelerate launch \
     --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.25 \
-    --tb_start 0.6 \
-    --tb_mid 0.4 \
-    --tb_end 0.5 \
-    --tb_t1 0.2 \
-    --tb_t2 0.8 \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_s1\"
+    --run_name \"clip_r_s2\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."

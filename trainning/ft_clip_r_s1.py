@@ -336,7 +336,7 @@ class CLIPTrainer(Trainer):
         with torch.no_grad():
             # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
             if hasattr(backbone, "logit_scale"):
-                backbone.logit_scale.data.clamp_(max=math.log(100.0))
+                backbone.logit_scale.data.clamp_(max=math.log(50.0))
         logit_scale = backbone.logit_scale.exp() if hasattr(backbone, "logit_scale") else 1.0
 
         if use_sigmoid_loss and self.model_type == "siglip":
@@ -475,7 +475,7 @@ class CLIPRDataset(torch.utils.data.Dataset):
         # random_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
         # image = Image.fromarray(random_image)
         
-        tb_captions = [f"a photo of {c}" for c in item["tb"]]
+        tb_captions = item["tb"]
         trp_captions = item["trl"]
         tb_idx, trp_idx = pair_idx // 3, pair_idx % 3
         tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
@@ -565,8 +565,8 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-        processor = CLIPProcessor.from_pretrained(model_name)
+        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14-336"
+        processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
             model_name,
