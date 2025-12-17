@@ -332,7 +332,7 @@ class CLIPTrainer(Trainer):
         trp_text_features = F.normalize(trp_text_features, dim=-1)
 
 
-        cls_labels = inputs["trp_cls"].to(text_logits.device).long()
+        cls_labels = inputs["trp_cls"].to(trp_text_features.device).long()
         text_logits = self.backbone.text_classifier(trp_text_features)
         loss_cls_text = F.cross_entropy(text_logits, cls_labels)
         image_logits = self.backbone.image_classifier(image_features)
