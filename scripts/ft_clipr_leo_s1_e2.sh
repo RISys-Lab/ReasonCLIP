@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1_e2
+#SBATCH --job-name=clipr_336_ft_s1_e2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1_e2.out
-#SBATCH --error=clipr_ft_s1_e2.err
+#SBATCH --output=clipr_336_ft_s1_e2.out
+#SBATCH --error=clipr_336_ft_s1_e2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -30,8 +30,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s1/run_1207_155136/finetune_weights/checkpoint-1280"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s1"
+MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_336_s1/run_1215_081150/finetune_weights/checkpoint-1280"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s1"
 
 mkdir -p "$OUT_DIR"
 

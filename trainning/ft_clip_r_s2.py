@@ -332,7 +332,7 @@ class CLIPTrainer(Trainer):
         trp_text_features = F.normalize(trp_text_features, dim=-1)
 
 
-        cls_labels = inputs["trp_cls"].to(cls_logits.device).long()
+        cls_labels = inputs["trp_cls"].to(text_logits.device).long()
         text_logits = self.backbone.text_classifier(trp_text_features)
         loss_cls_text = F.cross_entropy(text_logits, cls_labels)
         image_logits = self.backbone.image_classifier(image_features)
@@ -564,7 +564,7 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
+        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
         processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
