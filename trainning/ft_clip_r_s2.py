@@ -418,7 +418,8 @@ class CLIPTrainer(Trainer):
                     "train/cls_loss_text": loss_cls_text.item(),
                     "train/cls_loss_image": loss_cls_image.item(),
                     "train/total_loss": total_loss.item(),
-                    "train/accuracy": acc.item(),
+                    "train/accuracy_text": acc_text.item(),
+                    "train/accuracy_image": acc_image.item(),
                 },
                 commit=False,
             )
