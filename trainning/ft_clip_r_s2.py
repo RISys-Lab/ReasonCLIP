@@ -35,7 +35,7 @@ def main_print(*args, **kwargs):
 # 非主进程立即禁用 Wandb（在导入wandb之前）
 if not accelerator.is_main_process:
     os.environ["WANDB_DISABLED"] = "true"
-    print("Wandb disabled for non-main processes")  # 这个保留，让每个进程都知道自己的状态
+    # print("Wandb disabled for non-main processes")  # 这个保留，让每个进程都知道自己的状态
 
 import wandb
 import argparse
@@ -62,13 +62,15 @@ def parse_args():
                         help="Number of gradient accumulation steps")
     parser.add_argument("--epochs", type=int, default=1, 
                         help="Number of training epochs")
-    parser.add_argument("--visual_lr", type=float, default=1e-5, 
+    parser.add_argument("--default_lr", type=float, default=1e-4, 
                             help="Learning rate")
-    parser.add_argument("--text_lr", type=float, default=2e-5, 
+    parser.add_argument("--visual_lr", type=float, default=None, 
                             help="Learning rate")
-    parser.add_argument("--logit_scale_lr", type=float, default=5e-4, 
+    parser.add_argument("--text_lr", type=float, default=None, 
                             help="Learning rate")
-    parser.add_argument("--classifier_lr", type=float, default=1e-4, 
+    parser.add_argument("--logit_scale_lr", type=float, default=None, 
+                            help="Learning rate")
+    parser.add_argument("--classifier_lr", type=float, default=None, 
                             help="Learning rate")
 
     parser.add_argument("--fp16", action="store_true", 
@@ -681,7 +683,7 @@ def train_clip(args):
         bf16=args.bf16,
         fp16=args.fp16 and (not args.bf16),
         num_train_epochs=args.epochs,
-        learning_rate=args.learning_rate,
+        learning_rate=args.default_lr,
         logging_strategy=logging_strategy,
         logging_steps=logging_steps,
         save_strategy=save_strategy,
@@ -738,10 +740,12 @@ def train_clip(args):
     
     main_print(f"🔧 Setting up optimizer with different learning rates...")
     # 推荐的学习率: backbone 使用较低的 LR，logit_scale 使用主 LR
+    default_lr = args.default_lr
     visual_lr = args.visual_lr
     text_lr = args.text_lr
     logit_scale_lr = args.logit_scale_lr
     classifier_lr = args.classifier_lr
+    main_print(f"   - Default learning rate: {default_lr}")
     main_print(f"   - Visual learning rate: {visual_lr}")
     main_print(f"   - Text learning rate: {text_lr}")
     main_print(f"   - Logit scale learning rate: {logit_scale_lr}")
@@ -790,17 +794,16 @@ def train_clip(args):
          unassigned_names = [n for n, p in model.named_parameters() if p in unassigned_params]
          main_print(f"!! WARNING !!: Some parameters were not assigned a learning rate group: {unassigned_names}")
          # 可以选择将它们添加到默认组，或报错
-         # 这里简单地将它们添加到默认组 (main_lr)
+         # 这里简单地将它们添加到默认组 (default_lr)
          default_group = {
              "params": list(unassigned_params),
-             "lr": visual_lr,
+             "lr": default_lr,
          }
          optimizer_grouped_parameters.append(default_group)
-         main_print(f"   -> Added unassigned parameters to a default group with LR={main_lr}")
 
     optimizer = AdamW(
         optimizer_grouped_parameters,
-        lr=main_lr, # 默认 lr (虽然每个组都有指定)
+        lr=default_lr, # 默认 lr (虽然每个组都有指定)
         weight_decay=args.weight_decay,
         betas=(0.9, 0.999), # AdamW 默认 betas
         eps=1e-8          # AdamW 默认 epsilon

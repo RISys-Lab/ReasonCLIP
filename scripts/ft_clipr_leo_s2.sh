@@ -69,6 +69,7 @@ accelerate launch \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
+    --default_lr 1e-4 \
     --visual_lr 1e-5 \
     --text_lr 2e-5 \
     --logit_scale_lr 5e-4 \
