@@ -289,10 +289,8 @@ class CLIPTrainer(Trainer):
         # 动态获取 backbone（此时 model 已经被 DDP 包装）
         if self.backbone is None:
             self.backbone = model.module if hasattr(model, "module") else model
-            if hasattr(self.backbone, "reasoning_classifier"):
-                self.classifier = self.backbone.reasoning_classifier
-            else:
-                raise ValueError("Classifier not found in backbone! Make sure to init it in train_clip.")
+            if not hasattr(self.backbone, "text_classifier") or not hasattr(self.backbone, "image_classifier"):
+                raise ValueError("Classifiers (text/image) not found in backbone! Make sure to init them in train_clip.")
         
         if self.orig_model is not None and self.orig_state is None:
             self._initialize_l2_reg(model)
