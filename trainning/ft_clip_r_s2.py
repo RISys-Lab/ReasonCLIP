@@ -333,10 +333,14 @@ class CLIPTrainer(Trainer):
 
 
         cls_labels = inputs["trp_cls"].to(trp_text_features.device).long()
+        cls_size = cls_labels.size(0)
+        num_classes = self.num_classes
+        one_hot_labels = torch.zeros(cls_size, num_classes, device=image_features.device, dtype=image_features.dtype)
+        one_hot_labels.scatter_(1, cls_labels.unsqueeze(1), 1.0)
         text_logits = self.backbone.text_classifier(trp_text_features)
         loss_cls_text = F.cross_entropy(text_logits, cls_labels)
         image_logits = self.backbone.image_classifier(image_features)
-        loss_cls_image = F.cross_entropy(image_logits, cls_labels)
+        loss_cls_image = F.binary_cross_entropy_with_logits(image_logits, one_hot_labels)
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():

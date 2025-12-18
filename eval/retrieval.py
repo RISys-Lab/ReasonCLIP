@@ -628,14 +628,14 @@ def parse_args():
     parser.add_argument(
         "--model_path",
         type=str,
-        default="fesvhtr/siglip-r-s1-run1216-1706",
+        default="fesvhtr/clip336-r-s2-run1217-505",
         help="HuggingFace model ID or local path)"
     )
     
     parser.add_argument(
         "--model_name",
         type=str,
-        default="siglip",
+        default="clip",
         choices=["clip", "siglip"],
         help="Model type: 'clip' or 'siglip'"
     )
@@ -658,14 +658,14 @@ def parse_args():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=128,
+        default=512,
         help="Batch size for inference (default: 64)"
     )
     
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda:1",
+        default="cuda:0",
         help="Device to use (e.g., 'cuda:0', 'cuda:1'). If None, auto-detect"
     )
     
