@@ -70,8 +70,6 @@ def parse_args():
                             help="Learning rate")
     parser.add_argument("--logit_scale_lr", type=float, default=None, 
                             help="Learning rate")
-    parser.add_argument("--classifier_lr", type=float, default=None, 
-                            help="Learning rate")
 
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
@@ -130,8 +128,10 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--parquet_files", type=str, nargs="+", required=True,
-                        help="Paths to one or more parquet files (space-separated or glob)")
+    parser.add_argument("--parquet_files_ReasonLite", type=str, nargs="+", required=True,
+                        help="Paths to one or more parquet files (space-separated or glob) for ReasonLite")
+    parser.add_argument("--parquet_files_ReasonPro", type=str, nargs="+", required=True,
+                        help="Paths to one or more parquet files (space-separated or glob) for ReasonPro")
     parser.add_argument("--use_split", action="store_true",
                         help="Whether to split dataset into train:eval:test = 8:1:1")
 
@@ -192,7 +192,7 @@ class CLIPTrainer(Trainer):
     def __init__(self, model_type="clip",orig_model=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_type = model_type  # "clip" 或 "siglip
-    
+        self.backbone = None
     @staticmethod
     def _siglip_logistic_loss(
         logits: torch.Tensor, 
@@ -218,7 +218,8 @@ class CLIPTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         # 动态获取 backbone（此时 model 已经被 DDP 包装）
-        backbone = model.module if hasattr(model, "module") else model
+        if self.backbone is None:
+            self.backbone = model.module if hasattr(model, "module") else model
         
         # ---- helper: gather across GPUs but keep local slice with gradient ----
         def gather_with_local_grad(x, accelerator):
@@ -251,7 +252,7 @@ class CLIPTrainer(Trainer):
         with torch.no_grad():
             # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
             if hasattr(self.backbone, "logit_scale"):
-                self.backbone.logit_scale.data.clamp_(max=math.log(50.0))
+                self.backbone.logit_scale.data.clamp_(max=math.log(100.0))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
         logit_bias = getattr(self.backbone, "logit_bias", None)
@@ -290,45 +291,13 @@ class CLIPTrainer(Trainer):
         contrastive_loss = trp_loss
         total_loss = contrastive_loss
 
-        if self.orig_state is not None:
-            beta = 1e-5 # 这是 L2 权重
-            # 获取模型所在设备（兼容 DDP 包装的模型）
-            backbone = model.module if hasattr(model, "module") else model
-            device = next(backbone.parameters()).device
-            l2_reg = torch.zeros((), device=device, dtype=torch.float32)
-            
-
-            for name, p in self.backbone.named_parameters():
-                if ("vision_model." in name) or ("text_model." in name):
-                    if ("projection" in name) or ("logit_scale" in name):
-                        continue
-                    if name in self.orig_state:
-                        p0 = self.orig_state[name]
-                        # 确保 p0 和 p 在同一设备 (虽然 _initialize_l2_reg 应该保证了)
-                        l2_reg = l2_reg + (p.float() - p0.to(p.device)).pow(2).sum()
-            total_loss = total_loss + beta * l2_reg
-        
-        # ---- add adversarial classification loss ----
-        total_loss = total_loss + self.gamma_adv * (loss_cls_text + loss_cls_image)
-
-        # ---- compute accuracy ----
-        with torch.no_grad():
-            preds = torch.argmax(text_logits, dim=-1)
-            acc_text = (preds == cls_labels).float().mean()
-            preds = torch.argmax(image_logits, dim=-1)
-            acc_image = (preds == cls_labels).float().mean()
-
         # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
             import wandb
             wandb.log(
                 {
                     "train/contrastive_loss": contrastive_loss.item(),
-                    "train/cls_loss_text": loss_cls_text.item(),
-                    "train/cls_loss_image": loss_cls_image.item(),
                     "train/total_loss": total_loss.item(),
-                    "train/accuracy_text": acc_text.item(),
-                    "train/accuracy_image": acc_image.item(),
                 },
                 commit=False,
             )
@@ -354,22 +323,53 @@ class CLIPTrainer(Trainer):
     ):
         model.eval()
         with torch.no_grad():
-            loss, _ = self.compute_loss(model, inputs, return_outputs=True)
+            loss = self.compute_loss(model, inputs, return_outputs=False)
 
         if prediction_loss_only:
             return (loss.detach(), None, None)
 
         return (loss.detach(), None, None)
 
+class CLIPRLiteDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset_dict, processor):
+        self.dataset = dataset_dict
+        self.processor = processor
+        # 每个样本有3个TRL caption，每个caption生成一个训练样本
+        self.captions_per_image = 3
+        proc_name = processor.__class__.__name__.lower()
+        if "siglip" in proc_name:
+            self.text_max_len = 64
+        else:
+            self.text_max_len = 77
+    
+    def __len__(self):
+        # 每个原始样本生成3个训练样本（对应3个TRL caption）
+        return len(self.dataset) * self.captions_per_image
+    
+    def __getitem__(self, idx):
+        # 计算原始样本索引和TRL caption索引
+        original_idx = idx // self.captions_per_image
+        trl_idx = idx % self.captions_per_image
+        item = self.dataset[original_idx]
+        
+        image_path = item["image_path"]
+        image = Image.open(image_path).convert("RGB")
+        
+        # 只使用TRL caption，不使用TB
+        trl_captions = item["trl"]
+        trl_caption = trl_captions[trl_idx]  # 选择对应的TRL caption
+        
+        img_enc = self.processor(images=image, return_tensors="pt")
+        trl_enc = self.processor(text=[trl_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
+        
+        # 构建返回的batch，只包含图像和TRL文本
+        return {
+            "pixel_values": img_enc["pixel_values"].squeeze(0),
+            "text_input_ids": trl_enc["input_ids"].squeeze(0),
+            "text_attention_mask": trl_enc.get("attention_mask", torch.ones_like(trl_enc["input_ids"])).squeeze(0),
+        }
 
-trp_cls_to_idx = {
-    "S": 0,
-    "A": 1,
-    "H": 2,
-    "T": 3,
-    "P": 4,
-}
-class CLIPRDataset(torch.utils.data.Dataset):
+class CLIPRProDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dict, processor):
         self.dataset = dataset_dict
         self.processor = processor
@@ -389,17 +389,14 @@ class CLIPRDataset(torch.utils.data.Dataset):
         image = Image.open(image_path).convert("RGB")
         
         trp_caption = item["trp"]
-        trp_cls = item["trp_cls"]
-        trp_cls_idx = trp_cls_to_idx[trp_cls]
 
         img_enc = self.processor(images=image, return_tensors="pt")
         trp_enc = self.processor(text=trp_caption, return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
         
         return {
             "pixel_values": img_enc["pixel_values"].squeeze(0),
-            "trp_input_ids": trp_enc["input_ids"].squeeze(0),
-            "trp_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
-            "trp_cls": trp_cls_idx,
+            "text_input_ids": trp_enc["input_ids"].squeeze(0),
+            "text_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
         }
 
 
@@ -474,8 +471,8 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
-        processor = CLIPProcessor.from_pretrained(processor_name)
+        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
+        processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
             model_name,
@@ -486,21 +483,11 @@ def train_clip(args):
         orig_model = SiglipModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-        processor = SiglipProcessor.from_pretrained(processor_name)
+        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+        processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
-    main_print(f"🔧 Initializing Reasoning Classifier...")
-    backbone = model.module if hasattr(model, "module") else model
-    embed_dim = backbone.config.text_config.hidden_size
-    num_classes = 5 
-    text_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device).to(torch.bfloat16)
-    backbone.text_classifier = text_classifier
-    image_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device).to(torch.bfloat16)
-    backbone.image_classifier = image_classifier
-    main_print(f"   - Text classifier initialized: {text_classifier}")
-    main_print(f"   - Image classifier initialized: {image_classifier}")
 
     # ================================ 数据集配置 ================================
     # 读取parquet数据集
@@ -509,37 +496,83 @@ def train_clip(args):
 
     # ================================ 数据集配置（替换整段 pandas 读取与切分） ================================
     main_print(f"\n📊 Dataset Configuration:")
-    main_print(f"   - Loading from: {args.parquet_files}")
+    main_print(f"   - Loading from: {args.parquet_files_ReasonLite}")
+    main_print(f"   - Loading from: {args.parquet_files_ReasonPro}")
 
-    files = sorted(args.parquet_files)
-    main_print(f"📊 Loading {len(files)} parquet files...")
-    hf_ds = load_dataset(
+    files_ReasonLite = sorted(args.parquet_files_ReasonLite)
+    files_ReasonPro = sorted(args.parquet_files_ReasonPro)
+    main_print(f"📊 Loading {len(files_ReasonLite)} parquet files...")
+    main_print(f"📊 Loading {len(files_ReasonPro)} parquet files...")
+    hf_ds_ReasonLite = load_dataset(
         "parquet",
-        data_files={"train": files},   # 用 dict 明确 split
+        data_files={"train": files_ReasonLite},   # 用 dict 明确 split
         split="train",
         keep_in_memory=False
     )
-    main_print(f"   - Total samples (rows): {len(hf_ds)}")
+    hf_ds_ReasonPro = load_dataset(
+        "parquet",
+        data_files={"train": files_ReasonPro},   # 用 dict 明确 split
+        split="train",
+        keep_in_memory=False
+    )
+    main_print(f"   - ReasonLite samples: {len(hf_ds_ReasonLite)}")
+    main_print(f"   - ReasonPro samples: {len(hf_ds_ReasonPro)}")
 
-    # 2) 切分（用 HF 自带的 split，不会复制成 Python 对象）
+    # 2) 分别切分两个数据集（用 HF 自带的 split）
     if args.use_split:
-        split1 = hf_ds.train_test_split(test_size=0.2, seed=42)          # 8:2
-        train_hf = split1["train"]
-        tmp     = split1["test"].train_test_split(test_size=0.5, seed=42) # 2 -> 1:1
-        eval_hf, test_hf = tmp["train"], tmp["test"]
-        main_print(f"   - Dataset split (8:1:1): {len(train_hf)} train, {len(eval_hf)} eval, {len(test_hf)} test")
+        # ReasonLite 切分
+        split1_lite = hf_ds_ReasonLite.train_test_split(test_size=0.2, seed=42)
+        train_lite_hf = split1_lite["train"]
+        tmp_lite = split1_lite["test"].train_test_split(test_size=0.5, seed=42)
+        eval_lite_hf, test_lite_hf = tmp_lite["train"], tmp_lite["test"]
+        
+        # ReasonPro 切分
+        split1_pro = hf_ds_ReasonPro.train_test_split(test_size=0.2, seed=42)
+        train_pro_hf = split1_pro["train"]
+        tmp_pro = split1_pro["test"].train_test_split(test_size=0.5, seed=42)
+        eval_pro_hf, test_pro_hf = tmp_pro["train"], tmp_pro["test"]
+        
+        main_print(f"   - ReasonLite split: {len(train_lite_hf)} train, {len(eval_lite_hf)} eval, {len(test_lite_hf)} test")
+        main_print(f"   - ReasonPro split: {len(train_pro_hf)} train, {len(eval_pro_hf)} eval, {len(test_pro_hf)} test")
     else:
         if args.holdout_ratio > 0:
-            split = hf_ds.train_test_split(test_size=args.holdout_ratio, seed=42)
-            train_hf, eval_hf = split["train"], split["test"]
-            main_print(f"   - Holdout eval: {len(eval_hf)} ({args.holdout_ratio*100:.2f}%)")
+            # ReasonLite 切分
+            split_lite = hf_ds_ReasonLite.train_test_split(test_size=args.holdout_ratio, seed=42)
+            train_lite_hf, eval_lite_hf = split_lite["train"], split_lite["test"]
+            
+            # ReasonPro 切分
+            split_pro = hf_ds_ReasonPro.train_test_split(test_size=args.holdout_ratio, seed=42)
+            train_pro_hf, eval_pro_hf = split_pro["train"], split_pro["test"]
+            
+            main_print(f"   - ReasonLite holdout: {len(train_lite_hf)} train, {len(eval_lite_hf)} eval")
+            main_print(f"   - ReasonPro holdout: {len(train_pro_hf)} train, {len(eval_pro_hf)} eval")
         else:
-            train_hf, eval_hf = hf_ds, None
+            train_lite_hf, eval_lite_hf = hf_ds_ReasonLite, None
+            train_pro_hf, eval_pro_hf = hf_ds_ReasonPro, None
             main_print(f"   - No eval holdout")
 
-    # 3) 用 HF Dataset 构建你的自定义 Dataset（无需 to_dict('records')）
-    train_dataset = CLIPRDataset(train_hf, processor)
-    eval_dataset  = CLIPRDataset(eval_hf, processor) if eval_hf else None
+    # 3) 用不同的自定义 Dataset 类处理不同的数据格式
+    # ReasonLite 用 CLIPRLiteDataset（每个样本扩展成3个，因为有3个TRL caption）
+    train_lite_dataset = CLIPRLiteDataset(train_lite_hf, processor)
+    eval_lite_dataset = CLIPRLiteDataset(eval_lite_hf, processor) if eval_lite_hf else None
+    
+    # ReasonPro 用 CLIPRProDataset（1:1映射，每个样本1个TRP caption）
+    train_pro_dataset = CLIPRProDataset(train_pro_hf, processor)
+    eval_pro_dataset = CLIPRProDataset(eval_pro_hf, processor) if eval_pro_hf else None
+    
+    # 4) 合并处理后的数据集（使用 PyTorch 的 ConcatDataset）
+    # 处理后的格式已经统一：都是 (image, text_input_ids, text_attention_mask)
+    from torch.utils.data import ConcatDataset
+    train_dataset = ConcatDataset([train_lite_dataset, train_pro_dataset])
+    eval_dataset = ConcatDataset([eval_lite_dataset, eval_pro_dataset]) if (eval_lite_hf is not None or eval_pro_hf is not None) else None
+    
+    main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
+    main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
+    main_print(f"   - Combined train dataset size: {len(train_dataset)}")
+    
+    main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
+    main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
+    main_print(f"   - Combined train dataset size: {len(train_dataset)}")
 
     main_print(f"   - Train dataset size: {len(train_dataset)}")
     if eval_dataset:
@@ -550,11 +583,10 @@ def train_clip(args):
     main_print(f"\n🔍 Data Validation:")
     sample = train_dataset[0]
     main_print(f"   - Sample keys: {list(sample.keys())}")
-    main_print(f"   - TRP Input IDs shape: {sample['trp_input_ids'].shape}")
-    main_print(f"   - TRP Attention Mask shape: {sample['trp_attention_mask'].shape}")
-    main_print(f"   - TRP Class label: {sample['trp_cls']}")
+    main_print(f"   - Text Input IDs shape: {sample['text_input_ids'].shape}")
+    main_print(f"   - Text Attention Mask shape: {sample['text_attention_mask'].shape}")
     main_print(f"   - Pixel values shape: {sample['pixel_values'].shape}")
-    main_print(f"   - ✅ Stage 2 data format validated: (image, trp_text, trp_cls)")
+    main_print(f"   - ✅ Data format validated: (image, trl_text) - 3 TRL captions per image")
     
     # ================================ 训练参数配置 ================================
     # 计算总步数来确定实际的logging、save、eval步数
@@ -622,8 +654,7 @@ def train_clip(args):
     
     
     main_print(f"\n🎯 Loss Configuration:")
-    main_print(f"   - Contrastive loss (TRP): 1.0")
-    main_print(f"   - Adversarial classification loss weight (gamma_adv): {args.gamma_adv:.3f}")
+    main_print(f"   - Contrastive loss (TRL): 1.0")
     
     # ================================ 断点恢复配置 ================================
     resume_from_checkpoint = None
@@ -652,12 +683,10 @@ def train_clip(args):
     visual_lr = args.visual_lr
     text_lr = args.text_lr
     logit_scale_lr = args.logit_scale_lr
-    classifier_lr = args.classifier_lr
     main_print(f"   - Default learning rate: {default_lr}")
     main_print(f"   - Visual learning rate: {visual_lr}")
     main_print(f"   - Text learning rate: {text_lr}")
     main_print(f"   - Logit scale learning rate: {logit_scale_lr}")
-    main_print(f"   - Classifier learning rate: {classifier_lr}")
 
     optimizer_grouped_parameters = [
         # Vision Model parameters
@@ -713,7 +742,6 @@ def train_clip(args):
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
-        gamma_adv=args.gamma_adv,
         model_type=model_type,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
