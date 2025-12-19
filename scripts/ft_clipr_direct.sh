@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_direct
+#SBATCH --job-name=clipr336_ft_direct
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_direct.out
-#SBATCH --error=clipr_ft_direct.err
+#SBATCH --output=clipr336_ft_direct.out
+#SBATCH --error=clipr336_ft_direct.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -31,8 +31,8 @@ cd $WORK/fmohamma/CLIP-R/
 PARQUET_PATH_PRO="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_02.parquet"
 PARQUET_PATH_LITE="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
 
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_direct"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip336_r_direct"
 
 mkdir -p "$OUT_DIR"
 
@@ -89,7 +89,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_direct\"
+    --run_name \"clipr336_r_direct\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."
