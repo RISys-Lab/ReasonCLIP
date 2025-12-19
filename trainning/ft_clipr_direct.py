@@ -153,22 +153,8 @@ def parse_args():
     # Resume training parameters
     parser.add_argument("--resume_from_checkpoint", type=str, default=None,
                         help="Path to checkpoint directory to resume training from")
-
-    parser.add_argument("--gamma_adv", type=float, default=0.1,
-                        help="Gamma for adversarial classification loss")
     return parser.parse_args()
 
-def make_tb_schedule(start=0.70, mid=0.50, end=0.60, t1=0.20, t2=0.80):
-    def _schedule(step, max_steps):
-        p = step / max_steps
-        if p <= t1:
-            return start
-        elif p <= t2:
-            # 线性从 start -> mid
-            return start + (mid - start) * ((p - t1) / (t2 - t1))
-        else:
-            return end
-    return _schedule
 
 def compute_strategy_steps(strategy, ratio_value, steps_value, ratio_multiplier, steps_per_epoch):
     if strategy == "epoch":
@@ -177,20 +163,6 @@ def compute_strategy_steps(strategy, ratio_value, steps_value, ratio_multiplier,
         return max(1, int(ratio_multiplier * ratio_value)), "steps"
     else:  # steps
         return steps_value, "steps"
-
-# class GradReverse(Function):
-#     @staticmethod
-#     def forward(ctx, x, lambd):
-#         ctx.lambd = lambd
-#         return x.view_as(x)
-
-#     @staticmethod
-#     def backward(ctx, grad_output):
-#         # 对 backbone 的梯度乘上 -lambda，实现“最大化 classifier loss”
-#         return -ctx.lambd * grad_output, None
-
-# def grad_reverse(x, lambd=1.0):
-#     return GradReverse.apply(x, lambd)
 
 class BestModelCallback(TrainerCallback):
     def __init__(self):
@@ -215,52 +187,11 @@ class BestModelCallback(TrainerCallback):
                 self.best_eval_loss = eval_loss
                 main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
-class ReasoningClassifier(nn.Module):
-    def __init__(self, embed_dim: int, num_classes: int):
-        super().__init__()
-        self.fc = nn.Linear(embed_dim, num_classes)
-
-    def forward(self, x):
-        # x: [B, D]
-        return self.fc(x)
 
 class CLIPTrainer(Trainer):
-    def __init__(self, gamma_adv=0.1, model_type="clip",orig_model=None, num_classes=5, *args, **kwargs):
+    def __init__(self, model_type="clip",orig_model=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.gamma_adv = gamma_adv
-        self.num_classes = num_classes
-        self.model_type = model_type  # "clip" 或 "siglip"
-        self.orig_model = orig_model  # 允许外部传进来
-        self.orig_state = None
-        self.backbone = None  # 延迟初始化，在 compute_loss 中获取（此时 model 已经被 DDP 包装）
-        self.classifier = None  # 延迟初始化
-    
-    def _initialize_l2_reg(self, model=None):
-        """在模型移动到设备后，安全地初始化原始权重状态"""
-        if self.orig_state is None and self.orig_model is not None:
-            # 获取模型所在设备（兼容 DDP 包装的模型）
-            if model is not None:
-                backbone = model.module if hasattr(model, "module") else model
-            elif self.backbone is not None:
-                backbone = self.backbone
-            else:
-                backbone = self.model.module if hasattr(self.model, "module") else self.model
-            device = next(backbone.parameters()).device
-            orig_device = next(self.orig_model.parameters()).device
-            if orig_device != device:
-                self.orig_model = self.orig_model.to(device)
-            self.orig_state = {
-                n: p.detach().clone().to(device, dtype=torch.float32)
-                for n, p in self.orig_model.named_parameters()
-            }
-            main_print(f"[L2 Reg] Initialized orig_state on device: {device}")
-
-    # @staticmethod
-    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
-    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
-    #     pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
-    #     return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
+        self.model_type = model_type  # "clip" 或 "siglip
     
     @staticmethod
     def _siglip_logistic_loss(
@@ -285,16 +216,10 @@ class CLIPTrainer(Trainer):
         return loss
 
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None,use_sigmoid_loss=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         # 动态获取 backbone（此时 model 已经被 DDP 包装）
-        if self.backbone is None:
-            self.backbone = model.module if hasattr(model, "module") else model
-            if not hasattr(self.backbone, "text_classifier") or not hasattr(self.backbone, "image_classifier"):
-                raise ValueError("Classifiers (text/image) not found in backbone! Make sure to init them in train_clip.")
+        backbone = model.module if hasattr(model, "module") else model
         
-        if self.orig_model is not None and self.orig_state is None:
-            self._initialize_l2_reg(model)
-
         # ---- helper: gather across GPUs but keep local slice with gradient ----
         def gather_with_local_grad(x, accelerator):
             if accelerator.num_processes == 1:
@@ -310,37 +235,17 @@ class CLIPTrainer(Trainer):
                     parts.append(gathered[s:e])
             return torch.cat(parts, dim=0)
 
-        def all_gather_with_local_grad(x: torch.Tensor) -> torch.Tensor:
-            if not (dist.is_available() and dist.is_initialized()):
-                return x
-            world = dist.get_world_size()
-            rank = dist.get_rank()
-            xs = [torch.zeros_like(x) for _ in range(world)]
-            dist.all_gather(xs, x.detach())
-            xs[rank] = x
-            return torch.cat(xs, dim=0)
         # ---- unpack ----
         device = inputs["pixel_values"].device
 
         # ---- forward encoders ----
         image_features = self.backbone.get_image_features(pixel_values=inputs["pixel_values"])
-        trp_text_features = self.backbone.get_text_features(
-            input_ids=inputs["trp_input_ids"],
-            attention_mask=inputs["trp_attention_mask"],
+        text_features = self.backbone.get_text_features(
+            input_ids=inputs["text_input_ids"],
+            attention_mask=inputs["text_attention_mask"],
         )
         image_features = F.normalize(image_features, dim=-1)
-        trp_text_features = F.normalize(trp_text_features, dim=-1)
-
-
-        cls_labels = inputs["trp_cls"].to(trp_text_features.device).long()
-        cls_size = cls_labels.size(0)
-        num_classes = self.num_classes
-        one_hot_labels = torch.zeros(cls_size, num_classes, device=image_features.device, dtype=image_features.dtype)
-        one_hot_labels.scatter_(1, cls_labels.unsqueeze(1), 1.0)
-        text_logits = self.backbone.text_classifier(trp_text_features)
-        loss_cls_text = F.cross_entropy(text_logits, cls_labels)
-        image_logits = self.backbone.image_classifier(image_features)
-        loss_cls_image = F.binary_cross_entropy_with_logits(image_logits, one_hot_labels)
+        text_features = F.normalize(text_features, dim=-1)
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():
@@ -349,17 +254,17 @@ class CLIPTrainer(Trainer):
                 self.backbone.logit_scale.data.clamp_(max=math.log(50.0))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
-        if use_sigmoid_loss and self.model_type == "siglip":
-            logit_bias = getattr(backbone, "logit_bias", None)
-            bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
+        logit_bias = getattr(self.backbone, "logit_bias", None)
+        if logit_bias is not None:
+            bias = logit_bias.to(image_features.dtype)
         else:
-            bias = 0.0  # CLIP 模式强制无 Bias
+            bias = 0.0
 
         # ---- cross-GPU gather (only local slice keeps grad) ----
         B = image_features.size(0)
         rank = accelerator.process_index
         all_image = gather_with_local_grad(image_features, accelerator)   # [world*B, D]
-        all_trp   = gather_with_local_grad(trp_text_features, accelerator)
+        all_trp   = gather_with_local_grad(text_features, accelerator)
         # all_image = all_gather_with_local_grad(image_features)
         # all_trp = all_gather_with_local_grad(trp_text_features)
 
@@ -369,16 +274,15 @@ class CLIPTrainer(Trainer):
 
         # ---- TRP branch ----
         trp_logits_per_image = logit_scale * (image_features     @ all_trp.t()) + bias
-        trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t()) + bias
+        trp_logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias
 
-        if use_sigmoid_loss and self.model_type == "siglip":
-            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
-        else:
-            # we also use cross entropy loss for siglip
+        if self.model_type == "clip":
             trp_loss = 0.5 * (
                 F.cross_entropy(trp_logits_per_image, labels_global) +
                 F.cross_entropy(trp_logits_per_text,  labels_global)
             )
+        else:  # "siglip"
+            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
 
         del trp_logits_per_image, trp_logits_per_text
 
@@ -570,7 +474,7 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14"
+        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
         processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -771,15 +675,6 @@ def train_clip(args):
             "params": [p for n, p in model.named_parameters() if "logit_scale" in n and p.requires_grad],
             "lr": logit_scale_lr,
             "weight_decay": 0.0 # 通常不对 logit_scale 应用 weight decay
-        },
-        # Classifier parameters
-        {
-            "params": [p for n, p in model.named_parameters() if "text_classifier" in n and p.requires_grad],
-            "lr": classifier_lr,
-        },
-        {
-            "params": [p for n, p in model.named_parameters() if "image_classifier" in n and p.requires_grad],
-            "lr": classifier_lr,
         },
     ]
 

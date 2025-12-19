@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_336_ft_s2
+#SBATCH --job-name=clipr_ft_s2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_336_ft_s2.out
-#SBATCH --error=clipr_336_ft_s2.err
+#SBATCH --output=clipr_ft_s2.out
+#SBATCH --error=clipr_ft_s2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -29,9 +29,9 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_02.parquet"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_336_s1/run_1215_081150/finetune_weights/checkpoint-1280"
+MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s1/run_1207_155136/finetune_weights/checkpoint-1280"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s2"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s2"
 
 mkdir -p "$OUT_DIR"
 

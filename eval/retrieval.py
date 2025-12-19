@@ -628,7 +628,7 @@ def parse_args():
     parser.add_argument(
         "--model_path",
         type=str,
-        default="fesvhtr/clip336-r-s1-run1217-1280",
+        default="fesvhtr/clip336-r-s2-run1218-505",
         help="HuggingFace model ID or local path)"
     )
     
