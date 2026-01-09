@@ -425,7 +425,7 @@ def run_retrieval_evaluation(
     print(f"Loading {model_type.upper()} model and processor...")
     if model_type.lower() == "clip":
         model = AutoModel.from_pretrained(model_id)
-        processor = AutoProcessor.from_pretrained("openai/clip-vit-large-patch14-336")
+        processor = AutoProcessor.from_pretrained("openai/clip-vit-large-patch14")
     elif model_type.lower() == "siglip":
         model = SiglipModel.from_pretrained(model_id)
         # processor = SiglipProcessor.from_pretrained("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384")
@@ -628,7 +628,7 @@ def parse_args():
     parser.add_argument(
         "--model_path",
         type=str,
-        default="fesvhtr/clip336-r-s2-run1218-505",
+        default="fesvhtr/clip-r-d-run1219-621",
         help="HuggingFace model ID or local path)"
     )
     
@@ -665,7 +665,7 @@ def parse_args():
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda:0",
+        default="cuda:3",
         help="Device to use (e.g., 'cuda:0', 'cuda:1'). If None, auto-detect"
     )
     

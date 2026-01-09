@@ -1,6 +1,8 @@
 import argparse
 import os
 import io
+import re
+import ast
 
 import torch
 import numpy as np
@@ -10,6 +12,65 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
+
+
+def _parse_available_configs_from_err(msg: str) -> list[str]:
+    """
+    datasets sometimes raises:
+      ValueError: Couldn't find cache for <ds> for config 'default'
+      Available configs in the cache: [...]
+    We parse the list so we can fall back automatically when offline / default config doesn't exist.
+    """
+    m = re.search(r"Available configs in the cache:\s*(\[[^\]]*\])", msg)
+    if not m:
+        return []
+    try:
+        v = ast.literal_eval(m.group(1))
+    except Exception:
+        return []
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v]
+    return []
+
+
+def _load_model_and_processor(
+    model_id: str,
+    model_type: str | None,
+    processor_name: str | None,
+    device: str | None,
+):
+    """
+    Load model + processor once and reuse across subset evaluations.
+    Returns: (model, processor, resolved_model_type, resolved_processor_name, resolved_device)
+    """
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if model_type == "auto" or model_type is None:
+        mid = model_id.lower()
+        model_type = "siglip" if "siglip" in mid else "clip"
+
+    if model_type.lower() == "clip":
+        model = AutoModel.from_pretrained(model_id)
+        if processor_name is None:
+            resolved_processor_name = model_id
+        else:
+            resolved_processor_name = processor_name
+        processor = AutoProcessor.from_pretrained(resolved_processor_name)
+        print(f"Loaded CLIP model: {model_id} and processor: {resolved_processor_name}")
+    elif model_type.lower() == "siglip":
+        model = SiglipModel.from_pretrained(model_id)
+        if processor_name is None:
+            resolved_processor_name = model_id
+        else:
+            resolved_processor_name = processor_name
+        processor = SiglipProcessor.from_pretrained(resolved_processor_name)
+        print(f"Loaded SigLIP model: {model_id} and processor: {resolved_processor_name}")
+    else:
+        raise ValueError("model_type must be one of: clip, siglip, auto")
+
+    model.to(device).eval()
+    return model, processor, model_type, resolved_processor_name, device
 
 
 class SugarCrepePPDataset(torch.utils.data.Dataset):
@@ -93,41 +154,39 @@ def _load_hf_dataset(dataset_name: str, split: str, config_name: str | None = No
     Load dataset with (optional) config/subset name and split.
     SugarCrepe_pp uses multiple configs (subsets), e.g. replace_attribute, swap_object, ...
     """
-    if config_name is None:
-        return load_dataset(dataset_name, split=split)
-    # In HF datasets, config name is passed as the second positional argument
-    return load_dataset(dataset_name, config_name, split=split)
-
-
-def _resolve_cached_subsets(dataset_name: str, split: str) -> list[str]:
-    """
-    In offline mode, use configs that are actually present in local cache.
-    We'll probe known SugarCrepe_pp configs and keep only those that can be loaded.
-    """
-    # Note: cache can contain a misspelling 'swap_atribute' (as in your error message)
-    candidates = [
-        "replace_attribute",
-        "replace_object",
-        "replace_relation",
-        "swap_attribute",
-        "swap_atribute",
-        "swap_object",
-    ]
-    ok: list[str] = []
-    for cfg in candidates:
+    if config_name is not None:
+        # In HF datasets, config name is passed as the second positional argument
         try:
-            _ = load_dataset(dataset_name, cfg, split=split)
-            ok.append(cfg)
-        except Exception:
-            continue
-    # de-dup while preserving order
-    seen = set()
-    out: list[str] = []
-    for x in ok:
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
-    return out
+            return load_dataset(dataset_name, config_name, split=split)
+        except ValueError as e:
+            # Sometimes config_name is "default" even though the cached dataset only has
+            # real configs like replace_attribute/swap_object (offline mode).
+            configs = _parse_available_configs_from_err(str(e))
+            if configs and str(config_name).strip().lower() == "default":
+                fallback_cfg = configs[0]
+                print(
+                    f"[WARN] Requested config '{config_name}' is not available in cache for '{dataset_name}'. "
+                    f"Falling back to cached config '{fallback_cfg}'. "
+                    f"Pass --subset to choose explicitly."
+                )
+                return load_dataset(dataset_name, fallback_cfg, split=split)
+            raise
+
+    # If user didn't specify config, try "default" behavior first.
+    try:
+        return load_dataset(dataset_name, split=split)
+    except ValueError as e:
+        # Common when dataset has multiple configs but no 'default', especially in offline mode.
+        configs = _parse_available_configs_from_err(str(e))
+        if configs:
+            fallback_cfg = configs[0]
+            print(
+                f"[WARN] Dataset '{dataset_name}' has no usable default config in cache. "
+                f"Falling back to config '{fallback_cfg}'. "
+                f"Pass --subset to choose explicitly."
+            )
+            return load_dataset(dataset_name, fallback_cfg, split=split)
+        raise
 
 
 def run_sugarcrepe_pp_eval(
@@ -144,16 +203,21 @@ def run_sugarcrepe_pp_eval(
     config_name: str | None = None,
     save_json: bool = True,
     save_txt: bool = True,
+    model=None,
+    processor=None,
 ):
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    if model_type == "auto" or model_type is None:
-        mid = model_id.lower()
-        if "siglip" in mid:
-            model_type = "siglip"
-        else:
-            model_type = "clip"
+    # If model/processor are not provided, load them here (single-subset mode).
+    # In ALL-SUBSETS mode, caller passes preloaded objects to avoid reloading 5x.
+    if model is None or processor is None:
+        model, processor, model_type, processor_name, device = _load_model_and_processor(
+            model_id=model_id,
+            model_type=model_type,
+            processor_name=processor_name,
+            device=device,
+        )
+    else:
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
@@ -163,22 +227,6 @@ def run_sugarcrepe_pp_eval(
     print(f"Batch size: {batch_size}")
     if max_samples is not None:
         print(f"Max samples: {max_samples}")
-
-    if model_type.lower() == "clip":
-        model = AutoModel.from_pretrained(model_id)
-        if processor_name is None:
-            # Keep consistent with retrieval.py defaults
-            processor_name = "openai/clip-vit-large-patch14"
-        processor = AutoProcessor.from_pretrained(processor_name)
-    elif model_type.lower() == "siglip":
-        model = SiglipModel.from_pretrained(model_id)
-        if processor_name is None:
-            processor_name = "google/siglip2-so400m-patch14-384"
-        processor = SiglipProcessor.from_pretrained(processor_name)
-    else:
-        raise ValueError("model_type must be one of: clip, siglip, auto")
-
-    model.to(device).eval()
 
     ds = _load_hf_dataset(dataset_name, split, config_name=config_name)
     cfg_msg = f", subset={config_name}" if config_name is not None else ""
@@ -339,23 +387,35 @@ def run_sugarcrepe_pp_eval_by_subsets(
     """
     Evaluate ITT/TOT on each dataset subset (config) and write a single summary txt.
     """
-    # Resolve subsets. In offline mode, get_dataset_config_names() can yield a misleading ['default'].
-    if os.environ.get("HF_DATASETS_OFFLINE") == "1" or os.environ.get("HF_HUB_OFFLINE") == "1":
-        subsets = _resolve_cached_subsets(dataset_name, split)
-        if not subsets:
-            try:
-                subsets = get_dataset_config_names(dataset_name)
-            except Exception:
-                subsets = []
-    else:
+    try:
         subsets = get_dataset_config_names(dataset_name)
+    except Exception:
+        subsets = []
+    # Offline/cached edge case: get_dataset_config_names may return ["default"] even when
+    # the cached dataset only has real configs (replace_attribute, swap_object, ...).
+    if not subsets or (len(subsets) == 1 and str(subsets[0]).strip().lower() == "default"):
+        cached_configs: list[str] = []
+        try:
+            # Force a cache lookup that triggers the helpful "Available configs in the cache" message.
+            load_dataset(dataset_name, "default", split=split)
+        except ValueError as e:
+            cached_configs = _parse_available_configs_from_err(str(e))
+        except Exception:
+            cached_configs = []
 
-    # Drop 'default' if present (SugarCrepe_pp doesn't have a cached default config)
-    subsets = [s for s in subsets if s not in (None, "default")]
+        if cached_configs:
+            subsets = cached_configs
+        else:
+            # Last resort: run a single pass and let _load_hf_dataset auto-pick a cached config.
+            subsets = [None]
 
-    if not subsets:
-        # Fallback: treat as a single dataset without configs
-        subsets = [None]
+    # Load model/processor ONCE and reuse across subsets.
+    model, processor, resolved_model_type, resolved_processor_name, device = _load_model_and_processor(
+        model_id=model_id,
+        model_type=model_type,
+        processor_name=processor_name,
+        device=device,
+    )
 
     all_results = []
     for cfg in subsets:
@@ -364,7 +424,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
         print("=" * 80)
         res = run_sugarcrepe_pp_eval(
             model_id=model_id,
-            model_type=model_type,
+            model_type=resolved_model_type,
             dataset_name=dataset_name,
             split=split,
             image_dir=image_dir,
@@ -373,10 +433,12 @@ def run_sugarcrepe_pp_eval_by_subsets(
             max_samples=max_samples,
             # Do NOT save per-subset files; we'll save one consolidated txt at the end.
             results_dir=None,
-            processor_name=processor_name,
+            processor_name=resolved_processor_name,
             config_name=cfg,
             save_json=False,
             save_txt=False,
+            model=model,
+            processor=processor,
         )
         all_results.append(res)
 
@@ -414,7 +476,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
 def parse_args():
     parser = argparse.ArgumentParser(description="SugarCrepe_pp negative caption discrimination eval")
 
-    parser.add_argument("--model_path", type=str, default="openai/clip-vit-large-patch14", help="HF model id or local path")
+    parser.add_argument("--model_path", type=str, default="/home/muzammal/.cache/huggingface/hub/models--fesvhtr--clip336-r-s2-run1218-505/snapshots/f2b8cf27d26196ce98d8109df1986f34b2b4163b", help="HF model id or local path")
     parser.add_argument("--model_name", type=str, default="clip", choices=["clip", "siglip", "auto"], help="Model type")
 
     parser.add_argument("--dataset_name", type=str, default="Aman-J/SugarCrepe_pp", help="HF dataset id")
@@ -422,14 +484,21 @@ def parse_args():
 
     parser.add_argument("--image_dir", type=str, default="/home/muzammal/Projects/CLIP-R/data/val2017", help="Local folder containing images, joined with filename")
 
-    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
-    parser.add_argument("--device", type=str, default="cuda:0", help="cuda:0/cpu; default auto")
+    parser.add_argument("--batch_size", type=int, default=384, help="Batch size")
+    parser.add_argument("--device", type=str, default="cuda:1", help="cuda:0/cpu; default auto")
     parser.add_argument("--max_samples", type=int, default=None, help="Optional cap for debugging")
+    parser.add_argument(
+        "--subset",
+        type=str,
+        default=None,
+        help="Optional HF dataset config/subset name (e.g. replace_attribute). "
+        "If omitted, we run ALL subsets when available; if offline and configs can't be fetched, we'll fall back to a cached config.",
+    )
 
     parser.add_argument(
         "--processor_name",
         type=str,
-        default=None,
+        default="/home/muzammal/.cache/huggingface/hub/models--openai--clip-vit-large-patch14-336/snapshots/ce19dc912ca5cd21c8a653c79e251e808ccabcd1",
         help="Optional processor name (defaults: CLIP->openai/clip-vit-large-patch14-336, SigLIP->google/siglip2-so400m-patch14-384)",
     )
 
@@ -450,16 +519,33 @@ if __name__ == "__main__":
     if results_dir is not None and str(results_dir).strip() == "":
         results_dir = None
 
-    run_sugarcrepe_pp_eval_by_subsets(
-        model_id=args.model_path,
-        model_type=args.model_name,
-        dataset_name=args.dataset_name,
-        split=args.split,
-        image_dir=args.image_dir,
-        batch_size=args.batch_size,
-        device=args.device,
-        max_samples=args.max_samples,
-        results_dir=results_dir,
-        processor_name=args.processor_name,
-    )
+    if args.subset is not None and str(args.subset).strip() != "":
+        run_sugarcrepe_pp_eval(
+            model_id=args.model_path,
+            model_type=args.model_name,
+            dataset_name=args.dataset_name,
+            split=args.split,
+            image_dir=args.image_dir,
+            batch_size=args.batch_size,
+            device=args.device,
+            max_samples=args.max_samples,
+            results_dir=results_dir,
+            processor_name=args.processor_name,
+            config_name=args.subset,
+            save_json=True,
+            save_txt=True,
+        )
+    else:
+        run_sugarcrepe_pp_eval_by_subsets(
+            model_id=args.model_path,
+            model_type=args.model_name,
+            dataset_name=args.dataset_name,
+            split=args.split,
+            image_dir=args.image_dir,
+            batch_size=args.batch_size,
+            device=args.device,
+            max_samples=args.max_samples,
+            results_dir=results_dir,
+            processor_name=args.processor_name,
+        )
 
