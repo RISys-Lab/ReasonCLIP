@@ -30,6 +30,5 @@ python eval/retrieval.py \
     --dataset_name flickr30k \
     --split test \
     --batch_size 512 \
-    --num_workers 8 \
     --device cuda:0 \
     --results_dir $WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k
