@@ -24,7 +24,7 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 python eval/retrieval.py \
-    --model_path /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_direct/run_1219_031715/finetune_weights/checkpoint-621 \
+    --model_path /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s2/run_1219_021442/finetune_weights/checkpoint-505 \
     --processor_path /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14 \
     --model_name clip \
     --dataset_name flickr30k \
