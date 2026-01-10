@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=eval_flickr
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
