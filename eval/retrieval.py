@@ -372,7 +372,7 @@ def compute_retrieval_metrics(image_features, text_features, return_ranks=False,
 def run_retrieval_evaluation(
     model_id="google/siglip2-so400m-patch14-384",
     model_type="clip",  # "clip" or "siglip"
-    processor_name=None,  # optional processor path/name; default to model_id
+    processor_path=None,  # optional processor path/name; default to model_id
     dataset_name="mscoco", 
     split="test",
     batch_size=64,
@@ -419,7 +419,7 @@ def run_retrieval_evaluation(
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
     print(f"Model type: {model_type.upper()}")
-    print(f"Processor: {processor_name or model_id}")
+    print(f"Processor: {processor_path or model_id}")
     print(f"Dataset: {dataset_name} ({split})")
     print(f"Batch size: {batch_size}, Workers: {num_workers}")
     
@@ -427,11 +427,11 @@ def run_retrieval_evaluation(
     print(f"Loading {model_type.upper()} model and processor...")
     if model_type.lower() == "clip":
         model = AutoModel.from_pretrained(model_id)
-        proc_id = processor_name or model_id
+        proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     elif model_type.lower() == "siglip":
         model = SiglipModel.from_pretrained(model_id)
-        proc_id = processor_name or model_id
+        proc_id = processor_path or model_id
         processor = SiglipProcessor.from_pretrained(proc_id)
     else:
         raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip' or 'siglip'")
@@ -636,6 +636,13 @@ def parse_args():
     )
     
     parser.add_argument(
+        "--processor_path",
+        type=str,
+        default=None,
+        help="HuggingFace processor ID or local path (default: same as --model_path)",
+    )
+
+    parser.add_argument(
         "--model_name",
         type=str,
         default="clip",
@@ -643,12 +650,7 @@ def parse_args():
         help="Model type: 'clip' or 'siglip'"
     )
     
-    parser.add_argument(
-        "--processor_name",
-        type=str,
-        default=None,
-        help="HuggingFace processor ID or local path (default: same as --model_path)",
-    )
+    
 
     parser.add_argument(
         "--dataset_name",
@@ -725,7 +727,7 @@ if __name__ == "__main__":
     print("="*80)
     print(f"Model Path: {args.model_path}")
     print(f"Model Type: {args.model_name.upper()}")
-    print(f"Processor: {args.processor_name or args.model_path}")
+    print(f"Processor: {args.processor_path or args.model_path}")
     print(f"Dataset: {args.dataset_name.upper()}")
     print(f"Split: {args.split}")
     print(f"Batch Size: {args.batch_size}")
@@ -735,7 +737,7 @@ if __name__ == "__main__":
     results = run_retrieval_evaluation(
         model_id=args.model_path,
         model_type=args.model_name,
-        processor_name=args.processor_name,
+        processor_path=args.processor_path,
         dataset_name=args.dataset_name,
         split=args.split,
         batch_size=args.batch_size,
