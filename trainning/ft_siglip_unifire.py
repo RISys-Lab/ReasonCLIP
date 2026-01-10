@@ -151,42 +151,32 @@ def parse_args():
 #                 print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class SiglipTrainer(Trainer):
-    # @staticmethod
-    # def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-    #     """
-    #     SigLIP 风格的 logistic 对比损失：
-    #     - logits: [B, N]，每一行是一个 query 与所有候选的相似度
-    #     - labels: [B]，每一行中正样本的索引
-    #     """
-    #     targets = torch.zeros_like(logits, dtype=logits.dtype)
-    #     targets.scatter_(1, labels.unsqueeze(1), 1.0)
-    #     # 简单设置正样本权重为 (#neg)
-    #     pos_weight = torch.tensor(logits.shape[1] - 1, device=logits.device, dtype=logits.dtype)
-    #     return F.binary_cross_entropy_with_logits(logits, targets, pos_weight=pos_weight)
-
     @staticmethod
-    def _siglip_logistic_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def _bce_logits_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        SigLIP 风格的 logistic loss:
-        logits: [B, N]，N = world_size * B
-        labels: [B]，每一行正样本所在的列索引（全局索引）
+        CLIP-R 里使用的 BCEWithLogits 对比损失写法（参考 ft_clip_r_s2.py）：
+        - logits: [B, N]，每行是一个 query 与所有候选的相似度（N = world_size * B）
+        - labels: [B]，每行正样本在该行中的列索引（全局索引）
+        通过 one-hot target + pos_weight=(N-1) 来强调正样本（与 SigLIP 的 sigmoid 对比形式等价实现）。
         """
-        B = logits.size(0)
-        device = logits.device
-
-        # 构造 +1 / -1 的 label matrix
-        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
-        row_idx = torch.arange(B, device=device)
-        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
-
-        per_pair = -F.logsigmoid(label_matrix * logits)
-        loss = per_pair.sum(dim=1).mean()
-        return loss
+        targets = torch.zeros_like(logits, dtype=torch.float32)
+        targets.scatter_(1, labels.unsqueeze(1), 1.0)
+        pos_weight = torch.tensor(
+            logits.shape[1] - 1,
+            device=logits.device,
+            dtype=torch.float32,
+        )
+        return F.binary_cross_entropy_with_logits(
+            logits.float(),
+            targets,
+            pos_weight=pos_weight,
+        )
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """
-        使用全局负样本（跨 GPU gather）的 SigLIP 对比损失，实现真正的大 batch 训练。
-        使用 Accelerator 的 gather 方法，而不是底层的 dist.all_gather。
+        使用全局负样本（跨 GPU gather）的对比损失，实现真正的大 batch 训练。
+        这里按 CLIP-R 的实现改为 BCEWithLogits(one-hot + pos_weight)，并同时计算
+        image→text 与 text→image 两个方向的 loss 取平均。
         """
         # 1) 前向：拿到图文特征（SigLIP2Model 会返回 image_embeds / text_embeds）
         #    - FixRes: 只需要 input_ids / pixel_values
@@ -250,15 +240,17 @@ class SiglipTrainer(Trainer):
 
         # 5) 构造对比 logits（每个样本与全局所有样本做对比）
         logits_per_image = logit_scale * (image_features @ all_text.t()) + bias   # [B, world*B]
-        # logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
+        logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias  # [B, world*B]
 
-
-        loss = self._siglip_logistic_loss(logits_per_image, labels)
+        # 与 CLIP 的双向 CE 类似，这里做双向 BCE loss，然后取平均
+        loss_i2t = self._bce_logits_loss(logits_per_image, labels)
+        loss_t2i = self._bce_logits_loss(logits_per_text, labels)
+        loss = 0.5 * (loss_i2t + loss_t2i)
 
         if return_outputs:
             # 可选：把新的 logits 挂到 outputs 上，方便调试/可视化
             outputs.logits_per_image = logits_per_image.detach()
-            # outputs.logits_per_text = logits_per_text.detach()
+            outputs.logits_per_text = logits_per_text.detach()
             return loss, outputs
 
         return loss
