@@ -12,6 +12,8 @@
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=64G
 
+set -euo pipefail
+
 export TOKENIZERS_PARALLELISM=false
 export NCCL_DEBUG=WARN
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -23,12 +25,32 @@ module load cuda/11.8
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-python eval/retrieval.py \
-    --model_path /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s2/run_1219_021442/finetune_weights/checkpoint-505 \
-    --processor_path /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14 \
+# 4 (model_path, processor_path) pairs
+models=(
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_336_direct/run_1219_114356/finetune_weights/checkpoint-608"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_b32_direct/run_1219_112829/finetune_weights/checkpoint-466"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_b32_s1/run_0109_211647/finetune_weights/checkpoint-853"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
+)
+
+processors=(
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
+)
+
+
+for i in "${!models[@]}"; do
+  python eval/retrieval.py \
+    --model_path "${models[$i]}" \
+    --processor_path "${processors[$i]}" \
     --model_name clip \
     --dataset_name flickr30k \
     --split test \
     --batch_size 512 \
     --device cuda:0 \
-    --results_dir $WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
+done
+
+wait
