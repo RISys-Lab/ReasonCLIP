@@ -11,6 +11,7 @@ import json
 import os
 import requests
 import argparse
+from collections import defaultdict
 
 
 class RetrievalDataset(torch.utils.data.Dataset):
@@ -174,6 +175,61 @@ def collate_retrieval_fn(batch, processor):
     indices = torch.tensor(indices)
     
     return image_inputs, text_inputs, indices
+
+
+def load_coco_captions_val2017(captions_json_path: str):
+    """
+    Load COCO captions from the official annotations file, e.g.:
+      annotations/captions_val2017.json
+
+    Output format: list[dict] where each item has:
+      - filename: str (e.g. "000000123456.jpg")
+      - captions: list[str] (usually 5 captions per image in val2017)
+      - image_id: int
+    """
+    with open(captions_json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    images = data.get("images", [])
+    annotations = data.get("annotations", [])
+
+    id_to_filename = {}
+    for img in images:
+        # official: {"license":..., "file_name":"000000....jpg", "coco_url":..., "height":..., "width":..., "id":...}
+        if "id" in img and "file_name" in img:
+            id_to_filename[int(img["id"])] = str(img["file_name"])
+
+    caps_by_image = defaultdict(list)
+    for ann in annotations:
+        if "image_id" not in ann:
+            continue
+        image_id = int(ann["image_id"])
+        cap = ann.get("caption", "")
+        if cap is None:
+            cap = ""
+        caps_by_image[image_id].append(str(cap))
+
+    samples = []
+    for image_id, filename in id_to_filename.items():
+        caps = caps_by_image.get(image_id, [])
+        if not caps:
+            continue
+        # COCO val2017 captions are typically 5 per image; keep deterministic first 5.
+        if len(caps) >= 5:
+            caps = caps[:5]
+        else:
+            # Pad by repeating to reach 5 (RetrievalDataset expects 5 for Karpathy eval)
+            while len(caps) < 5:
+                caps.extend(caps[: 5 - len(caps)])
+        samples.append(
+            {
+                "filename": filename,
+                "captions": caps,
+                "image_id": image_id,
+            }
+        )
+
+    return samples
 
 
 def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, device=None):
@@ -382,6 +438,7 @@ def run_retrieval_evaluation(
     device=None,
     use_karpathy_eval=True,  # Use 5-caption Karpathy evaluation
     local_image_dir=None,  # ✅ 本地图片目录
+    coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
     results_dir=None  # 结果保存目录
 ):
     """
@@ -441,11 +498,17 @@ def run_retrieval_evaluation(
     # Load dataset using Karpathy splits (standard for retrieval evaluation)
     print("Loading dataset...")
     if dataset_name.lower() == "mscoco":
-        print("📥 Using COCO Karpathy split - standard for retrieval evaluation")
-        # Karpathy split: validation (5K) and test (5K) - perfect for standard evaluation
-        # ds = load_dataset("/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/coco-karpathy", split=split)
-        ds = load_dataset("yerevann/coco-karpathy", split="validation")
-        print(f"✅ Loaded COCO Karpathy {split} split (5K samples)")
+        if coco_captions_json:
+            if not local_image_dir:
+                raise ValueError("For local COCO captions json, you must also pass --local_image_dir pointing to val2017/.")
+            print("📥 Using local COCO val2017 captions json (official annotations)")
+            ds = load_coco_captions_val2017(coco_captions_json)
+            print(f"✅ Loaded local COCO val2017: {len(ds)} images (from {coco_captions_json})")
+        else:
+            print("📥 Using COCO Karpathy split from HF (fallback)")
+            # Karpathy split: validation (5K) and test (5K)
+            ds = load_dataset("yerevann/coco-karpathy", split="validation")
+            print(f"✅ Loaded COCO Karpathy split (validation): {len(ds)} samples")
     elif dataset_name.lower() == "flickr30k":
         ds = load_dataset("nlphuji/flickr30k", split="test")
         print(f"📊 Flickr30K test split loaded: {len(ds)} samples")
@@ -696,6 +759,15 @@ def parse_args():
     )
     
     parser.add_argument(
+        "--coco_captions_json",
+        type=str,
+        default=None,
+        help="Path to official COCO captions json (e.g. annotations/captions_val2017.json). "
+             "If provided with --dataset_name mscoco, we will load captions locally instead of HF Karpathy split. "
+             "Requires --local_image_dir pointing to val2017/.",
+    )
+
+    parser.add_argument(
         "--use_karpathy_eval",
         action="store_true",
         default=True,
@@ -745,6 +817,7 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         use_karpathy_eval=args.use_karpathy_eval,
         local_image_dir=args.local_image_dir,
+        coco_captions_json=args.coco_captions_json,
         results_dir=args.results_dir
     )
     

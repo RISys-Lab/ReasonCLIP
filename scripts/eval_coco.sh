@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_flickr
+#SBATCH --job-name=eval_coco
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=eval_flickr.out
-#SBATCH --error=eval_flickr.err
+#SBATCH --output=eval_coco.out
+#SBATCH --error=eval_coco.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=64G
 
@@ -48,12 +48,14 @@ for i in "${!models[@]}"; do
   python eval/retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
+    --local_image_dir /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017 \
+    --coco_captions_json /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/annotations/captions_val2017.json \
     --model_name clip \
-    --dataset_name flickr30k \
+    --dataset_name mscoco \
     --split test \
     --batch_size 512 \
     --device cuda:0 \
-    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_mscoco" &
 done
 
 wait
