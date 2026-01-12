@@ -244,14 +244,14 @@ def run_sugarcrepe_pp_eval(
     )
 
     # Metrics:
-    # - ITT: Image+Text task. Count argmin(sim(I,P1), sim(I,P2), sim(I,N)) == N
-    # - TOT: Text-only task. For each sample:
-    #   (1) sim(P1,P2) > sim(P1,N) => hit
-    #   (2) sim(P2,P1) > sim(P2,N) => hit
-    #   TOT accuracy = hits / (2 * num_samples)
+    # Paper definition (SugarCrepe++):
+    # - ITT_hit = 1 iff (p(P1|I) > p(N|I)) AND (p(P2|I) > p(N|I)), else 0
+    # - TOT_hit = 1 iff (p(P1|P2) > p(N|P2)) AND (p(P2|P1) > p(N|P1)), else 0
+    # For embedding models (CLIP/SigLIP), log-likelihood is proportional to cosine similarity,
+    # so we implement the same logic with dot product on normalized embeddings.
     total = 0
     itt_correct = 0
-    tot_hits = 0
+    tot_correct = 0
 
     # Optional: keep running mean of similarities (debug)
     sims_sum_itt = torch.zeros(3, dtype=torch.float64)
@@ -275,9 +275,9 @@ def run_sugarcrepe_pp_eval(
             # ITT: similarity per sample: [B, 3] where 0=P1, 1=P2, 2=N
             sims = torch.einsum("bd,bkd->bk", image_features, text_features)
 
-            # ITT pred: argmin: 0=P1, 1=P2, 2=N
-            pred = torch.argmin(sims, dim=1)
-            itt_correct += (pred == 2).sum().item()
+            # ITT_hit: (sim(I,P1) > sim(I,N)) AND (sim(I,P2) > sim(I,N))
+            itt_hit = (sims[:, 0] > sims[:, 2]) & (sims[:, 1] > sims[:, 2])
+            itt_correct += itt_hit.sum().item()
             total += B
 
             sims_sum_itt += sims.double().sum(dim=0).cpu()
@@ -290,9 +290,9 @@ def run_sugarcrepe_pp_eval(
             sim_p1n = (p1 * n).sum(dim=1)    # [B]
             sim_p2n = (p2 * n).sum(dim=1)    # [B]
 
-            # Two comparisons per sample
-            tot_hits += (sim_p1p2 > sim_p1n).sum().item()
-            tot_hits += (sim_p1p2 > sim_p2n).sum().item()  # sim(P2,P1) == sim(P1,P2)
+            # TOT_hit: (sim(P2,P1) > sim(P2,N)) AND (sim(P1,P2) > sim(P1,N))
+            tot_hit = (sim_p1p2 > sim_p2n) & (sim_p1p2 > sim_p1n)
+            tot_correct += tot_hit.sum().item()
 
             sims_sum_tot += torch.stack(
                 [sim_p1p2.double(), sim_p1n.double(), sim_p2n.double()],
@@ -300,7 +300,7 @@ def run_sugarcrepe_pp_eval(
             ).sum(dim=0).cpu()
 
     itt_acc = itt_correct / max(1, total)
-    tot_acc = tot_hits / max(1, 2 * total)
+    tot_acc = tot_correct / max(1, total)
 
     mean_sims_itt = (sims_sum_itt / max(1, total)).tolist()  # [P1, P2, N] wrt image
     mean_sims_tot = (sims_sum_tot / max(1, total)).tolist()  # [P1P2, P1N, P2N]
@@ -314,7 +314,7 @@ def run_sugarcrepe_pp_eval(
     print(f"Accuracy: {itt_acc * 100:.2f}%")
     print(f"Mean similarity [sim(I,P1), sim(I,P2), sim(I,N)]: {[round(x, 6) for x in mean_sims_itt]}")
     print("\n[TOT] Text-only consistency")
-    print(f"Hits: {tot_hits} / {2 * total}")
+    print(f"Correct (both inequalities hold): {tot_correct} / {total}")
     print(f"Accuracy: {tot_acc * 100:.2f}%")
     print(f"Mean similarity [sim(P1,P2), sim(P1,N), sim(P2,N)]: {[round(x, 6) for x in mean_sims_tot]}")
     print("=" * 70)
@@ -338,9 +338,9 @@ def run_sugarcrepe_pp_eval(
         },
         "TOT": {
             "task": "TOT",
-            "metric": "sim(P1,P2) > sim(P1,N) and sim(P2,P1) > sim(P2,N) (counted as 2 hits/sample)",
-            "hits": tot_hits,
-            "denom": 2 * total,
+            "metric": "sim(P2,P1) > sim(P2,N) and sim(P1,P2) > sim(P1,N) (both must hold)",
+            "correct": tot_correct,
+            "denom": total,
             "accuracy": tot_acc * 100.0,
             "mean_similarity_simP1P2_simP1N_simP2N": mean_sims_tot,
         },
