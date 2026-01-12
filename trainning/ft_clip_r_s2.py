@@ -570,7 +570,7 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14"
+        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
         processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
