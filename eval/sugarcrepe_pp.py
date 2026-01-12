@@ -452,16 +452,16 @@ def run_sugarcrepe_pp_eval_by_subsets(
         stem = f"sugarcrepe_pp_{model_type}_{safe_model}_{safe_ds}_{split}_ALL_SUBSETS"
         txt_path = os.path.join(results_dir, f"{stem}.txt")
 
-        total_all = sum(int(r.get("total", 0)) for r in all_results)
-        itt_correct_all = sum(int(r["ITT"]["correct"]) for r in all_results)
-        tot_hits_all = sum(int(r["TOT"]["hits"]) for r in all_results)
-        itt_avg = itt_correct_all / max(1, total_all)
-        tot_avg = tot_hits_all / max(1, 2 * total_all)
+        # Macro-average over subsets (equal weight per subset), as requested.
+        # Note: result["ITT"]["accuracy"] / ["TOT"]["accuracy"] are already in PERCENT units.
+        n = max(1, len(all_results))
+        itt_avg_pct = sum(float(r["ITT"]["accuracy"]) for r in all_results) / n
+        tot_avg_pct = sum(float(r["TOT"]["accuracy"]) for r in all_results) / n
 
         with open(txt_path, "w", encoding="utf-8") as f:
             # First: two task averages
-            f.write(f"ITT\t{itt_avg * 100.0:.4f}\n")
-            f.write(f"TOT\t{tot_avg * 100.0:.4f}\n")
+            f.write(f"ITT\t{itt_avg_pct:.4f}\n")
+            f.write(f"TOT\t{tot_avg_pct:.4f}\n")
             f.write("\n")
             # Then: per-subset results (10 lines)
             for res in all_results:
