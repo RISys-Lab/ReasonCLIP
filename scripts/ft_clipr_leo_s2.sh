@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s2
+#SBATCH --job-name=clipr_b32_ft_s2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s2.out
-#SBATCH --error=clipr_ft_s2.err
+#SBATCH --output=clipr_b32_ft_s2.out
+#SBATCH --error=clipr_b32_ft_s2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -89,7 +89,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_s2\"
+    --run_name \"clip_r_s 2\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."
