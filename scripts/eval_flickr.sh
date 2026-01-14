@@ -35,8 +35,9 @@ models=(
 #   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_b32_s1/run_0109_211647/finetune_weights/checkpoint-853"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_b32_s2/run_0112_184246/finetune_weights/checkpoint-336"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
     "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
-  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2/run_0109_233704/finetune_weights/checkpoint-673"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2/run_0109_233704/finetune_weights/checkpoint-673"
 )
 
 processors=(
@@ -47,6 +48,7 @@ processors=(
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 )
 
 
@@ -57,7 +59,7 @@ for i in "${!models[@]}"; do
     --model_name siglip \
     --dataset_name flickr30k \
     --split test \
-    --batch_size 512 \
+    --batch_size 128 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
 done
