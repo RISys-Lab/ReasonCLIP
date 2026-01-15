@@ -427,7 +427,7 @@ def compute_retrieval_metrics(image_features, text_features, return_ranks=False,
 
 def run_retrieval_evaluation(
     model_id="google/siglip2-so400m-patch14-384",
-    model_type="clip",  # "clip" or "siglip"
+    model_type="clip",  # "clip" | "metaclip" | "siglip"
     processor_path=None,  # optional processor path/name; default to model_id
     dataset_name="mscoco", 
     split="test",
@@ -466,6 +466,8 @@ def run_retrieval_evaluation(
         model_id_lower = model_id.lower()
         if "siglip" in model_id_lower:
             model_type = "siglip"
+        elif "metaclip" in model_id_lower:
+            model_type = "metaclip"
         elif "clip" in model_id_lower or "openai" in model_id_lower:
             model_type = "clip"
         else:
@@ -482,7 +484,7 @@ def run_retrieval_evaluation(
     
     # Load model and processor based on model type
     print(f"Loading {model_type.upper()} model and processor...")
-    if model_type.lower() == "clip":
+    if model_type.lower() in ("clip", "metaclip"):
         model = AutoModel.from_pretrained(model_id)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
@@ -491,7 +493,7 @@ def run_retrieval_evaluation(
         proc_id = processor_path or model_id
         processor = SiglipProcessor.from_pretrained(proc_id)
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip' or 'siglip'")
+        raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip', 'metaclip', or 'siglip'")
     
     model.to(device).eval()
     
@@ -709,8 +711,8 @@ def parse_args():
         "--model_name",
         type=str,
         default="clip",
-        choices=["clip", "siglip"],
-        help="Model type: 'clip' or 'siglip'"
+        choices=["clip", "metaclip", "siglip"],
+        help="Model type: 'clip', 'metaclip', or 'siglip'"
     )
     
     
