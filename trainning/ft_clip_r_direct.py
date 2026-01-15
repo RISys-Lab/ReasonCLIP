@@ -193,27 +193,27 @@ class CLIPTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.model_type = model_type  # "clip" 或 "siglip
         self.backbone = None
-    @staticmethod
-    def _siglip_logistic_loss(
-        logits: torch.Tensor, 
-        labels: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        SigLIP 风格的 logistic loss:
-        logits: [B, N]，N = world_size * B
-        labels: [B]，每一行正样本所在的列索引（全局索引）
-        """
-        B = logits.size(0)
-        device = logits.device
+    # @staticmethod
+    # def _siglip_logistic_loss(
+    #     logits: torch.Tensor, 
+    #     labels: torch.Tensor
+    # ) -> torch.Tensor:
+    #     """
+    #     SigLIP 风格的 logistic loss:
+    #     logits: [B, N]，N = world_size * B
+    #     labels: [B]，每一行正样本所在的列索引（全局索引）
+    #     """
+    #     B = logits.size(0)
+    #     device = logits.device
 
-        # 构造 +1 / -1 的 label matrix
-        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
-        row_idx = torch.arange(B, device=device)
-        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
+    #     # 构造 +1 / -1 的 label matrix
+    #     label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
+    #     row_idx = torch.arange(B, device=device)
+    #     label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
 
-        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
-        loss = -F.logsigmoid(label_matrix * logits).mean()
-        return loss
+    #     # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
+    #     loss = -F.logsigmoid(label_matrix * logits).mean()
+    #     return loss
 
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -277,13 +277,11 @@ class CLIPTrainer(Trainer):
         trp_logits_per_image = logit_scale * (image_features     @ all_trp.t()) + bias
         trp_logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias
 
-        if self.model_type == "clip":
-            trp_loss = 0.5 * (
-                F.cross_entropy(trp_logits_per_image, labels_global) +
-                F.cross_entropy(trp_logits_per_text,  labels_global)
-            )
-        else:  # "siglip"
-            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
+        
+        trp_loss = 0.5 * (
+            F.cross_entropy(trp_logits_per_image, labels_global) +
+            F.cross_entropy(trp_logits_per_text,  labels_global)
+        )
 
         del trp_logits_per_image, trp_logits_per_text
 
