@@ -76,7 +76,7 @@ for i in "${!models[@]}"; do
   python eval/sugarcrepe_pp.py \
     --model_path "${models[$i]}" \
     --processor_name "${processors[$i]}" \
-    --model_name siglip \
+    --model_name clip \
     --dataset_name Aman-J/SugarCrepe_pp \
     --image_dir /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017 \
     --batch_size 256 \

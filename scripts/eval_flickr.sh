@@ -77,7 +77,7 @@ for i in "${!models[@]}"; do
   python eval/retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
-    --model_name siglip \
+    --model_name clip \
     --dataset_name flickr30k \
     --split test \
     --batch_size 128 \

@@ -79,7 +79,7 @@ for i in "${!models[@]}"; do
     --processor_path "${processors[$i]}" \
     --local_image_dir /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017 \
     --coco_captions_json /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/annotations/captions_val2017.json \
-    --model_name siglip \
+    --model_name clip \
     --dataset_name mscoco \
     --split test \
     --batch_size 128 \
