@@ -66,7 +66,7 @@ accelerate launch \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --batch_size 256 \
+    --batch_size 328 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --learning_rate 5e-5 \
@@ -77,7 +77,7 @@ accelerate launch \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
-    --save_ratio 0.25 \
+    --save_ratio 0.1 \
     --save_total_limit 5 \
     --eval_strategy ratio \
     --eval_ratio 0.25 \
