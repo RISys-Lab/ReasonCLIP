@@ -14,6 +14,22 @@ import argparse
 from collections import defaultdict
 
 
+def _infer_model_type(name: str | None) -> str:
+    """
+    Infer model family from a free-form string by substring match.
+    Rule: lowercase then check if it contains "siglip" else "clip" if contains "clip".
+    Defaults to "clip" when unknown.
+    """
+    if name is None:
+        return "clip"
+    s = str(name).lower()
+    if "siglip" in s:
+        return "siglip"
+    if "clip" in s:
+        return "clip"
+    return "clip"
+
+
 class RetrievalDataset(torch.utils.data.Dataset):
     """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption support"""
     def __init__(self, dataset, processor, split="test", max_samples=None, use_all_captions=True, local_image_dir=None):
@@ -427,7 +443,7 @@ def compute_retrieval_metrics(image_features, text_features, return_ranks=False,
 
 def run_retrieval_evaluation(
     model_id="google/siglip2-so400m-patch14-384",
-    model_type="clip",  # "clip" or "siglip"
+    model_type="auto",  # free-form: "auto"/None, "clip"/"siglip", or a model name/path
     processor_path=None,  # optional processor path/name; default to model_id
     dataset_name="mscoco", 
     split="test",
@@ -461,17 +477,14 @@ def run_retrieval_evaluation(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # Auto-detect model type if not specified or if "auto"
-    if model_type == "auto" or model_type is None:
-        model_id_lower = model_id.lower()
-        if "siglip" in model_id_lower:
-            model_type = "siglip"
-        elif "clip" in model_id_lower or "openai" in model_id_lower:
-            model_type = "clip"
-        else:
-            # Default to CLIP if can't determine
-            model_type = "clip"
-            print(f"⚠️  Could not auto-detect model type from '{model_id}', defaulting to CLIP")
+    # Auto-detect model type by substring match on lowercase.
+    # - if user passes "auto"/None -> infer from model_id
+    # - else -> infer from the provided string (can be "clip", "siglip", or a model name/path)
+    mt = "auto" if model_type is None else str(model_type).strip().lower()
+    if mt == "auto" or mt == "":
+        model_type = _infer_model_type(model_id)
+    else:
+        model_type = _infer_model_type(model_type)
     
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
@@ -491,7 +504,7 @@ def run_retrieval_evaluation(
         proc_id = processor_path or model_id
         processor = SiglipProcessor.from_pretrained(proc_id)
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Must be 'clip' or 'siglip'")
+        raise ValueError(f"Unsupported model type: {model_type}. Must contain 'clip' or 'siglip' (or pass 'auto').")
     
     model.to(device).eval()
     
@@ -708,9 +721,8 @@ def parse_args():
     parser.add_argument(
         "--model_name",
         type=str,
-        default="clip",
-        choices=["clip", "siglip"],
-        help="Model type: 'clip' or 'siglip'"
+        default="auto",
+        help="Model type/name (auto-detected by substring match; pass 'auto' to infer from --model_path)"
     )
     
     
