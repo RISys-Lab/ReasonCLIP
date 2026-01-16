@@ -14,6 +14,22 @@ from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 
 
+def _infer_model_type(name: str | None) -> str:
+    """
+    Infer model family from a free-form string by substring match.
+    Rule: lowercase then check if it contains "siglip" else "clip" if contains "clip".
+    Defaults to "clip" when unknown.
+    """
+    if name is None:
+        return "clip"
+    s = str(name).lower()
+    if "siglip" in s:
+        return "siglip"
+    if "clip" in s:
+        return "clip"
+    return "clip"
+
+
 def _parse_available_configs_from_err(msg: str) -> list[str]:
     """
     datasets sometimes raises:
@@ -46,9 +62,14 @@ def _load_model_and_processor(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if model_type == "auto" or model_type is None:
-        mid = model_id.lower()
-        model_type = "siglip" if "siglip" in mid else "clip"
+    # Auto-detect model type:
+    # - if user passes "auto"/None -> infer from model_id
+    # - else -> infer from the provided string (can be "clip", "siglip", or a model name/path)
+    mt = "auto" if model_type is None else str(model_type).strip().lower()
+    if mt == "auto" or mt == "":
+        model_type = _infer_model_type(model_id)
+    else:
+        model_type = _infer_model_type(model_type)
 
     if model_type.lower() == "clip":
         model = AutoModel.from_pretrained(model_id)
@@ -477,7 +498,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description="SugarCrepe_pp negative caption discrimination eval")
 
     parser.add_argument("--model_path", type=str, default="/home/muzammal/.cache/huggingface/hub/models--fesvhtr--clip336-r-s2-run1218-505/snapshots/f2b8cf27d26196ce98d8109df1986f34b2b4163b", help="HF model id or local path")
-    parser.add_argument("--model_name", type=str, default="clip", choices=["clip", "siglip", "auto"], help="Model type")
+    # Free-form model name/type string. We infer by substring match on lowercase:
+    # contains "siglip" -> SigLIP, else contains "clip" -> CLIP, else default CLIP.
+    # Use "auto" to force inferring from --model_path.
+    parser.add_argument("--model_name", type=str, default="auto", help="Model type/name (auto-detected by substring match)")
 
     parser.add_argument("--dataset_name", type=str, default="Aman-J/SugarCrepe_pp", help="HF dataset id")
     parser.add_argument("--split", type=str, default="train", help="Dataset split (SugarCrepe_pp typically uses 'train')")
