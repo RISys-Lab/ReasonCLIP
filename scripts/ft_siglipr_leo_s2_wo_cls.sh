@@ -61,7 +61,7 @@ accelerate launch \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
-  trainning/ft_siglip_r_s2_wo_cls.py \
+  trainning/ft_clip_r_s2_wo_cls.py \
     --model_type siglip \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
