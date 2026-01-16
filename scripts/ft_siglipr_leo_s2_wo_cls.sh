@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglip_s2_wo_cls
+#SBATCH --job-name=siglipr_s2_wo_cls
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglip_s2_wo_cls.out
-#SBATCH --error=siglip_s2_wo_cls.err
+#SBATCH --output=siglipr_s2_wo_cls.out
+#SBATCH --error=siglipr_s2_wo_cls.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
