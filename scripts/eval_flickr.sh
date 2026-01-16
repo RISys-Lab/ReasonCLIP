@@ -75,10 +75,10 @@ for i in "${!models[@]}"; do
   python eval/retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
-    --model_name clip \
+    --model_name auto \
     --dataset_name flickr30k \
     --split test \
-    --batch_size 128 \
+    --batch_size 512 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
 done
