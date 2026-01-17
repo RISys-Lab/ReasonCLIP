@@ -43,9 +43,11 @@ models=(
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s1/run_1207_155136/finetune_weights/checkpoint-1280"
   #   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s2/run_1219_021442/finetune_weights/checkpoint-505"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_direct/run_0115_191216/finetune_weights/checkpoint-1241"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_direct/run_0115_191216/finetune_weights/checkpoint-1241"
   #   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2/run_0109_233704/finetune_weights/checkpoint-673"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_go_s1/run_0117_024832/finetune_weights/checkpoint-2559"
   
 
 )
@@ -64,9 +66,11 @@ processors=(
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14" 
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
 )
 
 
@@ -78,7 +82,7 @@ for i in "${!models[@]}"; do
     --model_name auto \
     --dataset_name flickr30k \
     --split test \
-    --batch_size 512 \
+    --batch_size 256 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
 done
