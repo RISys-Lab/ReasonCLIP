@@ -82,7 +82,7 @@ for i in "${!models[@]}"; do
     --model_name auto \
     --dataset_name flickr30k \
     --split test \
-    --batch_size 256 \
+    --batch_size 128 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_flickr30k" &
 done

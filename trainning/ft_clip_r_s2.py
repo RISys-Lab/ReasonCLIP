@@ -5,8 +5,8 @@ from datasets import Dataset, load_dataset
 from transformers import (
     CLIPProcessor,
     CLIPModel,
-    SiglipProcessor,
-    SiglipModel,
+    Siglip2Processor,
+    Siglip2Model,
     Trainer,
     TrainingArguments,
 )
@@ -573,17 +573,17 @@ def train_clip(args):
         processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
         processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
-        model = SiglipModel.from_pretrained(
+        model = Siglip2Model.from_pretrained(
             model_name,
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
         # 加载原始模型用于L2正则化
-        orig_model = SiglipModel.from_pretrained(model_name)
+        orig_model = Siglip2Model.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
         processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-        processor = SiglipProcessor.from_pretrained(processor_name)
+        processor = Siglip2Processor.from_pretrained(processor_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -860,8 +860,8 @@ def push_to_hub(best_model_path, repo_name, model_type="clip"):
             model = CLIPModel.from_pretrained(best_model_path)
             processor = CLIPProcessor.from_pretrained(best_model_path)
         elif model_type == "siglip":
-            model = SiglipModel.from_pretrained(best_model_path)
-            processor = SiglipProcessor.from_pretrained(best_model_path)
+            model = Siglip2Model.from_pretrained(best_model_path)
+            processor = Siglip2Processor.from_pretrained(best_model_path)
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
 
