@@ -66,7 +66,14 @@ class RetrievalDataset(torch.utils.data.Dataset):
             
             # Extract all captions for this image
             captions = []
-            if 'sentences' in sample:
+            if 'txt' in sample:
+                # wds_mscoco format: txt field contains 5 captions separated by newlines
+                txt = sample['txt']
+                if isinstance(txt, str):
+                    captions = [c.strip() for c in txt.split('\n') if c.strip()]
+                elif isinstance(txt, list):
+                    captions = txt
+            elif 'sentences' in sample:
                 sents = sample['sentences']
                 if isinstance(sents, list):
                     captions = [ (s['raw'] if isinstance(s, dict) and 'raw' in s else str(s)) for s in sents ]
@@ -511,17 +518,19 @@ def run_retrieval_evaluation(
     # Load dataset using Karpathy splits (standard for retrieval evaluation)
     print("Loading dataset...")
     if dataset_name.lower() == "mscoco":
-        if coco_captions_json:
-            if not local_image_dir:
-                raise ValueError("For local COCO captions json, you must also pass --local_image_dir pointing to val2017/.")
-            print("📥 Using local COCO val2017 captions json (official annotations)")
-            ds = load_coco_captions_val2017(coco_captions_json)
-            print(f"✅ Loaded local COCO val2017: {len(ds)} images (from {coco_captions_json})")
-        else:
-            print("📥 Using COCO Karpathy split from HF (fallback)")
-            # Karpathy split: validation (5K) and test (5K)
-            ds = load_dataset("yerevann/coco-karpathy", split="validation")
-            print(f"✅ Loaded COCO Karpathy split (validation): {len(ds)} samples")
+        if not local_image_dir:
+            raise ValueError("For local COCO captions json, you must also pass --local_image_dir pointing to val2017/.")
+        print("📥 Using local COCO val2017 captions json (official annotations)")
+        ds = load_coco_captions_val2017(coco_captions_json)
+        print(f"✅ Loaded local COCO val2017: {len(ds)} images (from {coco_captions_json})")
+    elif dataset_name.lower() == "wds_mscoco":
+        # clip-benchmark/wds_mscoco_captions: jpg 列是图片，txt 列是5条caption（分行）
+        print("📥 Loading clip-benchmark/wds_mscoco_captions from HuggingFace...")
+        ds = load_dataset("clip-benchmark/wds_mscoco_captions", split=split)
+        print(f"✅ Loaded wds_mscoco_captions {split} split: {len(ds)} samples")
+        # 打印数据集字段信息
+        if len(ds) > 0:
+            print(f"📊 Dataset columns: {ds.column_names}")
     elif dataset_name.lower() == "flickr30k":
         ds = load_dataset("nlphuji/flickr30k", split="test")
         print(f"📊 Flickr30K test split loaded: {len(ds)} samples")
@@ -731,8 +740,8 @@ def parse_args():
         "--dataset_name",
         type=str,
         default="flickr30k",
-        choices=["mscoco", "flickr30k"],
-        help="Dataset name: 'mscoco' or 'flickr30k'"
+        choices=["mscoco", "flickr30k", "wds_mscoco"],
+        help="Dataset name: 'mscoco', 'flickr30k', or 'wds_mscoco' (clip-benchmark/wds_mscoco_captions)"
     )
     
     parser.add_argument(
