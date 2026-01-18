@@ -79,7 +79,6 @@ for i in "${!models[@]}"; do
     --batch_size 128 \
     --num_workers 8 \
     --device cuda:0 \
-    --hf_cache_dir /leonardo_work/EUHPC_R04_192/fmohamma/zsc/hf_cache \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/classification_imagenet" &
 done
 
