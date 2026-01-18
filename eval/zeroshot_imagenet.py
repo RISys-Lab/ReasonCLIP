@@ -6,6 +6,7 @@ Same logic as CLIP_benchmark
 import torch
 import os
 import argparse
+import glob
 from datasets import load_dataset
 from PIL import Image
 import io
@@ -35,6 +36,40 @@ def _local_metadata_paths(hf_id):
         os.path.join(base_dir, "classnames.txt"),
         os.path.join(base_dir, "zeroshot_classification_templates.txt"),
     )
+
+
+def _resolve_data_dir(hf_id, data_dir):
+    if data_dir is None:
+        return None
+    dataset_dirname = hf_id.split("/")[-1]
+    candidate = os.path.join(data_dir, dataset_dirname)
+    if os.path.isdir(candidate):
+        return candidate
+    return data_dir
+
+
+def _find_wds_files(data_dir):
+    patterns = ["*.tar", "*.tar.gz", "*.tgz", "*.tar.bz2", "*.wds", "*.webdataset", "*.shard"]
+    files = []
+    for pattern in patterns:
+        files.extend(glob.glob(os.path.join(data_dir, pattern)))
+    return sorted(set(files))
+
+
+def _load_dataset_local_or_hub(hf_id, split, data_dir=None, streaming=True):
+    resolved_dir = _resolve_data_dir(hf_id, data_dir)
+    if resolved_dir is not None:
+        split_dir = os.path.join(resolved_dir, split)
+        data_dir_use = split_dir if os.path.isdir(split_dir) else resolved_dir
+        wds_files = _find_wds_files(data_dir_use)
+        if not wds_files:
+            raise FileNotFoundError(
+                f"No webdataset shards found under: {data_dir_use}. "
+                "Expected *.tar/*.tar.gz/*.tgz/*.tar.bz2/*.wds/*.webdataset/*.shard"
+            )
+        data_files = {split: wds_files}
+        return load_dataset("webdataset", data_files=data_files, split=split, streaming=streaming)
+    return load_dataset(hf_id, split=split, streaming=streaming, local_files_only=True)
 
 
 def load_wds_metadata(hf_id, classnames_file=None, templates_file=None):
@@ -136,7 +171,8 @@ def run_zeroshot_evaluation(
     device=None,
     results_dir=None,
     classnames_file=None,
-    templates_file=None
+    templates_file=None,
+    data_dir=None
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -175,7 +211,7 @@ def run_zeroshot_evaluation(
     
     # Load dataset
     print(f"\n📥 Loading dataset...")
-    hf_dataset = load_dataset(hf_id, split=split, streaming=True)
+    hf_dataset = _load_dataset_local_or_hub(hf_id, split, data_dir=data_dir, streaming=True)
     dataset = ZeroShotDataset(hf_dataset, processor, dataset_name, max_samples)
     dataloader = DataLoader(
         dataset,
@@ -266,7 +302,8 @@ def run_all_evaluations(
     device=None,
     results_dir=None,
     classnames_file=None,
-    templates_file=None
+    templates_file=None,
+    data_dir=None
 ):
     """Run evaluation on all datasets"""
     from datetime import datetime
@@ -311,7 +348,7 @@ def run_all_evaluations(
         text_features = create_text_features(classnames, templates, processor, model, device)
         
         # Load dataset
-        hf_dataset = load_dataset(hf_id, split=split, streaming=True)
+        hf_dataset = _load_dataset_local_or_hub(hf_id, split, data_dir=data_dir, streaming=True)
         dataset = ZeroShotDataset(hf_dataset, processor, dataset_name, max_samples)
         dataloader = DataLoader(
             dataset,
@@ -424,6 +461,7 @@ def parse_args():
     parser.add_argument("--results_dir", type=str, default=None)
     parser.add_argument("--classnames_file", type=str, default=None)
     parser.add_argument("--templates_file", type=str, default=None)
+    parser.add_argument("--data_dir", type=str, default=None)
     
     return parser.parse_args()
 
@@ -441,7 +479,8 @@ if __name__ == "__main__":
             device=args.device,
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
-            templates_file=args.templates_file
+            templates_file=args.templates_file,
+            data_dir=args.data_dir
         )
         print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
     else:
@@ -455,6 +494,7 @@ if __name__ == "__main__":
             device=args.device,
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
-            templates_file=args.templates_file
+            templates_file=args.templates_file,
+            data_dir=args.data_dir
         )
         print(f"\n🎯 Final: Top-1={result['top1_accuracy']:.2f}%")
