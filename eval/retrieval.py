@@ -513,7 +513,7 @@ def run_retrieval_evaluation(
         proc_name = processor.__class__.__name__.lower()
         text_max_len = 64 if "siglip" in proc_name else 77
 
-        text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True)
+        text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
         text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
         
         with torch.no_grad():
