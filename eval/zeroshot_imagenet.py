@@ -107,7 +107,7 @@ class ZeroShotDataset(torch.utils.data.Dataset):
         sample = self.data_list[idx]
         
         # Get image
-        image_data = sample["png"]
+        image_data = sample["png"] if "png" in sample else sample["jpg"]
         
         if hasattr(image_data, "convert"):
             img = image_data.convert("RGB")
