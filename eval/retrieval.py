@@ -31,10 +31,9 @@ def _infer_model_type(name: str | None) -> str:
 
 
 class RetrievalDataset(torch.utils.data.Dataset):
-    """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption support"""
-    def __init__(self, dataset, processor, split="test", max_samples=None, use_all_captions=True, local_image_dir=None):
+    """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption evaluation"""
+    def __init__(self, dataset, processor, split="test", max_samples=None, local_image_dir=None):
         self.processor = processor
-        self.use_all_captions = use_all_captions
         self.local_image_dir = local_image_dir  # 本地图片目录
         self.image_data = []  # Store image info
         self.caption_data = []  # Store all captions
@@ -49,7 +48,7 @@ class RetrievalDataset(torch.utils.data.Dataset):
             self.text_max_len = 77  # CLIP uses 77
         
         print(f"Loading {split} split...")
-        print(f"Karpathy evaluation mode: {'5 captions per image' if use_all_captions else '1 caption per image'}")
+        print(f"Karpathy evaluation mode: 5 captions per image")
         if local_image_dir:
             print(f"📁 使用本地图片目录: {local_image_dir}")
         
@@ -96,17 +95,13 @@ class RetrievalDataset(torch.utils.data.Dataset):
                     captions.extend(captions[:5-len(captions)])
             captions = captions[:5]  # Take first 5
             
-            # Store caption mapping
+            # Store caption mapping (all 5 captions)
             caption_indices = []
             for caption in captions:
                 self.caption_data.append(caption)
                 self.caption_to_image[caption_idx] = img_idx
                 caption_indices.append(caption_idx)
                 caption_idx += 1
-                
-                # For single caption mode, only use first caption
-                if not use_all_captions:
-                    break
             
             self.image_to_captions[img_idx] = caption_indices
         
@@ -281,53 +276,69 @@ def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, d
     
     print(f"Computing Karpathy metrics on {device}: {num_images} images, {num_captions} captions")
     
-    # Compute similarity matrix [N_images, N_captions] on GPU
-    print("Computing similarity matrix...")
-    sim_matrix = image_features @ text_features.T
-    
-    # Image-to-Text retrieval (each image queries all captions)
-    print("Computing Image-to-Text ranks...")
+    # Compute similarity matrix in batches to save memory
+    # Instead of storing full sim_matrix, compute ranks on-the-fly
+    print("Computing Image-to-Text ranks (memory-efficient)...")
     i2t_ranks = []
-    # Batch process for efficiency
-    batch_size_i2t = 1000  # Process images in batches
+    
+    # I2T: for each image, find rank of its captions among all captions
+    batch_size_i2t = 100  # Smaller batch to save memory
     for batch_start in tqdm(range(0, num_images, batch_size_i2t), desc="I2T ranks"):
         batch_end = min(batch_start + batch_size_i2t, num_images)
-        batch_sims = sim_matrix[batch_start:batch_end]  # [batch_size, N_captions]
+        # Compute similarity for this batch of images against all captions
+        batch_img_features = image_features[batch_start:batch_end]  # [batch, D]
+        batch_sims = batch_img_features @ text_features.T  # [batch, N_captions]
         
-        # Sort all images in batch at once (on GPU)
-        sorted_indices_batch = torch.argsort(batch_sims, dim=1, descending=True)  # [batch_size, N_captions]
+        # Move to CPU for argsort to avoid GPU OOM
+        batch_sims_cpu = batch_sims.cpu()
+        del batch_sims
+        torch.cuda.empty_cache() if device != "cpu" else None
         
         for local_idx, img_idx in enumerate(range(batch_start, batch_end)):
-            sorted_indices = sorted_indices_batch[local_idx]
+            sims = batch_sims_cpu[local_idx]  # [N_captions]
             # Find ranks of the 5 ground-truth captions for this image
             gt_caption_indices = dataset.image_to_captions[img_idx]
+            
+            # Efficient rank computation: count how many scores are higher than each gt caption's score
             ranks = []
             for cap_idx in gt_caption_indices:
-                rank = torch.where(sorted_indices == cap_idx)[0][0].item() + 1  # 1-indexed
+                gt_score = sims[cap_idx].item()
+                # Rank = 1 + number of captions with higher score
+                rank = (sims > gt_score).sum().item() + 1
                 ranks.append(rank)
             
             # Use the best (minimum) rank among the 5 captions (standard practice)
             best_rank = min(ranks)
             i2t_ranks.append(best_rank)
+        
+        del batch_sims_cpu
     
-    # Text-to-Image retrieval (each caption queries all images)
-    print("Computing Text-to-Image ranks...")
+    # T2I: for each caption, find rank of its image among all images
+    print("Computing Text-to-Image ranks (memory-efficient)...")
     t2i_ranks = []
-    # Batch process for efficiency
-    batch_size_t2i = 5000  # Process captions in batches (can be larger since fewer operations per caption)
+    
+    batch_size_t2i = 500  # Smaller batch to save memory
     for batch_start in tqdm(range(0, num_captions, batch_size_t2i), desc="T2I ranks"):
         batch_end = min(batch_start + batch_size_t2i, num_captions)
-        batch_sims = sim_matrix[:, batch_start:batch_end]  # [N_images, batch_size]
+        # Compute similarity for this batch of captions against all images
+        batch_txt_features = text_features[batch_start:batch_end]  # [batch, D]
+        batch_sims = batch_txt_features @ image_features.T  # [batch, N_images]
         
-        # Sort all captions in batch at once (on GPU)
-        sorted_indices_batch = torch.argsort(batch_sims, dim=0, descending=True)  # [N_images, batch_size]
+        # Move to CPU for rank computation
+        batch_sims_cpu = batch_sims.cpu()
+        del batch_sims
+        torch.cuda.empty_cache() if device != "cpu" else None
         
         for local_idx, cap_idx in enumerate(range(batch_start, batch_end)):
-            sorted_indices = sorted_indices_batch[:, local_idx]
+            sims = batch_sims_cpu[local_idx]  # [N_images]
             # Find rank of the ground-truth image for this caption
             gt_img_idx = dataset.caption_to_image[cap_idx]
-            rank = torch.where(sorted_indices == gt_img_idx)[0][0].item() + 1  # 1-indexed
+            gt_score = sims[gt_img_idx].item()
+            # Rank = 1 + number of images with higher score
+            rank = (sims > gt_score).sum().item() + 1
             t2i_ranks.append(rank)
+        
+        del batch_sims_cpu
     
     i2t_ranks = np.array(i2t_ranks)
     t2i_ranks = np.array(t2i_ranks)
@@ -357,97 +368,6 @@ def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, d
     return metrics
 
 
-def compute_retrieval_metrics(image_features, text_features, return_ranks=False, device=None):
-    """
-    Compute standard retrieval metrics (1:1 image-caption pairs)
-    
-    Args:
-        image_features: [N, D] normalized image features (can be on GPU)
-        text_features: [N, D] normalized text features (can be on GPU)
-        return_ranks: whether to return individual ranks
-        device: device to use for computation (if None, use same device as features)
-    
-    Returns:
-        Dictionary with I2T and T2I metrics
-    """
-    # Determine device
-    if device is None:
-        device = image_features.device
-    
-    # Move features to device if needed
-    image_features = image_features.to(device)
-    text_features = text_features.to(device)
-    
-    # Compute similarity matrix on GPU
-    print("Computing similarity matrix...")
-    sim_matrix = image_features @ text_features.T  # [N, N]
-    
-    # Image-to-Text retrieval
-    print("Computing Image-to-Text ranks...")
-    i2t_ranks = []
-    # Batch process for efficiency
-    batch_size_i2t = 1000
-    for batch_start in tqdm(range(0, len(image_features), batch_size_i2t), desc="I2T ranks"):
-        batch_end = min(batch_start + batch_size_i2t, len(image_features))
-        batch_sims = sim_matrix[batch_start:batch_end]  # [batch_size, N]
-        
-        # Sort all images in batch at once (on GPU)
-        sorted_indices_batch = torch.argsort(batch_sims, dim=1, descending=True)  # [batch_size, N]
-        
-        for local_idx, i in enumerate(range(batch_start, batch_end)):
-            sorted_indices = sorted_indices_batch[local_idx]
-            # Find rank of correct text (index i)
-            rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
-            i2t_ranks.append(rank)
-    
-    # Text-to-Image retrieval  
-    print("Computing Text-to-Image ranks...")
-    t2i_ranks = []
-    # Batch process for efficiency
-    batch_size_t2i = 1000
-    for batch_start in tqdm(range(0, len(text_features), batch_size_t2i), desc="T2I ranks"):
-        batch_end = min(batch_start + batch_size_t2i, len(text_features))
-        batch_sims = sim_matrix[:, batch_start:batch_end]  # [N, batch_size]
-        
-        # Sort all texts in batch at once (on GPU)
-        sorted_indices_batch = torch.argsort(batch_sims, dim=0, descending=True)  # [N, batch_size]
-        
-        for local_idx, i in enumerate(range(batch_start, batch_end)):
-            sorted_indices = sorted_indices_batch[:, local_idx]
-            # Find rank of correct image (index i)
-            rank = torch.where(sorted_indices == i)[0][0].item() + 1  # 1-indexed
-            t2i_ranks.append(rank)
-    
-    i2t_ranks = np.array(i2t_ranks)
-    t2i_ranks = np.array(t2i_ranks)
-    
-    # Compute standard metrics
-    metrics = {
-        # Image-to-Text
-        "i2t_r1": np.mean(i2t_ranks <= 1) * 100,
-        "i2t_r5": np.mean(i2t_ranks <= 5) * 100, 
-        "i2t_r10": np.mean(i2t_ranks <= 10) * 100,
-        "i2t_mean_rank": np.mean(i2t_ranks),
-        "i2t_median_rank": np.median(i2t_ranks),
-        
-        # Text-to-Image
-        "t2i_r1": np.mean(t2i_ranks <= 1) * 100,
-        "t2i_r5": np.mean(t2i_ranks <= 5) * 100,
-        "t2i_r10": np.mean(t2i_ranks <= 10) * 100, 
-        "t2i_mean_rank": np.mean(t2i_ranks),
-        "t2i_median_rank": np.median(t2i_ranks),
-    }
-    
-    # Compute average metrics (standard in papers)
-    metrics["avg_r1"] = (metrics["i2t_r1"] + metrics["t2i_r1"]) / 2
-    metrics["avg_r5"] = (metrics["i2t_r5"] + metrics["t2i_r5"]) / 2  
-    metrics["avg_r10"] = (metrics["i2t_r10"] + metrics["t2i_r10"]) / 2
-    
-    if return_ranks:
-        return metrics, i2t_ranks, t2i_ranks
-    return metrics
-
-
 def run_retrieval_evaluation(
     model_id="google/siglip2-so400m-patch14-384",
     model_type="auto",  # free-form: "auto"/None, "clip"/"siglip", or a model name/path
@@ -459,25 +379,23 @@ def run_retrieval_evaluation(
     max_samples=None,
     save_features=False,
     device=None,
-    use_karpathy_eval=True,  # Use 5-caption Karpathy evaluation
     local_image_dir=None,  # ✅ 本地图片目录
     coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
     results_dir=None  # 结果保存目录
 ):
     """
-    Run CLIP/SigLIP retrieval evaluation
+    Run CLIP/SigLIP retrieval evaluation (Karpathy-style with 5 captions per image)
     
     Args:
         model_id: HuggingFace model ID or local path
         model_type: "clip" or "siglip" - determines which model/processor to use
-        dataset_name: "mscoco" or "flickr30k"
+        dataset_name: "mscoco", "flickr30k", or "wds_mscoco"
         split: dataset split ("test", "validation")
         batch_size: batch size for inference
         num_workers: (deprecated) number of data loading workers - set to 0 to avoid torch pickling issues
         max_samples: limit number of samples (for debugging)
         save_features: save computed features for analysis
         device: device to use ("cuda", "cuda:0", "cpu", etc.). If None, auto-detect
-        use_karpathy_eval: Use 5-caption Karpathy evaluation
         local_image_dir: ✅ 本地图片目录，如果指定则优先从本地加载
     """
     
@@ -549,7 +467,7 @@ def run_retrieval_evaluation(
     print(f"📥 Raw dataset size (before max_samples): {len(ds)}")
     if max_samples:
         print(f"⚠️  max_samples={max_samples} will limit the dataset")
-    dataset = RetrievalDataset(ds, processor, split, max_samples, use_all_captions=use_karpathy_eval, local_image_dir=local_image_dir)
+    dataset = RetrievalDataset(ds, processor, split, max_samples, local_image_dir=local_image_dir)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -581,59 +499,40 @@ def run_retrieval_evaluation(
     all_image_features = torch.cat(all_image_features, dim=0).to(device)
     print(f"Image features shape: {all_image_features.shape} (on {device})")
     
-    # Second pass: extract ALL caption features (if using Karpathy evaluation)
-    if use_karpathy_eval:
-        print("Extracting ALL caption features (5 per image)...")
-        # Process all captions in batches
-        caption_batch_size = batch_size * 2  # Can use larger batch for text
-        num_captions = dataset.get_num_captions()
+    # Second pass: extract ALL caption features (5 per image for Karpathy evaluation)
+    print("Extracting ALL caption features (5 per image)...")
+    # Process all captions in batches
+    caption_batch_size = batch_size * 2  # Can use larger batch for text
+    num_captions = dataset.get_num_captions()
+    
+    for start_idx in tqdm(range(0, num_captions, caption_batch_size), desc="Processing caption batches"):
+        end_idx = min(start_idx + caption_batch_size, num_captions)
+        batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
         
-        for start_idx in tqdm(range(0, num_captions, caption_batch_size), desc="Processing caption batches"):
-            end_idx = min(start_idx + caption_batch_size, num_captions)
-            batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
-            
-            # Process caption batch
-            proc_name = processor.__class__.__name__.lower()
-            text_max_len = 64 if "siglip" in proc_name else 77
+        # Process caption batch
+        proc_name = processor.__class__.__name__.lower()
+        text_max_len = 64 if "siglip" in proc_name else 77
 
-            text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
-            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-            
-            with torch.no_grad():
-                text_features = model.get_text_features(**text_inputs)
-                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                
-                all_text_features.append(text_features)  # Keep on GPU
+        text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True)
+        text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
         
-        # Concatenate all text features (keep on GPU)
-        all_text_features = torch.cat(all_text_features, dim=0).to(device)
-    else:
-        # Standard evaluation: use only first caption per image
-        print("Extracting text features (1 per image)...")
         with torch.no_grad():
-            for image_inputs, text_inputs, indices in tqdm(dataloader, desc="Processing text batches"):
-                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-                
-                text_features = model.get_text_features(**text_inputs)
-                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                
-                all_text_features.append(text_features)  # Keep on GPU
-        
-        all_text_features = torch.cat(all_text_features, dim=0).to(device)
+            text_features = model.get_text_features(**text_inputs)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+            
+            all_text_features.append(text_features)  # Keep on GPU
+    
+    # Concatenate all text features (keep on GPU)
+    all_text_features = torch.cat(all_text_features, dim=0).to(device)
     
     print(f"Text features shape: {all_text_features.shape} (on {device})")
     
-    # Compute retrieval metrics (on GPU for speed)
+    # Compute retrieval metrics (Karpathy-style with 5 captions per image)
     print("Computing retrieval metrics...")
-    if use_karpathy_eval:
-        print("Using Karpathy-style evaluation (5 captions per image)")
-        metrics = compute_retrieval_metrics_karpathy(all_image_features, all_text_features, dataset, device=device)
-    else:
-        print("Using standard 1:1 evaluation")
-        metrics = compute_retrieval_metrics(all_image_features, all_text_features, device=device)
+    metrics = compute_retrieval_metrics_karpathy(all_image_features, all_text_features, dataset, device=device)
     
     # Print results in standard format
-    eval_mode = "Karpathy (5 captions/image)" if use_karpathy_eval else "Standard (1:1)"
+    eval_mode = "N captions - 1 image)"
     print("\n" + "="*70)
     print(f"RETRIEVAL RESULTS - {dataset_name.upper()} {split.upper()}")
     print(f"Evaluation Mode: {eval_mode}")
@@ -665,7 +564,7 @@ def run_retrieval_evaluation(
         "model_type": model_type,
         "dataset": dataset_name,
         "split": split,
-        "evaluation_mode": "karpathy" if use_karpathy_eval else "standard",
+        "evaluation_mode": "karpathy",
         "num_images": len(all_image_features),
         "num_captions": len(all_text_features),
         "captions_per_image": len(all_text_features) / len(all_image_features),
@@ -680,10 +579,9 @@ def run_retrieval_evaluation(
     
     # Save detailed results
     model_name = model_id.replace("/", "_")
-    eval_suffix = "_karpathy" if use_karpathy_eval else "_standard"
     
     # Save text results
-    text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}{eval_suffix}.txt")
+    text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}.txt")
     with open(text_file, "w") as f:
         f.write(f"RETRIEVAL RESULTS - {dataset_name.upper()} {split.upper()}\n")
         f.write(f"Evaluation Mode: {eval_mode}\n")
@@ -787,20 +685,6 @@ def parse_args():
              "If provided with --dataset_name mscoco, we will load captions locally instead of HF Karpathy split. "
              "Requires --local_image_dir pointing to val2017/.",
     )
-
-    parser.add_argument(
-        "--use_karpathy_eval",
-        action="store_true",
-        default=True,
-        help="Use Karpathy-style evaluation with 5 captions per image (default: True)"
-    )
-    
-    parser.add_argument(
-        "--no_karpathy_eval",
-        dest="use_karpathy_eval",
-        action="store_false",
-        help="Disable Karpathy evaluation (use standard 1:1 evaluation)"
-    )
     
     parser.add_argument(
         "--results_dir",
@@ -816,7 +700,7 @@ if __name__ == "__main__":
     args = parse_args()
     
     print("="*80)
-    print("CLIP/SigLIP Retrieval Evaluation")
+    print("CLIP/SigLIP Retrieval Evaluation (Karpathy-style, 5 captions/image)")
     print("="*80)
     print(f"Model Path: {args.model_path}")
     print(f"Model Type: {args.model_name.upper()}")
@@ -824,7 +708,6 @@ if __name__ == "__main__":
     print(f"Dataset: {args.dataset_name.upper()}")
     print(f"Split: {args.split}")
     print(f"Batch Size: {args.batch_size}")
-    print(f"Karpathy Eval: {args.use_karpathy_eval}")
     print("="*80)
     
     results = run_retrieval_evaluation(
@@ -836,7 +719,6 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         device=args.device,
         max_samples=args.max_samples,
-        use_karpathy_eval=args.use_karpathy_eval,
         local_image_dir=args.local_image_dir,
         coco_captions_json=args.coco_captions_json,
         results_dir=args.results_dir
