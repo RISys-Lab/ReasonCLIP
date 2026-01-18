@@ -75,7 +75,7 @@ for i in "${!models[@]}"; do
   python eval/zeroshot_imagenet.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
-    --dataset imagenet1k \
+    --dataset all \
     --batch_size 128 \
     --num_workers 8 \
     --device cuda:0 \
