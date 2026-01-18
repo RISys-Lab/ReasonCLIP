@@ -5,8 +5,8 @@ from datasets import Dataset, load_dataset
 from transformers import (
     CLIPProcessor,
     CLIPModel,
-    Siglip2Processor,
-    Siglip2Model,
+    SiglipProcessor,
+    SiglipModel,
     Trainer,
     TrainingArguments,
 )
@@ -331,7 +331,7 @@ def train_clip(args):
     if model_type == "clip":
         processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
-        processor = Siglip2Processor.from_pretrained(model_name)
+        processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -363,7 +363,8 @@ def train_clip(args):
                 torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
             )
         elif model_type == "siglip":
-            model = Siglip2Model.from_pretrained(
+            model = SiglipModel.from_pretrained(
+            model = SiglipModel.from_pretrained(
                 model_name,
                 attn_implementation="flash_attention_2",
                 torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
@@ -548,9 +549,9 @@ def push_to_hub(adapter_paths, base_repo_name, model_type="clip"):
                 processor = CLIPProcessor.from_pretrained(adapter_path)
             elif model_type == "siglip":
                 config = PeftConfig.from_pretrained(adapter_path)
-                base_model = Siglip2Model.from_pretrained(config.base_model_name_or_path)
+                base_model = SiglipModel.from_pretrained(config.base_model_name_or_path)
                 model = PeftModel.from_pretrained(base_model, adapter_path)
-                processor = Siglip2Processor.from_pretrained(adapter_path)
+                processor = SiglipProcessor.from_pretrained(adapter_path)
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
 
