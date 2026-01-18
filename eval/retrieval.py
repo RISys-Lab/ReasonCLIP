@@ -554,7 +554,7 @@ def run_retrieval_evaluation(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,  # ✅ 修改为 0 避免 pickle 序列化问题
+        num_workers=4,  # ✅ 修改为 0 避免 pickle 序列化问题
         pin_memory=True,
         collate_fn=lambda batch: collate_retrieval_fn(batch, processor)
     )
