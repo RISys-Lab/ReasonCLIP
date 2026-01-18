@@ -4,10 +4,9 @@ Supports: ImageNet-1K, ImageNet-V2, ObjectNet
 Same logic as CLIP_benchmark
 """
 import torch
-import json
 import os
 import argparse
-import requests
+import glob
 from datasets import load_dataset
 from PIL import Image
 import io
@@ -25,22 +24,46 @@ DATASETS_CONFIG = {
 }
 
 
-def load_wds_metadata(hf_id):
-    """Load classnames and templates from HuggingFace wds dataset (same as CLIP_benchmark)"""
-    base_url = f"https://huggingface.co/datasets/{hf_id}/raw/main"
-    
-    # Load classnames.txt
-    classnames_url = f"{base_url}/classnames.txt"
-    response = requests.get(classnames_url)
-    response.raise_for_status()
-    classnames = [line.strip() for line in response.text.splitlines() if line.strip()]
-    
-    # Load zeroshot_classification_templates.txt
-    templates_url = f"{base_url}/zeroshot_classification_templates.txt"
-    response = requests.get(templates_url)
-    response.raise_for_status()
-    templates = [line.strip() for line in response.text.splitlines() if line.strip()]
-    
+def _read_txt_lines(path):
+    with open(path, "r") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+def _get_hf_home(hf_home=None):
+    if hf_home:
+        return hf_home
+    return os.environ.get("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+
+
+def _find_cached_dataset_file(hf_id, filename, hf_home=None):
+    hf_home = _get_hf_home(hf_home)
+    repo_dir = f"datasets--{hf_id.replace('/', '--')}"
+    hub_dir = os.path.join(hf_home, "hub", repo_dir)
+    if not os.path.isdir(hub_dir):
+        return None
+    snapshots_dir = os.path.join(hub_dir, "snapshots")
+    if not os.path.isdir(snapshots_dir):
+        return None
+    candidates = glob.glob(os.path.join(snapshots_dir, "*", filename))
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
+
+
+def load_wds_metadata(hf_id, classnames_file=None, templates_file=None, hf_home=None):
+    """Load classnames and templates from local HF cache or provided txt paths."""
+    if classnames_file is None:
+        classnames_file = _find_cached_dataset_file(hf_id, "classnames.txt", hf_home=hf_home)
+    if templates_file is None:
+        templates_file = _find_cached_dataset_file(hf_id, "zeroshot_classification_templates.txt", hf_home=hf_home)
+
+    if classnames_file is None or templates_file is None:
+        raise FileNotFoundError(
+            "Local metadata not found. Provide --classnames_file/--templates_file or set HF_HOME."
+        )
+
+    classnames = _read_txt_lines(classnames_file)
+    templates = _read_txt_lines(templates_file)
     return classnames, templates
 
 
@@ -121,7 +144,10 @@ def run_zeroshot_evaluation(
     num_workers=8,
     max_samples=None,
     device=None,
-    results_dir=None
+    results_dir=None,
+    classnames_file=None,
+    templates_file=None,
+    hf_home=None
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -147,8 +173,13 @@ def run_zeroshot_evaluation(
     model.to(device).eval()
     
     # Load classnames and templates from dataset (same as CLIP_benchmark)
-    print(f"Loading classnames and templates from {hf_id}...")
-    classnames, templates = load_wds_metadata(hf_id)
+    print(f"Loading classnames and templates from local cache ({hf_id})...")
+    classnames, templates = load_wds_metadata(
+        hf_id,
+        classnames_file=classnames_file,
+        templates_file=templates_file,
+        hf_home=hf_home,
+    )
     print(f"📝 Loaded {len(classnames)} classes, {len(templates)} templates")
     
     # Create text features
@@ -245,7 +276,10 @@ def run_all_evaluations(
     num_workers=8,
     max_samples=None,
     device=None,
-    results_dir=None
+    results_dir=None,
+    classnames_file=None,
+    templates_file=None,
+    hf_home=None
 ):
     """Run evaluation on all datasets"""
     from datetime import datetime
@@ -278,8 +312,13 @@ def run_all_evaluations(
         print(f"{'='*80}")
         
         # Load classnames and templates for this dataset
-        print(f"Loading classnames and templates from {hf_id}...")
-        classnames, templates = load_wds_metadata(hf_id)
+        print(f"Loading classnames and templates from local cache ({hf_id})...")
+        classnames, templates = load_wds_metadata(
+            hf_id,
+            classnames_file=classnames_file,
+            templates_file=templates_file,
+            hf_home=hf_home,
+        )
         print(f"📝 {len(classnames)} classes, {len(templates)} templates")
         
         # Create text features for this dataset
@@ -397,6 +436,9 @@ def parse_args():
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--results_dir", type=str, default=None)
+    parser.add_argument("--classnames_file", type=str, default=None)
+    parser.add_argument("--templates_file", type=str, default=None)
+    parser.add_argument("--hf_home", type=str, default=None)
     
     return parser.parse_args()
 
@@ -412,7 +454,10 @@ if __name__ == "__main__":
             num_workers=args.num_workers,
             max_samples=args.max_samples,
             device=args.device,
-            results_dir=args.results_dir
+            results_dir=args.results_dir,
+            classnames_file=args.classnames_file,
+            templates_file=args.templates_file,
+            hf_home=args.hf_home
         )
         print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
     else:
@@ -424,6 +469,9 @@ if __name__ == "__main__":
             num_workers=args.num_workers,
             max_samples=args.max_samples,
             device=args.device,
-            results_dir=args.results_dir
+            results_dir=args.results_dir,
+            classnames_file=args.classnames_file,
+            templates_file=args.templates_file,
+            hf_home=args.hf_home
         )
         print(f"\n🎯 Final: Top-1={result['top1_accuracy']:.2f}%")
