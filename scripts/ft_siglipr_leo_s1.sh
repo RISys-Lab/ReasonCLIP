@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=siglipr_ft_go_s1
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
+#SBATCH --nodes=12
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:4
@@ -56,8 +56,8 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
 accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
-  --num_machines 8 \
-  --num_processes 32 \
+  --num_machines 12 \
+  --num_processes 48 \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
@@ -69,7 +69,7 @@ accelerate launch \
     --batch_size 256 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
-    --learning_rate 5e-5 \
+    --learning_rate 1e-4 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
     --weight_decay 1e-4 \
