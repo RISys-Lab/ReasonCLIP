@@ -507,9 +507,9 @@ def run_retrieval_evaluation(
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     elif model_type.lower() == "siglip":
-        model = SiglipModel.from_pretrained(model_id)
+        model = AutoModel.from_pretrained(model_id)
         proc_id = processor_path or model_id
-        processor = SiglipProcessor.from_pretrained(proc_id)
+        processor = AutoProcessor.from_pretrained(proc_id)
     else:
         raise ValueError(f"Unsupported model type: {model_type}. Must contain 'clip' or 'siglip' (or pass 'auto').")
     
