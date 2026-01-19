@@ -66,7 +66,7 @@ accelerate launch \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --batch_size 768 \
+    --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --default_lr 1e-4 \
