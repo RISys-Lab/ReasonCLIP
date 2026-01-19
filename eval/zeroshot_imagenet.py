@@ -103,7 +103,7 @@ class ZeroShotDataset(torch.utils.data.Dataset):
         sample = self.dataset[idx]
         
         # Get image
-        image_data = sample.get("png") or sample.get("jpg") or sample.get("image")
+        image_data = sample.get("webp") or sample.get("png") or sample.get("jpg") or sample.get("image")
         if image_data is None:
             raise KeyError("No image field found (png/jpg/image)")
         
