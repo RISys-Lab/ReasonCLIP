@@ -86,26 +86,21 @@ def create_text_features(classnames, templates, processor, model, device):
 
 
 class ZeroShotDataset(torch.utils.data.Dataset):
-    """Dataset for zero-shot classification"""
+    """Dataset for zero-shot classification (lazy, no in-memory caching)."""
     def __init__(self, hf_dataset, processor, dataset_name="imagenet1k", max_samples=None):
         self.processor = processor
         self.dataset_name = dataset_name
-        self.data_list = []
-        
-        print(f"Loading {dataset_name} dataset...")
-        
-        for i, sample in enumerate(tqdm(hf_dataset, desc="Loading samples")):
-            if max_samples and i >= max_samples:
-                break
-            self.data_list.append(sample)
-        
-        print(f"✅ Loaded {len(self.data_list)} samples")
+        if max_samples is not None:
+            hf_dataset = hf_dataset.select(range(max_samples))
+        self.dataset = hf_dataset
+        self.length = len(hf_dataset)
+        print(f"✅ Loaded {self.length} samples")
     
     def __len__(self):
-        return len(self.data_list)
+        return self.length
     
     def __getitem__(self, idx):
-        sample = self.data_list[idx]
+        sample = self.dataset[idx]
         
         # Get image
         image_data = sample.get("png") or sample.get("jpg") or sample.get("image")
@@ -134,7 +129,7 @@ def run_zeroshot_evaluation(
     processor_path=None,
     dataset_name="imagenet1k",
     batch_size=64,
-    num_workers=8,
+    num_workers=4,
     max_samples=None,
     device=None,
     results_dir=None,
@@ -267,7 +262,7 @@ def run_all_evaluations(
     model_path,
     processor_path=None,
     batch_size=64,
-    num_workers=8,
+    num_workers=2,
     max_samples=None,
     device=None,
     results_dir=None,
@@ -427,7 +422,7 @@ def parse_args():
     parser.add_argument("--dataset", type=str, default="imagenet1k",
                         choices=["imagenet1k", "imagenetv2", "objectnet", "all"])
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--num_workers", type=int, default=8)
+    parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--results_dir", type=str, default=None)
