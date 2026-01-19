@@ -6,6 +6,7 @@ Same logic as CLIP_benchmark
 import torch
 import os
 import argparse
+from contextlib import nullcontext
 from datasets import load_dataset
 from PIL import Image
 import io
@@ -159,7 +160,8 @@ def run_zeroshot_evaluation(
     
     # Load model and processor
     print(f"Loading model...")
-    model = AutoModel.from_pretrained(model_path)
+    torch_dtype = torch.float16 if device != "cpu" else None
+    model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
     processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
     
@@ -173,7 +175,9 @@ def run_zeroshot_evaluation(
     print(f"📝 Loaded {len(classnames)} classes, {len(templates)} templates")
     
     # Create text features
-    text_features = create_text_features(classnames, templates, processor, model, device)
+    autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16) if device != "cpu" else nullcontext()
+    with autocast_ctx:
+        text_features = create_text_features(classnames, templates, processor, model, device)
     
     # Load dataset
     print(f"\n📥 Loading dataset...")
@@ -193,7 +197,7 @@ def run_zeroshot_evaluation(
     top1, top5, total = 0, 0, 0
     
     print("\n🚀 Starting evaluation...")
-    with torch.no_grad():
+    with torch.no_grad(), autocast_ctx:
         for image_inputs, labels in tqdm(dataloader, desc="Evaluating"):
             image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
             labels = labels.to(device)
@@ -289,12 +293,14 @@ def run_all_evaluations(
     
     # Load model and processor once
     print(f"\nLoading model...")
-    model = AutoModel.from_pretrained(model_path)
+    torch_dtype = torch.float16 if device != "cpu" else None
+    model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
     processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
     
     all_results = []
     
+    autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16) if device != "cpu" else nullcontext()
     for dataset_name, (hf_id, split) in DATASETS_CONFIG.items():
         print(f"\n{'='*80}")
         print(f"📊 Evaluating: {dataset_name}")
@@ -310,7 +316,8 @@ def run_all_evaluations(
         print(f"📝 {len(classnames)} classes, {len(templates)} templates")
         
         # Create text features for this dataset
-        text_features = create_text_features(classnames, templates, processor, model, device)
+        with autocast_ctx:
+            text_features = create_text_features(classnames, templates, processor, model, device)
         
         # Load dataset
         hf_dataset = load_dataset(hf_id, split=split)
@@ -329,7 +336,7 @@ def run_all_evaluations(
         top1, top5, total = 0, 0, 0
         k = min(5, len(classnames))
         
-        with torch.no_grad():
+        with torch.no_grad(), autocast_ctx:
             for image_inputs, labels in tqdm(dataloader, desc=f"Evaluating {dataset_name}"):
                 image_inputs = {k_: v.to(device) for k_, v in image_inputs.items()}
                 labels = labels.to(device)
