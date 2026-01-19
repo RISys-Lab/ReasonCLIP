@@ -21,6 +21,7 @@ DATASETS_CONFIG = {
     "imagenet1k": ("clip-benchmark/wds_imagenet1k", "test"),
     "imagenetv2": ("clip-benchmark/wds_imagenetv2", "test"),
     "objectnet": ("clip-benchmark/wds_objectnet", "test"),
+    "imagenet_sketch": ("clip-benchmark/wds_imagenet_sketch", "test"),
 }
 
 
@@ -58,7 +59,7 @@ def load_wds_metadata(hf_id, classnames_file=None, templates_file=None):
     return classnames, templates
 
 
-def create_text_features(classnames, templates, processor, model, device):
+def create_text_features(classnames, templates, processor, model, device, is_siglip):
     """Create text features for all classes using prompt templates"""
     print(f"Computing text features for {len(classnames)} classes with {len(templates)} templates...")
     
@@ -68,7 +69,21 @@ def create_text_features(classnames, templates, processor, model, device):
         class_prompts = [template.format(c=classname) for template in templates]
         
         with torch.no_grad():
-            inputs = processor(text=class_prompts, return_tensors="pt", padding=True, truncation=True)
+            if is_siglip:
+                inputs = processor(
+                    text=class_prompts,
+                    return_tensors="pt",
+                    padding="max_length",
+                    truncation=True,
+                    max_length=64,
+                )
+            else:
+                inputs = processor(
+                    text=class_prompts,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                )
             inputs = {k: v.to(device) for k, v in inputs.items()}
             
             text_features = model.get_text_features(**inputs)
@@ -134,7 +149,8 @@ def run_zeroshot_evaluation(
     device=None,
     results_dir=None,
     classnames_file=None,
-    templates_file=None
+    templates_file=None,
+    use_bf16=True
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -155,7 +171,14 @@ def run_zeroshot_evaluation(
     
     # Load model and processor
     print(f"Loading model...")
-    torch_dtype = torch.float16 if device != "cpu" else None
+    is_siglip = "siglip" in (model_path or "").lower() or "siglip" in (processor_path or "").lower()
+    if device != "cpu":
+        if is_siglip:
+            torch_dtype = torch.bfloat16 if use_bf16 else None
+        else:
+            torch_dtype = torch.float16
+    else:
+        torch_dtype = None
     model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
     processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
@@ -170,9 +193,15 @@ def run_zeroshot_evaluation(
     print(f"📝 Loaded {len(classnames)} classes, {len(templates)} templates")
     
     # Create text features
-    autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16) if device != "cpu" else nullcontext()
+    if device != "cpu":
+        if is_siglip and use_bf16:
+            autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16)
+        else:
+            autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16)
+    else:
+        autocast_ctx = nullcontext()
     with autocast_ctx:
-        text_features = create_text_features(classnames, templates, processor, model, device)
+        text_features = create_text_features(classnames, templates, processor, model, device, is_siglip)
     
     # Load dataset
     print(f"\n📥 Loading dataset...")
@@ -267,7 +296,8 @@ def run_all_evaluations(
     device=None,
     results_dir=None,
     classnames_file=None,
-    templates_file=None
+    templates_file=None,
+    use_bf16=True
 ):
     """Run evaluation on all datasets"""
     from datetime import datetime
@@ -288,14 +318,27 @@ def run_all_evaluations(
     
     # Load model and processor once
     print(f"\nLoading model...")
-    torch_dtype = torch.float16 if device != "cpu" else None
+    is_siglip = "siglip" in (model_path or "").lower() or "siglip" in (processor_path or "").lower()
+    if device != "cpu":
+        if is_siglip:
+            torch_dtype = torch.bfloat16 if use_bf16 else None
+        else:
+            torch_dtype = torch.float16
+    else:
+        torch_dtype = None
     model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
     processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
     
     all_results = []
     
-    autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16) if device != "cpu" else nullcontext()
+    if device != "cpu":
+        if is_siglip and use_bf16:
+            autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16)
+        else:
+            autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.float16)
+    else:
+        autocast_ctx = nullcontext()
     for dataset_name, (hf_id, split) in DATASETS_CONFIG.items():
         print(f"\n{'='*80}")
         print(f"📊 Evaluating: {dataset_name}")
@@ -312,7 +355,7 @@ def run_all_evaluations(
         
         # Create text features for this dataset
         with autocast_ctx:
-            text_features = create_text_features(classnames, templates, processor, model, device)
+            text_features = create_text_features(classnames, templates, processor, model, device, is_siglip)
         
         # Load dataset
         hf_dataset = load_dataset(hf_id, split=split)
@@ -420,7 +463,7 @@ def parse_args():
     parser.add_argument("--model_path", type=str, required=True, help="Model path")
     parser.add_argument("--processor_path", type=str, default=None, help="Processor path")
     parser.add_argument("--dataset", type=str, default="imagenet1k",
-                        choices=["imagenet1k", "imagenetv2", "objectnet", "all"])
+                        choices=["imagenet1k", "imagenetv2", "objectnet", "imagenet_sketch", "all"])
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--max_samples", type=int, default=None)
@@ -428,6 +471,11 @@ def parse_args():
     parser.add_argument("--results_dir", type=str, default=None)
     parser.add_argument("--classnames_file", type=str, default=None)
     parser.add_argument("--templates_file", type=str, default=None)
+    parser.add_argument(
+        "--no_bf16",
+        action="store_true",
+        help="Disable bf16 autocast and load model with fp32 weights",
+    )
     
     return parser.parse_args()
 
@@ -445,7 +493,8 @@ if __name__ == "__main__":
             device=args.device,
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
-            templates_file=args.templates_file
+            templates_file=args.templates_file,
+            use_bf16=not args.no_bf16
         )
         print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
     else:
@@ -459,6 +508,7 @@ if __name__ == "__main__":
             device=args.device,
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
-            templates_file=args.templates_file
+            templates_file=args.templates_file,
+            use_bf16=not args.no_bf16
         )
         print(f"\n🎯 Final: Top-1={result['top1_accuracy']:.2f}%")
