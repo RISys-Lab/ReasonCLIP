@@ -89,6 +89,10 @@ for i in "${!models[@]}"; do
     --batch_size 512 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_wds_mscoco" &
+
+  while [ "$(jobs -rp | wc -l)" -ge 2 ]; do
+    wait -n
+  done
 done
 
 wait
