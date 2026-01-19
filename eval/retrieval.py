@@ -8,6 +8,7 @@ from transformers import CLIPModel, CLIPProcessor, SiglipModel, SiglipProcessor
 from transformers import AutoModel, AutoProcessor
 from torch.utils.data import DataLoader
 import json
+from contextlib import nullcontext
 import os
 import requests
 import argparse
@@ -381,7 +382,8 @@ def run_retrieval_evaluation(
     device=None,
     local_image_dir=None,  # ✅ 本地图片目录
     coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
-    results_dir=None  # 结果保存目录
+    results_dir=None,  # 结果保存目录
+    use_bf16=True
 ):
     """
     Run CLIP/SigLIP retrieval evaluation (Karpathy-style with 5 captions per image)
@@ -417,15 +419,17 @@ def run_retrieval_evaluation(
     print(f"Processor: {processor_path or model_id}")
     print(f"Dataset: {dataset_name} ({split})")
     print(f"Batch size: {batch_size}, Workers: {num_workers}")
+    print(f"BF16: {'on' if use_bf16 else 'off'}")
     
     # Load model and processor based on model type
     print(f"Loading {model_type.upper()} model and processor...")
+    torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
     if model_type.lower() == "clip":
-        model = AutoModel.from_pretrained(model_id)
+        model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     elif model_type.lower() == "siglip":
-        model = AutoModel.from_pretrained(model_id)
+        model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     else:
@@ -485,7 +489,8 @@ def run_retrieval_evaluation(
     
     print("Extracting image features...")
     # First pass: extract image features
-    with torch.no_grad():
+    autocast_ctx = torch.autocast(device_type=device.split(":")[0], dtype=torch.bfloat16) if use_bf16 and device != "cpu" else nullcontext()
+    with torch.no_grad(), autocast_ctx:
         for image_inputs, text_inputs, indices in tqdm(dataloader, desc="Processing image batches"):
             # Move data to device in main process (not in workers)
             image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
@@ -516,7 +521,7 @@ def run_retrieval_evaluation(
         text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
         text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
         
-        with torch.no_grad():
+        with torch.no_grad(), autocast_ctx:
             text_features = model.get_text_features(**text_inputs)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             
@@ -693,6 +698,12 @@ def parse_args():
         help="Directory to save evaluation results (default: '/home/muzammal/Projects/CLIP-R/eval/results')"
     )
     
+    parser.add_argument(
+        "--no_bf16",
+        action="store_true",
+        help="Disable bf16 autocast and load model with fp32 weights"
+    )
+    
     return parser.parse_args()
 
 
@@ -721,7 +732,8 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         local_image_dir=args.local_image_dir,
         coco_captions_json=args.coco_captions_json,
-        results_dir=args.results_dir
+        results_dir=args.results_dir,
+        use_bf16=not args.no_bf16
     )
     
     print("\n✅ Evaluation completed!") 
