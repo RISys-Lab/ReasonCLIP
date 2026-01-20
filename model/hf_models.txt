@@ -1,0 +1,27 @@
+# openai clip ViT B/32 @224
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-b32-s1-run0109-853")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-b32-s2-run0112-336")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-b32-d-run1219-466")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+# openai clip ViT L/14 @224
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-s1-run1207-1280")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-s2-run1219-505")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-d-run1219-621")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+
+# openai clip ViT L/14 @336
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-336-s1-run1215-1280")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-336-s2-run1218-505")
+model = CLIPModel.from_pretrained("fesvhtr/clip-r-336-d-run1219-608")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14-336")
+
+# SigLIP ViT So/14 @384
+
+
+
+# SigLIP2 ViT So/14 @384
+model = SiglipModel.from_pretrained("fesvhtr/siglip-r-s1-run1216-1706")
+model = SiglipModel.from_pretrained("fesvhtr/siglip-r-s2-run0109-673")
+model = SiglipModel.from_pretrained("fesvhtr/siglip-r-d-run0115-1241")
+processor = SiglipProcessor.from_pretrained("google/siglip2-so400m-patch14-384")

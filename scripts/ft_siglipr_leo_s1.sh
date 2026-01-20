@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_ft_go_s1
+#SBATCH --job-name=siglipr_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=4
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_ft_go_s1.out
-#SBATCH --error=siglipr_ft_go_s1.err
+#SBATCH --output=siglipr_ft_s1.out
+#SBATCH --error=siglipr_ft_s1.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -30,8 +30,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_go_s1"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
 
 mkdir -p "$OUT_DIR"
 
@@ -66,7 +66,7 @@ accelerate launch \
     --parquet_files ${PARQUET_PATH} \
     --model_name ${MODEL_PATH} \
     --output_dir ${OUT_DIR} \
-    --batch_size 256 \
+    --batch_size 384 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --learning_rate 1e-4 \
@@ -77,10 +77,10 @@ accelerate launch \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
     --save_strategy ratio \
-    --save_ratio 0.2 \
+    --save_ratio 0.25 \
     --save_total_limit 5 \
     --eval_strategy ratio \
-    --eval_ratio 0.2 \
+    --eval_ratio 0.25 \
     --tb_start 0.7 \
     --tb_mid 0.5 \
     --tb_end 0.6 \
@@ -89,7 +89,7 @@ accelerate launch \
     --num_workers ${NUM_WORKERS} \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"siglip_r_go_s1\"
+    --run_name \"siglip_r_s1\"
 "
 
 echo "Finetune CLIP-R (multi-node) completed."
