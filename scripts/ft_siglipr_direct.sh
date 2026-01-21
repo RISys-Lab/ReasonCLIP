@@ -92,6 +92,6 @@ LAUNCH_CMD="accelerate launch \
 # --ntasks-per-node=1: 每个节点启动一个"管家"进程
 # 这个管家进程运行 accelerate launch，然后 accelerate 会自动在本地拉起2个GPU进程
 srun --nodes=2 --ntasks-per-node=1 --cpus-per-task=8 \
-    bash -c "export CUDA_VISIBLE_DEVICES=0,1; $LAUNCH_CMD"
+    bash -c "$LAUNCH_CMD"
 
 echo "Finetune CLIP-R (multi-node) completed."
