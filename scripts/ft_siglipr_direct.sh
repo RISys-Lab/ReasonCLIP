@@ -62,7 +62,7 @@ accelerate launch \
   --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
-  trainning/ft_clip_r_direct.py \
+  trainning/ft_clip_r_rea_direct.py \
     --model_type siglip \
     --parquet_files_ReasonPro ${PARQUET_PATH_PRO} \
     --parquet_files_ReasonLite ${PARQUET_PATH_LITE} \
