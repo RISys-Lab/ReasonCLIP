@@ -565,7 +565,6 @@ def train_clip(args):
         orig_model = CLIPModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
         processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -577,8 +576,7 @@ def train_clip(args):
         orig_model = SiglipModel.from_pretrained(model_name)
         for p in orig_model.parameters():
             p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-        processor = SiglipProcessor.from_pretrained(processor_name)
+        processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
