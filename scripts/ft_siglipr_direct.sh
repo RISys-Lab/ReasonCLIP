@@ -53,8 +53,8 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
   # --distributed_type fsdp \
   # --fsdp_config "fsdp_sharding_strategy=FULL_SHARD fsdp_auto_wrap_policy=TRANSFORMER_BASED_WRAP fsdp_state_dict_type=SHARDED_STATE_DICT" \
 # current code does not use fsdp and deepspeed
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
-accelerate launch \
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
+  $WORK/fmohamma/venvs/clipr/bin/accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
   --num_machines 8 \
