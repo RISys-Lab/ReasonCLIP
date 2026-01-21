@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=siglipr_ft_direct
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=siglipr_ft_direct.out
@@ -57,8 +57,8 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
   $WORK/fmohamma/venvs/clipr/bin/accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
-  --num_machines 8 \
-  --num_processes 32 \
+  --num_machines 2 \
+  --num_processes 4 \
   --machine_rank ${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
