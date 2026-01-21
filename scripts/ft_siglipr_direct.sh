@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=siglipr_ft_direct
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
-#SBATCH --ntasks-per-node=4
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=siglipr_ft_direct.out
@@ -53,13 +53,13 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
   # --distributed_type fsdp \
   # --fsdp_config "fsdp_sharding_strategy=FULL_SHARD fsdp_auto_wrap_policy=TRANSFORMER_BASED_WRAP fsdp_state_dict_type=SHARDED_STATE_DICT" \
 # current code does not use fsdp and deepspeed
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
-  $WORK/fmohamma/venvs/clipr/bin/accelerate launch \
+srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
+accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
-  --num_machines 8 \
-  --num_processes 32 \
-  --machine_rank ${SLURM_NODEID} \
+  --num_machines 2 \
+  --num_processes 4 \
+  --machine_rank \${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
   trainning/ft_clip_r_rea_direct.py \
@@ -90,6 +90,6 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
     --run_name \"siglip_r_direct\"
-
+"
 echo "Finetune CLIP-R (multi-node) completed."
 
