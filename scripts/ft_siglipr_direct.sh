@@ -59,7 +59,7 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
   --mixed_precision=bf16 \
   --num_machines 8 \
   --num_processes 32 \
-  --machine_rank \${SLURM_NODEID} \
+  --machine_rank ${SLURM_NODEID} \
   --main_process_ip ${MASTER_ADDR} \
   --main_process_port ${MASTER_PORT} \
   trainning/ft_clip_r_rea_direct.py \
@@ -90,7 +90,6 @@ srun --nodes=$SLURM_NNODES --ntasks-per-node=1 \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
     --run_name \"siglip_r_direct\"
-"
 
 echo "Finetune CLIP-R (multi-node) completed."
 
