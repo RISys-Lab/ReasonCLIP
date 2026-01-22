@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=siglipr_ft_direct
 #SBATCH --time=24:00:00
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=1    
-#SBATCH --cpus-per-task=8   
-#SBATCH --gres=gpu:2
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
 #SBATCH --output=siglipr_ft_direct.out 
@@ -50,8 +50,8 @@ echo "[INFO] MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 LAUNCH_CMD="accelerate launch \
     --multi_gpu \
     --mixed_precision=bf16 \
-    --num_machines 2 \
-    --num_processes 4 \
+    --num_machines 8 \
+    --num_processes 32 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank \$SLURM_NODEID \
@@ -91,7 +91,7 @@ LAUNCH_CMD="accelerate launch \
 # 使用 srun 将命令分发到所有节点
 # --ntasks-per-node=1: 每个节点启动一个"管家"进程
 # 这个管家进程运行 accelerate launch，然后 accelerate 会自动在本地拉起2个GPU进程
-srun --nodes=2 --ntasks-per-node=1 --cpus-per-task=8 \
+srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
 
 echo "Finetune CLIP-R (multi-node) completed."
