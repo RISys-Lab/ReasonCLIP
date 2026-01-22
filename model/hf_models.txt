@@ -21,7 +21,7 @@ processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14-336")
 
 
 # SigLIP2 ViT So/14 @384
-model = SiglipModel.from_pretrained("fesvhtr/siglip-r-s1-run1216-1706")
-model = SiglipModel.from_pretrained("fesvhtr/siglip-r-s2-run0109-673")
-model = SiglipModel.from_pretrained("fesvhtr/siglip-r-d-run0115-1241")
+model = SiglipModel.from_pretrained("fesvhtr/siglip2-r-s1-run1216-1706")
+model = SiglipModel.from_pretrained("fesvhtr/siglip2-r-s2-run0109-673")
+model = SiglipModel.from_pretrained("fesvhtr/siglip2-r-d-run0115-1241")
 processor = SiglipProcessor.from_pretrained("google/siglip2-so400m-patch14-384")
