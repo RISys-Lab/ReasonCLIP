@@ -68,26 +68,39 @@ def encode_texts(model, processor, texts, bs=256):
         feats.append(x.cpu())
     return torch.cat(feats, 0)
 
-def t2i_r1(text_feats, image_feats, text2img):
-    correct=0
+def t2i_recall(text_feats, image_feats, text2img):
+    correct_1, correct_5, correct_10 = 0, 0, 0
     bs=1024
-    for i in tqdm(range(0, text_feats.size(0), bs), desc="T->I R@1"):
+    for i in tqdm(range(0, text_feats.size(0), bs), desc="T->I Recall"):
         sims=text_feats[i:i+bs] @ image_feats.T
-        pred=sims.argmax(1)
-        gt=torch.tensor(text2img[i:i+bs])
-        correct += (pred==gt).sum().item()
-    return correct / text_feats.size(0)
+        topk=sims.topk(10, dim=1)[1]  # [batch, 10]
+        gt=torch.tensor(text2img[i:i+bs]).unsqueeze(1)  # [batch, 1]
+        
+        correct_1 += (topk[:, :1]==gt).any(1).sum().item()
+        correct_5 += (topk[:, :5]==gt).any(1).sum().item()
+        correct_10 += (topk[:, :10]==gt).any(1).sum().item()
+    
+    total = text_feats.size(0)
+    return correct_1/total, correct_5/total, correct_10/total
 
-def i2t_r1(text_feats, image_feats, img2text):
-    correct=0
+def i2t_recall(text_feats, image_feats, img2text):
+    correct_1, correct_5, correct_10 = 0, 0, 0
     bs=256
-    for i in tqdm(range(0, image_feats.size(0), bs), desc="I->T R@1"):
+    for i in tqdm(range(0, image_feats.size(0), bs), desc="I->T Recall"):
         sims=image_feats[i:i+bs] @ text_feats.T
-        pred=sims.argmax(1).tolist()
-        for j,p in enumerate(pred):
-            if p in img2text[i+j]:
-                correct += 1
-    return correct / image_feats.size(0)
+        topk=sims.topk(10, dim=1)[1].tolist()  # [batch, 10]
+        
+        for j, preds in enumerate(topk):
+            gt_set = set(img2text[i+j])
+            if preds[0] in gt_set:
+                correct_1 += 1
+            if any(p in gt_set for p in preds[:5]):
+                correct_5 += 1
+            if any(p in gt_set for p in preds[:10]):
+                correct_10 += 1
+    
+    total = image_feats.size(0)
+    return correct_1/total, correct_5/total, correct_10/total
 
 def main():
     model = AutoModel.from_pretrained(CKPT).to(device).eval()
@@ -101,12 +114,16 @@ def main():
     img_f = encode_images(model, processor, image_paths, bs=32)
     txt_f = encode_texts(model, processor, texts, bs=256)
 
-    t2i = t2i_r1(txt_f, img_f, text2img)
-    i2t = i2t_r1(txt_f, img_f, img2text)
+    t2i_r1, t2i_r5, t2i_r10 = t2i_recall(txt_f, img_f, text2img)
+    i2t_r1, i2t_r5, i2t_r10 = i2t_recall(txt_f, img_f, img2text)
 
     print("\n=== COCO 2017 val retrieval ===")
-    print(f"T->I R@1: {t2i*100:.2f}")
-    print(f"I->T R@1: {i2t*100:.2f}")
+    print(f"T->I R@1:  {t2i_r1*100:.2f}")
+    print(f"T->I R@5:  {t2i_r5*100:.2f}")
+    print(f"T->I R@10: {t2i_r10*100:.2f}")
+    print(f"I->T R@1:  {i2t_r1*100:.2f}")
+    print(f"I->T R@5:  {i2t_r5*100:.2f}")
+    print(f"I->T R@10: {i2t_r10*100:.2f}")
 
 if __name__ == "__main__":
     main()
