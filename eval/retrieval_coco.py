@@ -7,8 +7,8 @@ from transformers import AutoModel, AutoProcessor
 
 CKPT = "google/siglip2-so400m-patch14-384"
 
-VAL_IMG_DIR = os.environ.get("COCO_VAL_IMG_DIR", "/home/shiqiu/binzhu/datasets/coco2017/val2017")
-CAP_JSON    = os.environ.get("COCO_CAP_JSON",    "/home/shiqiu/binzhu/datasets/coco2017/annotations/captions_val2017.json")
+VAL_IMG_DIR = os.environ.get("COCO_VAL_IMG_DIR", "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017")
+CAP_JSON    = os.environ.get("COCO_CAP_JSON",    "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/annotations/captions_val2017.json")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
