@@ -113,8 +113,11 @@ def parse_args():
     
     # Loss weight parameters
     # deprecated
-    parser.add_argument("--tb_alpha", type=float, default=0.5,
-                        help="Weight for tb loss (trp weight = 1 - tb_alpha), range [0, 1]")
+    # parser.add_argument("--tb_alpha", type=float, default=0.5,
+    #                     help="Weight for tb loss (trp weight = 1 - tb_alpha), range [0, 1]")
+
+    parser.add_argument("--l2_beta", type=float, default=1e-5,
+                        help="Weight for L2 regularization")
     
     # Hub push parameters
     parser.add_argument("--push_to_hub", action="store_true", 
@@ -206,15 +209,18 @@ class BestModelCallback(TrainerCallback):
                 main_print(f"\n*** New best model: {state.global_step}, Loss: {self.best_eval_loss:.4f} ***\n")
 
 class CLIPTrainer(Trainer):
-    def __init__(self, tb_alpha=0.5, model_type="clip",orig_model=None, use_sigmoid_loss=False, *args, **kwargs):
+    def __init__(self, model_type="clip",orig_model=None, use_sigmoid_loss=False, l2_beta=1e-5, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.tb_weight = tb_alpha
-        self.trp_weight = 1.0 - tb_alpha
+        # default weight for tb and trp loss, deprecated
+        self.tb_weight = 0.5
+        self.trp_weight = 0.5
+        # other parameters
         self.model_type = model_type  # "clip" 或 "siglip"
         self.orig_model = orig_model  # 允许外部传进来
         self.orig_state = None
         self.l2_pairs = None
         self.use_sigmoid_loss = use_sigmoid_loss
+        self.l2_beta = l2_beta
     def _prepare_l2_pairs(self, model):
         """
         惰性初始化：只在第一次 compute_loss 时运行。
@@ -397,7 +403,7 @@ class CLIPTrainer(Trainer):
         total_loss = self.tb_weight * tb_loss + self.trp_weight * trp_loss
 
         if self.l2_pairs:
-            beta = 1e-5
+            beta = self.l2_beta
             l2_reg = 0.0 # 使用 Python scalar 累加，自动广播
             for p, p0 in self.l2_pairs:
                 # p0 已经在 GPU 上了，直接减
@@ -793,6 +799,7 @@ def train_clip(args):
         optimizers=(optimizer, None),
         orig_model=orig_model, 
         use_sigmoid_loss=args.use_sigmoid_loss,
+        l2_beta=args.l2_beta,
     )
     trainer.tb_schedule = make_tb_schedule(args.tb_start, args.tb_mid, args.tb_end, args.tb_t1, args.tb_t2)
 
