@@ -7,6 +7,7 @@ from contextlib import nullcontext
 import torch
 from datasets import load_dataset
 from transformers import AutoModel, AutoProcessor
+from tqdm import tqdm
 
 
 def compute_similarity(model, processor, images, text, device, autocast_ctx):
@@ -46,7 +47,7 @@ def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None):
     else:
         dataset = load_dataset("Mayfull/whats_up_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
-    for sample in dataset:
+    for sample in tqdm(dataset, desc="Evaluating WhatsUp"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
         score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
@@ -68,7 +69,7 @@ def eval_valse(model, processor, device, autocast_ctx, dataset_path=None):
     else:
         dataset = load_dataset("Mayfull/valse_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
-    for sample in dataset:
+    for sample in tqdm(dataset, desc="Evaluating VALSE"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
         score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
@@ -84,7 +85,7 @@ def eval_crepe(model, processor, device, autocast_ctx, dataset_path=None):
     else:
         dataset = load_dataset("Mayfull/crepe_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
-    for sample in dataset:
+    for sample in tqdm(dataset, desc="Evaluating CREPE"):
         images = [
             i.crop(
                 (
@@ -110,7 +111,7 @@ def eval_sugarcrepe(model, processor, device, autocast_ctx, dataset_path=None):
     else:
         dataset = load_dataset("Mayfull/sugarcrepe_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
-    for sample in dataset:
+    for sample in tqdm(dataset, desc="Evaluating SugarCrepe"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
         score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
@@ -126,7 +127,7 @@ def eval_sugarcrepe_pp(model, processor, device, autocast_ctx, dataset_path=None
     else:
         dataset = load_dataset("Mayfull/sugarcrepepp_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
-    for sample in dataset:
+    for sample in tqdm(dataset, desc="Evaluating SugarCrepe++"):
         images = sample["images"]
         text = [*sample["positive_caption_1"], *sample["positive_caption_2"], *sample["negative_caption"]]
         itt_score, _, tot_score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=True)
