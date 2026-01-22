@@ -104,8 +104,8 @@ def i2t_recall(text_feats, image_feats, img2text):
     return correct_1/total, correct_5/total, correct_10/total
 
 def main():
-    model = AutoModel.from_pretrained(CKPT).to(device).eval()
-    processor = AutoProcessor.from_pretrained(CKPT)
+    model = AutoModel.from_pretrained(MODEL_CKPT).to(device).eval()
+    processor = AutoProcessor.from_pretrained(PROCESSOR_CKPT)
 
     images, texts, text2img, img2text = build_pairs(CAP_JSON)
     image_paths = [os.path.join(VAL_IMG_DIR, fn) for _, fn in images]
