@@ -82,7 +82,7 @@ for i in "${!models[@]}"; do
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --dataset all \
-    --batch_size 512 \
+    --batch_size 256 \
     --num_workers 8 \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/classification_imagenet" &
