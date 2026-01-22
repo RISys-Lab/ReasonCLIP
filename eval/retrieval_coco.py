@@ -5,7 +5,8 @@ from PIL import Image
 from tqdm import tqdm
 from transformers import AutoModel, AutoProcessor
 
-CKPT = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
+MODEL_CKPT = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
+PROCESSOR_CKPT = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 
 VAL_IMG_DIR = os.environ.get("COCO_VAL_IMG_DIR", "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017")
 CAP_JSON    = os.environ.get("COCO_CAP_JSON",    "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/annotations/captions_val2017.json")

@@ -45,12 +45,12 @@ models=(
   # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s2_wo_cls/run_0119_014654/finetune_weights/checkpoint-505"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_direct/run_0115_191216/finetune_weights/checkpoint-1241"
-  #  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
-  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2/run_0109_233704/finetune_weights/checkpoint-673"
-  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2_wo_cls/run_0116_031547/finetune_weights/checkpoint-673"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_direct/run_0115_191216/finetune_weights/checkpoint-1241"
+  #  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s2/run_0109_233704/finetune_weights/checkpoint-673"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s2_wo_cls/run_0116_031547/finetune_weights/checkpoint-673"
   #  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
-  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_go_s1/run_0117_024832/finetune_weights/checkpoint-2559"
+  # "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_s1/run_0117_024832/finetune_weights/checkpoint-2559"
   
 
 )
