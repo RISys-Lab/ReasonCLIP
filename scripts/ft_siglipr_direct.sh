@@ -90,7 +90,6 @@ LAUNCH_CMD="accelerate launch \
 ########################
 # 使用 srun 将命令分发到所有节点
 # --ntasks-per-node=1: 每个节点启动一个"管家"进程
-# 这个管家进程运行 accelerate launch，然后 accelerate 会自动在本地拉起2个GPU进程
 srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
 
