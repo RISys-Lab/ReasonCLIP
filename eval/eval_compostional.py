@@ -40,8 +40,11 @@ def get_image_to_text_score(model, processor, images, text, device, autocast_ctx
     return int(image_correct), similarity_scores, int(text_correct), [c0_c1, c0_c2, c1_c2]
 
 
-def eval_whatsup(model, processor, device, autocast_ctx):
-    dataset = load_dataset("Mayfull/whats_up_vlms", trust_remote_code=True, split="test")
+def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None):
+    if dataset_path:
+        dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
+    else:
+        dataset = load_dataset("Mayfull/whats_up_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
     for sample in dataset:
         images = sample["images"]
@@ -59,8 +62,11 @@ def eval_whatsup(model, processor, device, autocast_ctx):
     return average_result
 
 
-def eval_valse(model, processor, device, autocast_ctx):
-    dataset = load_dataset("Mayfull/valse_vlms", trust_remote_code=True, split="test")
+def eval_valse(model, processor, device, autocast_ctx, dataset_path=None):
+    if dataset_path:
+        dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
+    else:
+        dataset = load_dataset("Mayfull/valse_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
     for sample in dataset:
         images = sample["images"]
@@ -72,8 +78,11 @@ def eval_valse(model, processor, device, autocast_ctx):
     return average_result
 
 
-def eval_crepe(model, processor, device, autocast_ctx):
-    dataset = load_dataset("Mayfull/crepe_vlms", trust_remote_code=True, split="test")
+def eval_crepe(model, processor, device, autocast_ctx, dataset_path=None):
+    if dataset_path:
+        dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
+    else:
+        dataset = load_dataset("Mayfull/crepe_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
     for sample in dataset:
         images = [
@@ -95,8 +104,11 @@ def eval_crepe(model, processor, device, autocast_ctx):
     return average_result
 
 
-def eval_sugarcrepe(model, processor, device, autocast_ctx):
-    dataset = load_dataset("Mayfull/sugarcrepe_vlms", trust_remote_code=True, split="test")
+def eval_sugarcrepe(model, processor, device, autocast_ctx, dataset_path=None):
+    if dataset_path:
+        dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
+    else:
+        dataset = load_dataset("Mayfull/sugarcrepe_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
     for sample in dataset:
         images = sample["images"]
@@ -108,8 +120,11 @@ def eval_sugarcrepe(model, processor, device, autocast_ctx):
     return average_result
 
 
-def eval_sugarcrepe_pp(model, processor, device, autocast_ctx):
-    dataset = load_dataset("Mayfull/sugarcrepepp_vlms", trust_remote_code=True, split="test")
+def eval_sugarcrepe_pp(model, processor, device, autocast_ctx, dataset_path=None):
+    if dataset_path:
+        dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
+    else:
+        dataset = load_dataset("Mayfull/sugarcrepepp_vlms", trust_remote_code=True, split="test")
     result = defaultdict(list)
     for sample in dataset:
         images = sample["images"]
