@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_large_ft_s1
+#SBATCH --job-name=siglipr_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_large_ft_s1.out
-#SBATCH --error=siglipr_large_ft_s1.err
+#SBATCH --output=siglipr_ft_s1.out
+#SBATCH --error=siglipr_ft_s1.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -30,8 +30,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/openai-clip-vit-large-patch14"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-large-patch16-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_large_r_s1"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s1"
 
 mkdir -p "$OUT_DIR"
 
@@ -57,6 +57,7 @@ LAUNCH_CMD="accelerate launch \
   --role \$(hostname) \
   trainning/ft_clip_r_s1.py \
     --model_type siglip \
+    --use_sigmoid_loss \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
@@ -67,7 +68,7 @@ LAUNCH_CMD="accelerate launch \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
     --weight_decay 1e-4 \
-    --l2_beta 1e-5 \
+    --l2_beta 5e-5 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
@@ -84,7 +85,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers $NUM_WORKERS \
     --wandb_log \
     --wandb_project clip-r-training \
-    --run_name siglip_large_r_s1"
+    --run_name siglip_r_s1"
 
 
 ########################
