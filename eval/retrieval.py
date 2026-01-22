@@ -512,7 +512,7 @@ def run_retrieval_evaluation(
     
     for start_idx in tqdm(range(0, num_captions, caption_batch_size), desc="Processing caption batches"):
         end_idx = min(start_idx + caption_batch_size, num_captions)
-        batch_captions = [dataset.get_caption_by_idx(i).lower() for i in range(start_idx, end_idx)]
+        batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
         
         # Process caption batch
         proc_name = processor.__class__.__name__.lower()
