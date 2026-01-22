@@ -112,8 +112,8 @@ def main():
 
     print(f"#images={len(image_paths)}  #texts={len(texts)} (expect ~5k and ~25k)")
 
-    img_f = encode_images(model, processor, image_paths, bs=32)
-    txt_f = encode_texts(model, processor, texts, bs=256)
+    img_f = encode_images(model, processor, image_paths, bs=256)
+    txt_f = encode_texts(model, processor, texts, bs=512)
 
     t2i_r1, t2i_r5, t2i_r10 = t2i_recall(txt_f, img_f, text2img)
     i2t_r1, i2t_r5, i2t_r10 = i2t_recall(txt_f, img_f, img2text)

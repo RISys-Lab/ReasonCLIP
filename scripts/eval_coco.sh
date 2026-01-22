@@ -85,14 +85,12 @@ for i in "${!models[@]}"; do
   python eval/retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
-    --local_image_dir /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017 \
-    --coco_captions_json /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/annotations/captions_val2017.json \
     --model_name auto \
-    --dataset_name mscoco \
+    --dataset_name wds_mscoco \
     --split test \
     --batch_size 512 \
     --device cuda:0 \
-    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_mscoco" &
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_wds_mscoco" &
 
   while [ "$(jobs -rp | wc -l)" -ge 1 ]; do
     wait -n
