@@ -57,6 +57,7 @@ LAUNCH_CMD="accelerate launch \
   --role \$(hostname) \
   trainning/ft_clip_r_s1.py \
     --model_type siglip \
+    --use_sigmoid_loss \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
