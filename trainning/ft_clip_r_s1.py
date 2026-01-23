@@ -706,9 +706,6 @@ def train_clip(args):
     )
     
     
-    main_print(f"\n🎯 Loss Configuration:")
-    main_print(f"   - TB loss weight: {args.tb_alpha:.3f}")
-    main_print(f"   - TRP loss weight: {1.0 - args.tb_alpha:.3f}")
     
     # ================================ 断点恢复配置 ================================
     resume_from_checkpoint = None
@@ -791,7 +788,6 @@ def train_clip(args):
     trainer = CLIPTrainer(
         model=model,
         args=training_args,
-        tb_alpha=args.tb_alpha,
         model_type=model_type,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
