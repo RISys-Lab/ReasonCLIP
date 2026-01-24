@@ -6,16 +6,53 @@ from contextlib import nullcontext
 
 import torch
 from datasets import load_dataset
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 from tqdm import tqdm
 
 
-def compute_similarity(model, processor, images, text, device, autocast_ctx):
-    inputs = processor(images=images, text=text, return_tensors="pt", padding=True, truncation=True)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+def _infer_model_type(name: str | None) -> str:
+    if name is None:
+        return "clip"
+    s = str(name).lower()
+    if "siglip" in s:
+        return "siglip"
+    if "clip" in s:
+        return "clip"
+    return "clip"
+
+
+def _get_text_max_len(processor) -> int:
+    proc_name = processor.__class__.__name__.lower()
+    return 64 if "siglip" in proc_name else 77
+
+
+def _encode_image_features(model, processor, images, device, autocast_ctx):
+    image_inputs = processor(images=images, return_tensors="pt")
+    image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
     with autocast_ctx:
-        outputs = model(**inputs)
-    return outputs.image_embeds @ outputs.text_embeds.t()
+        image_features = model.get_image_features(**image_inputs)
+    return image_features / image_features.norm(dim=-1, keepdim=True)
+
+
+def _encode_text_features(model, processor, text, device, autocast_ctx):
+    text_max_len = _get_text_max_len(processor)
+    text_inputs = processor(
+        text=text,
+        return_tensors="pt",
+        padding="max_length",
+        truncation=True,
+        max_length=text_max_len,
+    )
+    text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+    with autocast_ctx:
+        text_features = model.get_text_features(**text_inputs)
+    return text_features / text_features.norm(dim=-1, keepdim=True)
+
+
+def compute_similarity(model, processor, images, text, device, autocast_ctx):
+    image_features = _encode_image_features(model, processor, images, device, autocast_ctx)
+    text_features = _encode_text_features(model, processor, text, device, autocast_ctx)
+    return image_features @ text_features.t()
 
 
 def get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=False):
@@ -28,11 +65,8 @@ def get_image_to_text_score(model, processor, images, text, device, autocast_ctx
     i0_c2 = similarity_scores[0, 2].item()
     image_correct = i0_c0 > i0_c2 and i0_c1 > i0_c2
 
-    inputs = processor(text=text, return_tensors="pt", padding=True, truncation=True)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-    with autocast_ctx:
-        text_embeds = model.get_text_features(**inputs)
-    text_similarity_scores = text_embeds @ text_embeds.t()
+    text_features = _encode_text_features(model, processor, text, device, autocast_ctx)
+    text_similarity_scores = text_features @ text_features.t()
     c0_c1 = text_similarity_scores[0, 1].item()
     c0_c2 = text_similarity_scores[0, 2].item()
     c1_c2 = text_similarity_scores[1, 2].item()
@@ -162,6 +196,7 @@ def main():
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     processor_path = args.processor_path or args.model_path
     use_bf16 = not args.no_bf16
+    model_type = _infer_model_type(args.model_path)
     
     print("=" * 80)
     print("Compositional Reasoning Evaluation")
@@ -175,8 +210,12 @@ def main():
     # Load model and processor
     print("Loading model and processor...")
     torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
-    model = AutoModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
-    processor = AutoProcessor.from_pretrained(processor_path)
+    if model_type == "siglip":
+        model = SiglipModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
+        processor = SiglipProcessor.from_pretrained(processor_path)
+    else:
+        model = AutoModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
+        processor = AutoProcessor.from_pretrained(processor_path)
     
     # Setup autocast context
     if use_bf16 and device != "cpu":
