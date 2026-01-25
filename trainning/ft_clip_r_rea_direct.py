@@ -70,6 +70,11 @@ def parse_args():
                             help="Learning rate")
     parser.add_argument("--logit_scale_lr", type=float, default=None, 
                             help="Learning rate")
+    parser.add_argument(
+        "--use_sigmoid_loss",
+        action="store_true",
+        help="Use SigLIP sigmoid (logistic) loss when model_type is siglip",
+    )
 
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
@@ -189,31 +194,33 @@ class BestModelCallback(TrainerCallback):
 
 
 class CLIPTrainer(Trainer):
-    def __init__(self, model_type="clip",orig_model=None, *args, **kwargs):
+    def __init__(self, model_type="clip", orig_model=None, use_sigmoid_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_type = model_type  # "clip" 或 "siglip
+        self.use_sigmoid_loss = use_sigmoid_loss
         self.backbone = None
-    # @staticmethod
-    # def _siglip_logistic_loss(
-    #     logits: torch.Tensor, 
-    #     labels: torch.Tensor
-    # ) -> torch.Tensor:
-    #     """
-    #     SigLIP 风格的 logistic loss:
-    #     logits: [B, N]，N = world_size * B
-    #     labels: [B]，每一行正样本所在的列索引（全局索引）
-    #     """
-    #     B = logits.size(0)
-    #     device = logits.device
+        
+    @staticmethod
+    def _siglip_logistic_loss(
+        logits: torch.Tensor, 
+        labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        SigLIP 风格的 logistic loss:
+        logits: [B, N]，N = world_size * B
+        labels: [B]，每一行正样本所在的列索引（全局索引）
+        """
+        B = logits.size(0)
+        device = logits.device
 
-    #     # 构造 +1 / -1 的 label matrix
-    #     label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
-    #     row_idx = torch.arange(B, device=device)
-    #     label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
+        # 构造 +1 / -1 的 label matrix
+        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
+        row_idx = torch.arange(B, device=device)
+        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
 
-    #     # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
-    #     loss = -F.logsigmoid(label_matrix * logits).mean()
-    #     return loss
+        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
+        loss = -F.logsigmoid(label_matrix * logits).sum() / logits.size(0)
+        return loss
 
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -252,12 +259,12 @@ class CLIPTrainer(Trainer):
         with torch.no_grad():
             # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
             if hasattr(self.backbone, "logit_scale"):
-                self.backbone.logit_scale.data.clamp_(max=math.log(100.0))
+                self.backbone.logit_scale.data.clamp_(max=math.log(50))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
-        logit_bias = getattr(self.backbone, "logit_bias", None)
-        if logit_bias is not None:
-            bias = logit_bias.to(image_features.dtype)
+        if self.use_sigmoid_loss and self.model_type == "siglip":
+            logit_bias = getattr(self.backbone, "logit_bias", None)
+            bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
         else:
             bias = 0.0
 
@@ -278,10 +285,13 @@ class CLIPTrainer(Trainer):
         trp_logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias
 
         
-        trp_loss = 0.5 * (
-            F.cross_entropy(trp_logits_per_image, labels_global) +
-            F.cross_entropy(trp_logits_per_text,  labels_global)
-        )
+        if self.model_type == "siglip" and self.use_sigmoid_loss:
+            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
+        else:
+            trp_loss = 0.5 * (
+                F.cross_entropy(trp_logits_per_image, labels_global) +
+                F.cross_entropy(trp_logits_per_text,  labels_global)
+            )
 
         del trp_logits_per_image, trp_logits_per_text
 
@@ -741,6 +751,7 @@ def train_clip(args):
         model=model,
         args=training_args,
         model_type=model_type,
+        use_sigmoid_loss=args.use_sigmoid_loss,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],

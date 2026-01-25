@@ -58,6 +58,7 @@ LAUNCH_CMD="accelerate launch \
     --role \$(hostname) \
     trainning/ft_clip_r_rea_direct.py \
     --model_type siglip \
+    --use_sigmoid_loss \
     --parquet_files_ReasonPro $PARQUET_PATH_PRO \
     --parquet_files_ReasonLite $PARQUET_PATH_LITE \
     --model_name $MODEL_PATH \
