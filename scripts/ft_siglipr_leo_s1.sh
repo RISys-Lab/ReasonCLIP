@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_ft_s1_large
+#SBATCH --job-name=siglipr_ft_s1_large_sigmoid
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_ft_s1_large.out
-#SBATCH --error=siglipr_ft_s1_large.err
+#SBATCH --output=siglipr_ft_s1_large_sigmoid.out
+#SBATCH --error=siglipr_ft_s1_large_sigmoid.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -57,10 +57,10 @@ LAUNCH_CMD="accelerate launch \
   --role \$(hostname) \
   trainning/ft_clip_r_s1.py \
     --model_type siglip \
+    --use_sigmoid_loss \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
-    --resume_from_checkpoint "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_large_s1/run_0124_201259/finetune_weights/checkpoint-957" \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
