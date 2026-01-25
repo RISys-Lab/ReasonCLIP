@@ -60,6 +60,7 @@ LAUNCH_CMD="accelerate launch \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
+    --resume_from_checkpoint "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_large_s1/run_0124_201259/finetune_weights/checkpoint-957" \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
