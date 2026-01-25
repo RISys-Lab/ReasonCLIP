@@ -128,10 +128,8 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--parquet_files_ReasonLite", type=str, nargs="+", required=True,
-                        help="Paths to one or more parquet files (space-separated or glob) for ReasonLite")
-    parser.add_argument("--parquet_files_ReasonPro", type=str, nargs="+", required=True,
-                        help="Paths to one or more parquet files (space-separated or glob) for ReasonPro")
+    parser.add_argument("--parquet_files_CC12MRefined", type=str, nargs="+", required=True,
+                        help="Paths to one or more parquet files (space-separated or glob) for CC12MRefined")
     parser.add_argument("--use_split", action="store_true",
                         help="Whether to split dataset into train:eval:test = 8:1:1")
 
@@ -328,11 +326,11 @@ class CLIPTrainer(Trainer):
 
         return (loss.detach(), None, None)
 
-class CLIPRLiteDataset(torch.utils.data.Dataset):
+class CC12MRefinedDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_dict, processor):
         self.dataset = dataset_dict
         self.processor = processor
-        # 每个样本有3个TRL caption，每个caption生成一个训练样本
+        # 每个样本有3个TB caption，每个caption生成一个训练样本
         self.captions_per_image = 3
         proc_name = processor.__class__.__name__.lower()
         if "siglip" in proc_name:
@@ -341,60 +339,29 @@ class CLIPRLiteDataset(torch.utils.data.Dataset):
             self.text_max_len = 77
     
     def __len__(self):
-        # 每个原始样本生成3个训练样本（对应3个TRL caption）
+        # 每个原始样本生成3个训练样本（对应3个TB caption）
         return len(self.dataset) * self.captions_per_image
     
     def __getitem__(self, idx):
-        # 计算原始样本索引和TRL caption索引
+        # 计算原始样本索引和TB caption索引
         original_idx = idx // self.captions_per_image
-        trl_idx = idx % self.captions_per_image
+        tb_idx = idx % self.captions_per_image
         item = self.dataset[original_idx]
         
         image_path = item["image_path"]
         image = Image.open(image_path).convert("RGB")
         
-        # 只使用TRL caption，不使用TB
-        trl_captions = item["trl"]
-        trl_caption = trl_captions[trl_idx]  # 选择对应的TRL caption
+        tb_captions = item["tb"]
+        tb_caption = tb_captions[tb_idx]  # 选择对应的TB caption
         
         img_enc = self.processor(images=image, return_tensors="pt")
-        trl_enc = self.processor(text=[trl_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
+        tb_enc = self.processor(text=[tb_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
         
-        # 构建返回的batch，只包含图像和TRL文本
+        # 构建返回的batch，只包含图像和TB文本
         return {
             "pixel_values": img_enc["pixel_values"].squeeze(0),
-            "text_input_ids": trl_enc["input_ids"].squeeze(0),
-            "text_attention_mask": trl_enc.get("attention_mask", torch.ones_like(trl_enc["input_ids"])).squeeze(0),
-        }
-
-class CLIPRProDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
-        self.dataset = dataset_dict
-        self.processor = processor
-        proc_name = processor.__class__.__name__.lower()
-        if "siglip" in proc_name:
-            self.text_max_len = 64
-        else:
-            self.text_max_len = 77
-    
-    def __len__(self):
-        return len(self.dataset)
-    
-    def __getitem__(self, idx):
-        item = self.dataset[idx]
-        
-        image_path = item["image_path"]
-        image = Image.open(image_path).convert("RGB")
-        
-        trp_caption = item["trp"]
-
-        img_enc = self.processor(images=image, return_tensors="pt")
-        trp_enc = self.processor(text=trp_caption, return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
-        
-        return {
-            "pixel_values": img_enc["pixel_values"].squeeze(0),
-            "text_input_ids": trp_enc["input_ids"].squeeze(0),
-            "text_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
+            "text_input_ids": tb_enc["input_ids"].squeeze(0),
+            "text_attention_mask": tb_enc.get("attention_mask", torch.ones_like(tb_enc["input_ids"])).squeeze(0),
         }
 
 
@@ -495,10 +462,8 @@ def train_clip(args):
     # ================================ 数据集配置（替换整段 pandas 读取与切分） ================================
     main_print(f"\n📊 Dataset Configuration:")
     main_print(f"   - Loading from: {args.parquet_files_ReasonLite}")
-    main_print(f"   - Loading from: {args.parquet_files_ReasonPro}")
 
     files_ReasonLite = sorted(args.parquet_files_ReasonLite)
-    files_ReasonPro = sorted(args.parquet_files_ReasonPro)
     main_print(f"📊 Loading {len(files_ReasonLite)} parquet files...")
     main_print(f"📊 Loading {len(files_ReasonPro)} parquet files...")
     hf_ds_ReasonLite = load_dataset(
