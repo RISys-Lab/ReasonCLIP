@@ -152,12 +152,12 @@ def parse_args():
     parser.add_argument("--resume_from_checkpoint", type=str, default=None,
                         help="Path to checkpoint directory to resume training from")
 
-    parser.add_argument("--tb_start", type=float, default=0.6,
-                    help="Initial TB loss weight (default=0.6)")
-    parser.add_argument("--tb_mid", type=float, default=0.4,
-                        help="Middle-phase TB loss weight (default=0.4)")
-    parser.add_argument("--tb_end", type=float, default=0.5,
-                        help="Final TB loss weight (default=0.5)")
+    parser.add_argument("--tb_start", type=float, default=0.7,
+                    help="Initial TB loss weight (default=0.7)")
+    parser.add_argument("--tb_mid", type=float, default=0.5,
+                        help="Middle-phase TB loss weight (default=0.5)")
+    parser.add_argument("--tb_end", type=float, default=0.6,
+                        help="Final TB loss weight (default=0.6)")
     parser.add_argument("--tb_t1", type=float, default=0.2,
                         help="Ratio point where TB starts decreasing (default=0.2)")
     parser.add_argument("--tb_t2", type=float, default=0.8,

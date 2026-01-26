@@ -45,7 +45,7 @@ NUM_WORKERS=8
 echo "[INFO] MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS(per process)=$NUM_WORKERS"
 
-
+# tb aplpha 75628
 LAUNCH_CMD="accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
@@ -64,7 +64,7 @@ LAUNCH_CMD="accelerate launch \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
-    --learning_rate 1e-4 \
+    --learning_rate 1.5e-4 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
     --weight_decay 1e-4 \
@@ -78,8 +78,8 @@ LAUNCH_CMD="accelerate launch \
     --eval_strategy ratio \
     --eval_ratio 0.25 \
     --tb_start 0.7 \
-    --tb_mid 0.5 \
-    --tb_end 0.6 \
+    --tb_mid 0.3 \
+    --tb_end 0.5 \
     --tb_t1 0.2 \
     --tb_t2 0.8 \
     --num_workers $NUM_WORKERS \
