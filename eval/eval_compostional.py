@@ -5,6 +5,8 @@ from datetime import datetime
 from contextlib import nullcontext
 
 import torch
+import numpy as np
+from PIL import Image
 from datasets import load_dataset
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 from tqdm import tqdm
@@ -26,7 +28,29 @@ def _get_text_max_len(processor) -> int:
     return 64 if "siglip" in proc_name else 77
 
 
+def _ensure_rgb_images(images):
+    rgb_images = []
+    for img in images:
+        if isinstance(img, Image.Image):
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            rgb_images.append(img)
+            continue
+
+        if isinstance(img, np.ndarray):
+            if img.ndim == 2:
+                img = np.stack([img, img, img], axis=-1)
+            elif img.ndim == 3 and img.shape[-1] == 1:
+                img = np.repeat(img, 3, axis=-1)
+            rgb_images.append(img)
+            continue
+
+        rgb_images.append(img)
+    return rgb_images
+
+
 def _encode_image_features(model, processor, images, device, autocast_ctx):
+    images = _ensure_rgb_images(images)
     image_inputs = processor(images=images, return_tensors="pt")
     image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
     with autocast_ctx:
