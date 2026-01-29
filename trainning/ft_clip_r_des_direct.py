@@ -70,6 +70,11 @@ def parse_args():
                             help="Learning rate")
     parser.add_argument("--logit_scale_lr", type=float, default=None, 
                             help="Learning rate")
+    parser.add_argument(
+        "--use_sigmoid_loss",
+        action="store_true",
+        help="Use SigLIP sigmoid (logistic) loss when model_type is siglip",
+    )
 
     parser.add_argument("--fp16", action="store_true", 
                         help="Whether to use mixed precision training")
@@ -128,7 +133,7 @@ def parse_args():
                         help="Model name on the Hub")
     
     # Dataset parameters
-    parser.add_argument("--parquet_files_CC12MRefined", type=str, nargs="+", required=True,
+    parser.add_argument("--parquet_files", type=str, nargs="+", required=True,
                         help="Paths to one or more parquet files (space-separated or glob) for CC12MRefined")
     parser.add_argument("--use_split", action="store_true",
                         help="Whether to split dataset into train:eval:test = 8:1:1")
@@ -187,31 +192,33 @@ class BestModelCallback(TrainerCallback):
 
 
 class CLIPTrainer(Trainer):
-    def __init__(self, model_type="clip",orig_model=None, *args, **kwargs):
+    def __init__(self, model_type="clip", use_sigmoid_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_type = model_type  # "clip" 或 "siglip
+        self.use_sigmoid_loss = use_sigmoid_loss
         self.backbone = None
-    # @staticmethod
-    # def _siglip_logistic_loss(
-    #     logits: torch.Tensor, 
-    #     labels: torch.Tensor
-    # ) -> torch.Tensor:
-    #     """
-    #     SigLIP 风格的 logistic loss:
-    #     logits: [B, N]，N = world_size * B
-    #     labels: [B]，每一行正样本所在的列索引（全局索引）
-    #     """
-    #     B = logits.size(0)
-    #     device = logits.device
+        
+    @staticmethod
+    def _siglip_logistic_loss(
+        logits: torch.Tensor, 
+        labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        SigLIP 风格的 logistic loss:
+        logits: [B, N]，N = world_size * B
+        labels: [B]，每一行正样本所在的列索引（全局索引）
+        """
+        B = logits.size(0)
+        device = logits.device
 
-    #     # 构造 +1 / -1 的 label matrix
-    #     label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
-    #     row_idx = torch.arange(B, device=device)
-    #     label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
+        # 构造 +1 / -1 的 label matrix
+        label_matrix = logits.new_full(logits.shape, -1.0)   # 全部初始化为 -1
+        row_idx = torch.arange(B, device=device)
+        label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
 
-    #     # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
-    #     loss = -F.logsigmoid(label_matrix * logits).mean()
-    #     return loss
+        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
+        loss = -F.logsigmoid(label_matrix * logits).sum() / logits.size(0)
+        return loss
 
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -250,12 +257,12 @@ class CLIPTrainer(Trainer):
         with torch.no_grad():
             # 与 CLIP/SigLIP 通用：限制 logit_scale 的上界
             if hasattr(self.backbone, "logit_scale"):
-                self.backbone.logit_scale.data.clamp_(max=math.log(100.0))
+                self.backbone.logit_scale.data.clamp_(max=math.log(50))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
-        logit_bias = getattr(self.backbone, "logit_bias", None)
-        if logit_bias is not None:
-            bias = logit_bias.to(image_features.dtype)
+        if self.use_sigmoid_loss and self.model_type == "siglip":
+            logit_bias = getattr(self.backbone, "logit_bias", None)
+            bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
         else:
             bias = 0.0
 
@@ -276,10 +283,13 @@ class CLIPTrainer(Trainer):
         trp_logits_per_text  = logit_scale * (text_features  @ all_image.t()) + bias
 
         
-        trp_loss = 0.5 * (
-            F.cross_entropy(trp_logits_per_image, labels_global) +
-            F.cross_entropy(trp_logits_per_text,  labels_global)
-        )
+        if self.model_type == "siglip" and self.use_sigmoid_loss:
+            trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
+        else:
+            trp_loss = 0.5 * (
+                F.cross_entropy(trp_logits_per_image, labels_global) +
+                F.cross_entropy(trp_logits_per_text,  labels_global)
+            )
 
         del trp_logits_per_image, trp_logits_per_text
 
@@ -432,11 +442,6 @@ def train_clip(args):
             attn_implementation="sdpa",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = CLIPModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
         processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -444,11 +449,6 @@ def train_clip(args):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = SiglipModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
         processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -461,83 +461,43 @@ def train_clip(args):
 
     # ================================ 数据集配置（替换整段 pandas 读取与切分） ================================
     main_print(f"\n📊 Dataset Configuration:")
-    main_print(f"   - Loading from: {args.parquet_files_ReasonLite}")
+    main_print(f"   - Loading from: {args.parquet_files}")
 
-    files_ReasonLite = sorted(args.parquet_files_ReasonLite)
-    main_print(f"📊 Loading {len(files_ReasonLite)} parquet files...")
-    main_print(f"📊 Loading {len(files_ReasonPro)} parquet files...")
-    hf_ds_ReasonLite = load_dataset(
+    files = sorted(args.parquet_files)
+    main_print(f"📊 Loading {len(files)} parquet files...")
+    hf_ds = load_dataset(
         "parquet",
-        data_files={"train": files_ReasonLite},   # 用 dict 明确 split
+        data_files={"train": files},   # 用 dict 明确 split
         split="train",
         keep_in_memory=False
     )
-    hf_ds_ReasonPro = load_dataset(
-        "parquet",
-        data_files={"train": files_ReasonPro},   # 用 dict 明确 split
-        split="train",
-        keep_in_memory=False
-    )
-    main_print(f"   - ReasonLite samples: {len(hf_ds_ReasonLite)}")
-    main_print(f"   - ReasonPro samples: {len(hf_ds_ReasonPro)}")
+    main_print(f"   - Total samples: {len(hf_ds)}")
 
-    # 2) 分别切分两个数据集（用 HF 自带的 split）
+    # 2) 切分数据集（用 HF 自带的 split）
     if args.use_split:
-        # ReasonLite 切分
-        split1_lite = hf_ds_ReasonLite.train_test_split(test_size=0.2, seed=42)
-        train_lite_hf = split1_lite["train"]
-        tmp_lite = split1_lite["test"].train_test_split(test_size=0.5, seed=42)
-        eval_lite_hf, test_lite_hf = tmp_lite["train"], tmp_lite["test"]
+        # 切分
+        split1 = hf_ds.train_test_split(test_size=0.2, seed=42)
+        train_hf = split1["train"]
+        eval_hf = split1["test"]
         
-        # ReasonPro 切分
-        split1_pro = hf_ds_ReasonPro.train_test_split(test_size=0.2, seed=42)
-        train_pro_hf = split1_pro["train"]
-        tmp_pro = split1_pro["test"].train_test_split(test_size=0.5, seed=42)
-        eval_pro_hf, test_pro_hf = tmp_pro["train"], tmp_pro["test"]
-        
-        main_print(f"   - ReasonLite split: {len(train_lite_hf)} train, {len(eval_lite_hf)} eval, {len(test_lite_hf)} test")
-        main_print(f"   - ReasonPro split: {len(train_pro_hf)} train, {len(eval_pro_hf)} eval, {len(test_pro_hf)} test")
+        main_print(f"   - split: {len(train_hf)} train, {len(eval_hf)} eval")
     else:
         if args.holdout_ratio > 0:
-            # ReasonLite 切分
-            split_lite = hf_ds_ReasonLite.train_test_split(test_size=args.holdout_ratio, seed=42)
-            train_lite_hf, eval_lite_hf = split_lite["train"], split_lite["test"]
+            # 切分
+            split = hf_ds.train_test_split(test_size=args.holdout_ratio, seed=42)
+            train_hf, eval_hf = split["train"], split["test"]
             
-            # ReasonPro 切分
-            split_pro = hf_ds_ReasonPro.train_test_split(test_size=args.holdout_ratio, seed=42)
-            train_pro_hf, eval_pro_hf = split_pro["train"], split_pro["test"]
-            
-            main_print(f"   - ReasonLite holdout: {len(train_lite_hf)} train, {len(eval_lite_hf)} eval")
-            main_print(f"   - ReasonPro holdout: {len(train_pro_hf)} train, {len(eval_pro_hf)} eval")
+            main_print(f"   - holdout: {len(train_hf)} train, {len(eval_hf)} eval")
         else:
-            train_lite_hf, eval_lite_hf = hf_ds_ReasonLite, None
-            train_pro_hf, eval_pro_hf = hf_ds_ReasonPro, None
+            train_hf, eval_hf = hf_ds, None
             main_print(f"   - No eval holdout")
 
     # 3) 用不同的自定义 Dataset 类处理不同的数据格式
-    # ReasonLite 用 CLIPRLiteDataset（每个样本扩展成3个，因为有3个TRL caption）
-    train_lite_dataset = CLIPRLiteDataset(train_lite_hf, processor)
-    eval_lite_dataset = CLIPRLiteDataset(eval_lite_hf, processor) if eval_lite_hf else None
+    train_dataset = CC12MRefinedDataset(train_hf, processor)
+    eval_dataset = CC12MRefinedDataset(eval_hf, processor) if eval_hf else None
     
-    # ReasonPro 用 CLIPRProDataset（1:1映射，每个样本1个TRP caption）
-    train_pro_dataset = CLIPRProDataset(train_pro_hf, processor)
-    eval_pro_dataset = CLIPRProDataset(eval_pro_hf, processor) if eval_pro_hf else None
-    
-    # 4) 合并处理后的数据集（使用 PyTorch 的 ConcatDataset）
-    # 处理后的格式已经统一：都是 (image, text_input_ids, text_attention_mask)
-    from torch.utils.data import ConcatDataset
-    train_dataset = ConcatDataset([train_lite_dataset, train_pro_dataset])
-    eval_dataset = ConcatDataset([eval_lite_dataset, eval_pro_dataset]) if (eval_lite_hf is not None or eval_pro_hf is not None) else None
-    
-    main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
-    main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
-    main_print(f"   - Combined train dataset size: {len(train_dataset)}")
-    
-    main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
-    main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
-    main_print(f"   - Combined train dataset size: {len(train_dataset)}")
-
     main_print(f"   - Train dataset size: {len(train_dataset)}")
+
     if eval_dataset:
         main_print(f"   - Eval dataset size: {len(eval_dataset)}")
     
@@ -549,7 +509,7 @@ def train_clip(args):
     main_print(f"   - Text Input IDs shape: {sample['text_input_ids'].shape}")
     main_print(f"   - Text Attention Mask shape: {sample['text_attention_mask'].shape}")
     main_print(f"   - Pixel values shape: {sample['pixel_values'].shape}")
-    main_print(f"   - ✅ Data format validated: (image, trl_text) - 3 TRL captions per image")
+    main_print(f"   - ✅ Data format validated: (image, tb_text) - 3 TB captions per image")
     
     # ================================ 训练参数配置 ================================
     # 计算总步数来确定实际的logging、save、eval步数
@@ -706,15 +666,13 @@ def train_clip(args):
         model=model,
         args=training_args,
         model_type=model_type,
+        use_sigmoid_loss=args.use_sigmoid_loss,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
         optimizers=(optimizer, None),
-        orig_model=orig_model,
     )
 
-    # 将orig_model移动到设备上用于L2正则化
-    trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # trainer.train() 结束后, trainer.model 已经是最佳模型了

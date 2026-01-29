@@ -194,7 +194,7 @@ class BestModelCallback(TrainerCallback):
 
 
 class CLIPTrainer(Trainer):
-    def __init__(self, model_type="clip", orig_model=None, use_sigmoid_loss=False, *args, **kwargs):
+    def __init__(self, model_type="clip", use_sigmoid_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_type = model_type  # "clip" 或 "siglip
         self.use_sigmoid_loss = use_sigmoid_loss
@@ -475,11 +475,6 @@ def train_clip(args):
             attn_implementation="sdpa",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = CLIPModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
         processor = CLIPProcessor.from_pretrained(model_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -487,11 +482,6 @@ def train_clip(args):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = SiglipModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        # processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
         processor = SiglipProcessor.from_pretrained(model_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -577,12 +567,7 @@ def train_clip(args):
     main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
     main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
     main_print(f"   - Combined train dataset size: {len(train_dataset)}")
-    
-    main_print(f"   - Train Lite dataset size: {len(train_lite_dataset)}")
-    main_print(f"   - Train Pro dataset size: {len(train_pro_dataset)}")
-    main_print(f"   - Combined train dataset size: {len(train_dataset)}")
 
-    main_print(f"   - Train dataset size: {len(train_dataset)}")
     if eval_dataset:
         main_print(f"   - Eval dataset size: {len(eval_dataset)}")
     
@@ -756,11 +741,8 @@ def train_clip(args):
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
         optimizers=(optimizer, None),
-        orig_model=orig_model,
     )
 
-    # 将orig_model移动到设备上用于L2正则化
-    trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # trainer.train() 结束后, trainer.model 已经是最佳模型了

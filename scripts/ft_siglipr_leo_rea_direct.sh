@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_ft_direct
+#SBATCH --job-name=siglipr_rea_direct
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_ft_direct.out 
+#SBATCH --output=siglipr_rea_direct.out 
 #SBATCH --error=siglipr_ft_direct.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
@@ -32,7 +32,7 @@ cd $WORK/fmohamma/CLIP-R/
 PARQUET_PATH_PRO="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat/cc12m_trp_chunk_02.parquet"
 PARQUET_PATH_LITE="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
 MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_direct"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_rea_direct"
 
 mkdir -p "$OUT_DIR"
 
@@ -84,7 +84,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers 8 \
     --wandb_log \
     --wandb_project clip-r-training \
-    --run_name siglip_r_direct"
+    --run_name siglip_r_rea_direct"
 
 ########################
 # 启动训练（关键修改）
