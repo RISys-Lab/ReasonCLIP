@@ -32,7 +32,7 @@ cd $WORK/fmohamma/CLIP-R/
 PARQUET_DIR="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/final_combined"
 PARQUET_PATH_PRO=("$PARQUET_DIR"/cc12m_tb_chunk_{00..05}.parquet)
 MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_des_direct"
+OUT_DIR="/leonardo_scratch/large/userexternal/fmohamma/CLIP-R/weights/siglip_r_des_direct"
 
 mkdir -p "$OUT_DIR"
 
