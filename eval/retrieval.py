@@ -383,7 +383,8 @@ def run_retrieval_evaluation(
     local_image_dir=None,  # ✅ 本地图片目录
     coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
     results_dir=None,  # 结果保存目录
-    use_bf16=True
+    use_bf16=True,
+    skip_if_exists=False
 ):
     """
     Run CLIP/SigLIP retrieval evaluation (Karpathy-style with 5 captions per image)
@@ -412,6 +413,15 @@ def run_retrieval_evaluation(
         model_type = _infer_model_type(model_id)
     else:
         model_type = _infer_model_type(model_type)
+
+    if results_dir is None:
+        results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
+    os.makedirs(results_dir, exist_ok=True)
+    model_name = model_id.replace("/", "_")
+    text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}.txt")
+    if skip_if_exists and os.path.isfile(text_file):
+        print(f"[SKIP] Results already exist: {text_file}")
+        return {"skipped": True, "txt_path": text_file}
     
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
@@ -577,16 +587,7 @@ def run_retrieval_evaluation(
         **metrics
     }
     
-    # Create results directory if it doesn't exist
-    if results_dir is None:
-        results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
-    os.makedirs(results_dir, exist_ok=True)
-    
-    # Save detailed results
-    model_name = model_id.replace("/", "_")
-    
     # Save text results
-    text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}.txt")
     with open(text_file, "w") as f:
         f.write(f"RETRIEVAL RESULTS - {dataset_name.upper()} {split.upper()}\n")
         f.write(f"Evaluation Mode: {eval_mode}\n")
@@ -704,6 +705,12 @@ def parse_args():
         help="Disable bf16 autocast and load model with fp32 weights"
     )
     
+    parser.add_argument(
+        "--skip_if_exists",
+        action="store_true",
+        help="Skip evaluation when output txt already exists"
+    )
+    
     return parser.parse_args()
 
 
@@ -733,7 +740,8 @@ if __name__ == "__main__":
         local_image_dir=args.local_image_dir,
         coco_captions_json=args.coco_captions_json,
         results_dir=args.results_dir,
-        use_bf16=not args.no_bf16
+        use_bf16=not args.no_bf16,
+        skip_if_exists=args.skip_if_exists
     )
     
     print("\n✅ Evaluation completed!") 

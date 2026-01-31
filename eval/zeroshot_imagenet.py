@@ -150,7 +150,8 @@ def run_zeroshot_evaluation(
     results_dir=None,
     classnames_file=None,
     templates_file=None,
-    use_bf16=True
+    use_bf16=True,
+    skip_if_exists=False
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -168,6 +169,20 @@ def run_zeroshot_evaluation(
     print(f"Split: {split}")
     print(f"Device: {device}")
     print("=" * 80)
+
+    if results_dir is None:
+        results_dir = os.path.join(SCRIPT_DIR, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    model_name = model_path.replace("/", "_")
+    result_file = os.path.join(results_dir, f"zeroshot_{model_name}_{dataset_name}.txt")
+    if skip_if_exists and os.path.isfile(result_file):
+        print(f"[SKIP] Results already exist: {result_file}")
+        return {
+            "skipped": True,
+            "model": model_path,
+            "dataset": dataset_name,
+            "result_file": result_file,
+        }
     
     # Load model and processor
     print(f"Loading model...")
@@ -254,13 +269,6 @@ def run_zeroshot_evaluation(
     print("=" * 80)
     
     # Save results
-    if results_dir is None:
-        results_dir = os.path.join(SCRIPT_DIR, "results")
-    os.makedirs(results_dir, exist_ok=True)
-    
-    model_name = model_path.replace("/", "_")
-    result_file = os.path.join(results_dir, f"zeroshot_{model_name}_{dataset_name}.txt")
-    
     with open(result_file, "w") as f:
         f.write(f"Zero-Shot Classification Results\n")
         f.write(f"=" * 50 + "\n")
@@ -297,7 +305,8 @@ def run_all_evaluations(
     results_dir=None,
     classnames_file=None,
     templates_file=None,
-    use_bf16=True
+    use_bf16=True,
+    skip_if_exists=False
 ):
     """Run evaluation on all datasets"""
     from datetime import datetime
@@ -413,6 +422,13 @@ def run_all_evaluations(
     
     model_name = model_path.replace("/", "_")
     result_file = os.path.join(results_dir, f"zeroshot_{model_name}_all.txt")
+    if skip_if_exists and os.path.isfile(result_file):
+        print(f"[SKIP] Results already exist: {result_file}")
+        return {
+            "skipped": True,
+            "model": model_path,
+            "result_file": result_file,
+        }
     
     with open(result_file, "w") as f:
         f.write("=" * 70 + "\n")
@@ -476,6 +492,11 @@ def parse_args():
         action="store_true",
         help="Disable bf16 autocast and load model with fp32 weights",
     )
+    parser.add_argument(
+        "--skip_if_exists",
+        action="store_true",
+        help="Skip evaluation when output txt already exists",
+    )
     
     return parser.parse_args()
 
@@ -494,7 +515,8 @@ if __name__ == "__main__":
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
             templates_file=args.templates_file,
-            use_bf16=not args.no_bf16
+            use_bf16=not args.no_bf16,
+            skip_if_exists=args.skip_if_exists
         )
         print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
     else:
@@ -509,6 +531,7 @@ if __name__ == "__main__":
             results_dir=args.results_dir,
             classnames_file=args.classnames_file,
             templates_file=args.templates_file,
-            use_bf16=not args.no_bf16
+            use_bf16=not args.no_bf16,
+            skip_if_exists=args.skip_if_exists
         )
         print(f"\n🎯 Final: Top-1={result['top1_accuracy']:.2f}%")

@@ -212,6 +212,7 @@ def parse_args():
     parser.add_argument("--device", type=str, default=None, help="Device (default: auto-detect)")
     parser.add_argument("--results_dir", type=str, default="eval/results", help="Results directory")
     parser.add_argument("--no_bf16", action="store_true", help="Disable bf16 autocast (use fp32)")
+    parser.add_argument("--skip_if_exists", action="store_true", help="Skip evaluation when output txt already exists")
     return parser.parse_args()
 
 
@@ -221,6 +222,13 @@ def main():
     processor_path = args.processor_path or args.model_path
     use_bf16 = not args.no_bf16
     model_type = _infer_model_type(args.model_path)
+
+    os.makedirs(args.results_dir, exist_ok=True)
+    model_name = args.model_path.replace("/", "_")
+    result_file = os.path.join(args.results_dir, f"compositional_{model_name}.txt")
+    if args.skip_if_exists and os.path.isfile(result_file):
+        print(f"[SKIP] Results already exist: {result_file}")
+        return
     
     print("=" * 80)
     print("Compositional Reasoning Evaluation")
@@ -271,10 +279,6 @@ def main():
     print("=" * 80)
     
     # Save results
-    os.makedirs(args.results_dir, exist_ok=True)
-    model_name = args.model_path.replace("/", "_")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    result_file = os.path.join(args.results_dir, f"compositional_{model_name}.txt")
     
     with open(result_file, "w") as f:
         f.write("=" * 80 + "\n")

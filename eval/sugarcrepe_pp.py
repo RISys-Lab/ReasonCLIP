@@ -224,9 +224,21 @@ def run_sugarcrepe_pp_eval(
     config_name: str | None = None,
     save_json: bool = True,
     save_txt: bool = True,
+    skip_if_exists: bool = False,
     model=None,
     processor=None,
 ):
+    if results_dir is not None and (save_json or save_txt):
+        safe_model = model_id.replace("/", "_")
+        safe_ds = dataset_name.replace("/", "_")
+        safe_subset = (config_name or "all").replace("/", "_")
+        stem = f"sugarcrepe_pp_{model_type}_{safe_model}_{safe_ds}_{safe_subset}_{split}"
+        if skip_if_exists and save_txt:
+            txt_path = os.path.join(results_dir, f"{stem}.txt")
+            if os.path.isfile(txt_path):
+                print(f"[SKIP] Results already exist: {txt_path}")
+                return {"skipped": True, "txt_path": txt_path}
+
     # If model/processor are not provided, load them here (single-subset mode).
     # In ALL-SUBSETS mode, caller passes preloaded objects to avoid reloading 5x.
     if model is None or processor is None:
@@ -404,6 +416,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
     max_samples: int | None,
     results_dir: str | None,
     processor_name: str | None = None,
+    skip_if_exists: bool = False,
 ):
     """
     Evaluate ITT/TOT on each dataset subset (config) and write a single summary txt.
@@ -429,6 +442,16 @@ def run_sugarcrepe_pp_eval_by_subsets(
         else:
             # Last resort: run a single pass and let _load_hf_dataset auto-pick a cached config.
             subsets = [None]
+
+    # Skip if the consolidated output already exists.
+    if results_dir is not None and skip_if_exists:
+        safe_model = model_id.replace("/", "_")
+        safe_ds = dataset_name.replace("/", "_")
+        stem = f"sugarcrepe_pp_{model_type}_{safe_model}_{safe_ds}_{split}_ALL_SUBSETS"
+        txt_path = os.path.join(results_dir, f"{stem}.txt")
+        if os.path.isfile(txt_path):
+            print(f"[SKIP] Results already exist: {txt_path}")
+            return []
 
     # Load model/processor ONCE and reuse across subsets.
     model, processor, resolved_model_type, resolved_processor_name, device = _load_model_and_processor(
@@ -532,6 +555,11 @@ def parse_args():
         default="/home/muzammal/Projects/CLIP-R/eval/results/sugarcrepe_pp",
         help="Directory to save json result (set to empty to disable saving)",
     )
+    parser.add_argument(
+        "--skip_if_exists",
+        action="store_true",
+        help="Skip evaluation when output txt already exists",
+    )
 
     return parser.parse_args()
 
@@ -558,6 +586,7 @@ if __name__ == "__main__":
             config_name=args.subset,
             save_json=True,
             save_txt=True,
+            skip_if_exists=args.skip_if_exists,
         )
     else:
         run_sugarcrepe_pp_eval_by_subsets(
@@ -571,5 +600,6 @@ if __name__ == "__main__":
             max_samples=args.max_samples,
             results_dir=results_dir,
             processor_name=args.processor_name,
+            skip_if_exists=args.skip_if_exists,
         )
 
