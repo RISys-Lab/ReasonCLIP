@@ -93,6 +93,7 @@ for i in "${!models[@]}"; do
     --split test \
     --batch_size 512 \
     --device cuda:0 \
+    --skip_if_exists \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_wds_mscoco" &
 
   while [ "$(jobs -rp | wc -l)" -ge 1 ]; do

@@ -87,6 +87,7 @@ for i in "${!models[@]}"; do
     --dataset_name Aman-J/SugarCrepe_pp \
     --image_dir /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/val2017 \
     --batch_size 512 \
+    --skip_if_exists \
     --device cuda:0 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/sugarcrepe_pp" &
 

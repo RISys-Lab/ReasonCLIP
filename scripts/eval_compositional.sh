@@ -87,6 +87,7 @@ for i in "${!models[@]}"; do
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --device cuda:0 \
+    --skip_if_exists \
     --results_dir "eval/results/compositional_results"
 
   # 等待当前任务完成（如果你想并行跑多个 GPU，可以参考原脚本的 jobs 处理逻辑）
