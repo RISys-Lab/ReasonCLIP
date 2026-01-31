@@ -738,11 +738,13 @@ def train_clip(args):
         {
             "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
             "lr": main_lr / 10.0,
+            "weight_decay": 0.0 
         },
         # Text Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
             "lr": main_lr / 10.0 * 3,
+            "weight_decay": 0.0 
         },
         # Logit Scale parameter
         {

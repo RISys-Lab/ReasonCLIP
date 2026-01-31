@@ -50,6 +50,8 @@ def parse_args():
     
     parser.add_argument("--model_type", type=str, default="clip", choices=["clip", "siglip"],
                         help="Model type: 'clip' or 'siglip'")
+    parser.add_argument("--use_sigmoid_loss", action="store_true",
+                        help="Use SigLIP logistic loss when model_type=siglip")
     parser.add_argument("--model_name", type=str, default="openai/clip-vit-large-patch14", 
                         help="Pre-trained model name")
     parser.add_argument("--output_dir", type=str, default="./weights/unifire_clip_finetune", 
@@ -225,11 +227,12 @@ class ReasoningClassifier(nn.Module):
         return self.fc(x)
 
 class CLIPTrainer(Trainer):
-    def __init__(self, gamma_adv=0.1, model_type="clip",orig_model=None, num_classes=5, *args, **kwargs):
+    def __init__(self, gamma_adv=0.1, model_type="clip", orig_model=None, num_classes=5, use_sigmoid_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.gamma_adv = gamma_adv
         self.num_classes = num_classes
         self.model_type = model_type  # "clip" 或 "siglip"
+        self.use_sigmoid_loss = use_sigmoid_loss
         self.orig_model = orig_model  # 允许外部传进来
         self.orig_state = None
         self.backbone = None  # 延迟初始化，在 compute_loss 中获取（此时 model 已经被 DDP 包装）
@@ -280,8 +283,8 @@ class CLIPTrainer(Trainer):
         row_idx = torch.arange(B, device=device)
         label_matrix[row_idx, labels] = 1.0                  # 正样本位置设为 +1
 
-        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均
-        loss = -F.logsigmoid(label_matrix * logits).mean()
+        # 对所有 pair 做 -log σ(z_ij * logit_ij) 的平均（按 batch 归一）
+        loss = -F.logsigmoid(label_matrix * logits).sum() / logits.size(0)
         return loss
 
 
@@ -349,7 +352,7 @@ class CLIPTrainer(Trainer):
                 self.backbone.logit_scale.data.clamp_(max=math.log(50.0))
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
-        if use_sigmoid_loss and self.model_type == "siglip":
+        if self.use_sigmoid_loss and self.model_type == "siglip":
             logit_bias = getattr(backbone, "logit_bias", None)
             bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
         else:
@@ -371,7 +374,7 @@ class CLIPTrainer(Trainer):
         trp_logits_per_image = logit_scale * (image_features     @ all_trp.t()) + bias
         trp_logits_per_text  = logit_scale * (trp_text_features  @ all_image.t()) + bias
 
-        if use_sigmoid_loss and self.model_type == "siglip":
+        if self.use_sigmoid_loss and self.model_type == "siglip":
             trp_loss = self._siglip_logistic_loss(trp_logits_per_image, labels_global)
         else:
             # we also use cross entropy loss for siglip
@@ -760,11 +763,13 @@ def train_clip(args):
         {
             "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
             "lr": visual_lr,
+            "weight_decay": 0.0 
         },
         # Text Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
             "lr": text_lr,
+            "weight_decay": 0.0 
         },
         # Logit Scale parameter
         {
@@ -820,6 +825,7 @@ def train_clip(args):
         args=training_args,
         gamma_adv=args.gamma_adv,
         model_type=model_type,
+        use_sigmoid_loss=args.use_sigmoid_loss,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
