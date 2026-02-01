@@ -28,8 +28,7 @@ module load cuda/11.8
 source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/eval_models.sh"
+source "$WORK/fmohamma/CLIP-R/scripts/eval_models.sh"
 if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
   echo "models/processors length mismatch: ${#models[@]} vs ${#processors[@]}"
   exit 1
