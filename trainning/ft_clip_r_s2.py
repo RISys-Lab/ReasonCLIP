@@ -54,6 +54,8 @@ def parse_args():
                         help="Use SigLIP logistic loss when model_type=siglip")
     parser.add_argument("--model_name", type=str, default="openai/clip-vit-large-patch14", 
                         help="Pre-trained model name")
+    parser.add_argument("--processor_name", type=str, default=None,
+                        help="Processor name/path (default: same as model_name)")
     parser.add_argument("--output_dir", type=str, default="./weights/unifire_clip_finetune", 
                         help="Output directory")
     parser.add_argument("--best_model_dir", type=str, default="./weights/unifire_clip_best_model", 
@@ -117,6 +119,8 @@ def parse_args():
                         help="Warmup ratio for learning rate scheduler")
     parser.add_argument("--weight_decay", type=float, default=0.01,
                         help="Weight decay for optimizer")
+    parser.add_argument("--use_l2_reg", action="store_true",
+                        help="Enable L2 regularization to original pretrained weights")
     parser.add_argument("--max_grad_norm", type=float, default=1.0,
                    help="Max gradient norm for gradient clipping")
     # parser.add_argument("--early_stopping_patience", type=int, default=3,
@@ -227,12 +231,23 @@ class ReasoningClassifier(nn.Module):
         return self.fc(x)
 
 class CLIPTrainer(Trainer):
-    def __init__(self, gamma_adv=0.1, model_type="clip", orig_model=None, num_classes=5, use_sigmoid_loss=False, *args, **kwargs):
+    def __init__(
+        self,
+        gamma_adv=0.1,
+        model_type="clip",
+        orig_model=None,
+        num_classes=5,
+        use_sigmoid_loss=False,
+        use_l2_reg=False,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.gamma_adv = gamma_adv
         self.num_classes = num_classes
         self.model_type = model_type  # "clip" 或 "siglip"
         self.use_sigmoid_loss = use_sigmoid_loss
+        self.use_l2_reg = use_l2_reg
         self.orig_model = orig_model  # 允许外部传进来
         self.orig_state = None
         self.backbone = None  # 延迟初始化，在 compute_loss 中获取（此时 model 已经被 DDP 包装）
@@ -295,7 +310,7 @@ class CLIPTrainer(Trainer):
             if not hasattr(self.backbone, "text_classifier") or not hasattr(self.backbone, "image_classifier"):
                 raise ValueError("Classifiers (text/image) not found in backbone! Make sure to init them in train_clip.")
         
-        if self.orig_model is not None and self.orig_state is None:
+        if self.use_l2_reg and self.orig_model is not None and self.orig_state is None:
             self._initialize_l2_reg(model)
 
         # ---- helper: gather across GPUs but keep local slice with gradient ----
@@ -389,7 +404,7 @@ class CLIPTrainer(Trainer):
         contrastive_loss = trp_loss
         total_loss = contrastive_loss
 
-        if self.orig_state is not None:
+        if self.use_l2_reg and self.orig_state is not None:
             beta = 1e-5 # 这是 L2 权重
             # 获取模型所在设备（兼容 DDP 包装的模型）
             backbone = model.module if hasattr(model, "module") else model
@@ -569,11 +584,13 @@ def train_clip(args):
             attn_implementation="sdpa",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = CLIPModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-base-patch32"
+        # 可选：加载原始模型用于 L2 正则化
+        orig_model = None
+        if args.use_l2_reg:
+            orig_model = CLIPModel.from_pretrained(model_name)
+            for p in orig_model.parameters():
+                p.requires_grad = False
+        processor_name = args.processor_name or model_name
         processor = CLIPProcessor.from_pretrained(processor_name)
     elif model_type == "siglip":
         model = SiglipModel.from_pretrained(
@@ -581,11 +598,13 @@ def train_clip(args):
             attn_implementation="flash_attention_2",
             torch_dtype=torch.bfloat16 if args.bf16 else (torch.float16 if args.fp16 else None),
         )
-        # 加载原始模型用于L2正则化
-        orig_model = SiglipModel.from_pretrained(model_name)
-        for p in orig_model.parameters():
-            p.requires_grad = False
-        processor_name = "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+        # 可选：加载原始模型用于 L2 正则化
+        orig_model = None
+        if args.use_l2_reg:
+            orig_model = SiglipModel.from_pretrained(model_name)
+            for p in orig_model.parameters():
+                p.requires_grad = False
+        processor_name = args.processor_name or model_name
         processor = SiglipProcessor.from_pretrained(processor_name)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -758,18 +777,19 @@ def train_clip(args):
     main_print(f"   - Logit scale learning rate: {logit_scale_lr}")
     main_print(f"   - Classifier learning rate: {classifier_lr}")
 
+    backbone_wd = 0.0 if args.use_l2_reg else args.weight_decay
     optimizer_grouped_parameters = [
         # Vision Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "vision_model." in n and p.requires_grad],
             "lr": visual_lr,
-            "weight_decay": 0.0 
+            "weight_decay": backbone_wd
         },
         # Text Model parameters
         {
             "params": [p for n, p in model.named_parameters() if "text_model." in n and p.requires_grad],
             "lr": text_lr,
-            "weight_decay": 0.0 
+            "weight_decay": backbone_wd
         },
         # Logit Scale parameter
         {
@@ -826,6 +846,7 @@ def train_clip(args):
         gamma_adv=args.gamma_adv,
         model_type=model_type,
         use_sigmoid_loss=args.use_sigmoid_loss,
+        use_l2_reg=args.use_l2_reg,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         callbacks=[BestModelCallback()],
@@ -834,7 +855,8 @@ def train_clip(args):
     )
 
     # 将orig_model移动到设备上用于L2正则化
-    trainer.orig_model = orig_model.to(accelerator.device)
+    if args.use_l2_reg and orig_model is not None:
+        trainer.orig_model = orig_model.to(accelerator.device)
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     # trainer.train() 结束后, trainer.model 已经是最佳模型了
