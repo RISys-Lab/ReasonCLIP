@@ -2,8 +2,8 @@
 #SBATCH --job-name=clipr_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
@@ -17,7 +17,7 @@ export WANDB_API_KEY=da3ef2608ceaa362d6e40d1d92b4e4e6ebbe9f82
 export WANDB_MODE=offline
 # change to INFO for debugging
 export NCCL_DEBUG=WARN
-export CUDA_LAUNCH_BLOCKING=1
+# export CUDA_LAUNCH_BLOCKING=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 加载模块和环境
@@ -52,20 +52,19 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
   # --distributed_type fsdp \
   # --fsdp_config "fsdp_sharding_strategy=FULL_SHARD fsdp_auto_wrap_policy=TRANSFORMER_BASED_WRAP fsdp_state_dict_type=SHARDED_STATE_DICT" \
 # current code does not use fsdp and deepspeed
-srun --nodes=$SLURM_NNODES --ntasks-per-node=1 bash -lc "
-accelerate launch \
+LAUNCH_CMD="accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
   --num_machines 8 \
   --num_processes 32 \
-  --machine_rank \${SLURM_NODEID} \
-  --main_process_ip ${MASTER_ADDR} \
-  --main_process_port ${MASTER_PORT} \
+  --machine_rank \$SLURM_NODEID \
+  --main_process_ip $MASTER_ADDR \
+  --main_process_port $MASTER_PORT \
   trainning/ft_clip_r_s1.py \
     --model_type clip \
-    --parquet_files ${PARQUET_PATH} \
-    --model_name ${MODEL_PATH} \
-    --output_dir ${OUT_DIR} \
+    --parquet_files $PARQUET_PATH \
+    --model_name $MODEL_PATH \
+    --output_dir $OUT_DIR \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
@@ -86,11 +85,13 @@ accelerate launch \
     --tb_end 0.5 \
     --tb_t1 0.2 \
     --tb_t2 0.8 \
-    --num_workers ${NUM_WORKERS} \
+    --num_workers $NUM_WORKERS \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_s1\"
-"
+    --run_name \"clip_r_s1\""
+
+srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
+    bash -c "$LAUNCH_CMD"
 
 echo "Finetune CLIP-R (multi-node) completed."
 
