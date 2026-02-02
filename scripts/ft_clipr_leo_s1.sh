@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_ft_s1
+#SBATCH --job-name=clipr_336_ft_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_ft_s1.out
-#SBATCH --error=clipr_ft_s1.err
+#SBATCH --output=clipr_336_ft_s1.out
+#SBATCH --error=clipr_336_ft_s1.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -29,9 +29,9 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_03.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_04.parquet $WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_trl/final_unclassified/cc12m_tb_trl_chunk_05.parquet"
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s1"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s1"
 
 mkdir -p "$OUT_DIR"
 
@@ -88,7 +88,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers $NUM_WORKERS \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_s1\""
+    --run_name \"clip_r_336_s1\""
 
 srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
