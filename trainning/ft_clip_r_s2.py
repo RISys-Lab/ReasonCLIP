@@ -353,12 +353,15 @@ class CLIPTrainer(Trainer):
         cls_labels = inputs["trp_cls"].to(trp_text_features.device).long()
         cls_size = cls_labels.size(0)
         num_classes = self.num_classes
-        one_hot_labels = torch.zeros(cls_size, num_classes, device=image_features.device, dtype=image_features.dtype)
-        one_hot_labels.scatter_(1, cls_labels.unsqueeze(1), 1.0)
+
+        trp_cls_ls = inputs["trp_cls_ls"].to(trp_text_features.device).long()
+        multi_hot_labels = torch.zeros(cls_size, num_classes, device=image_features.device, dtype=image_features.dtype)
+        multi_hot_labels.scatter_(1, trp_cls_ls, 1.0)
+
         text_logits = self.backbone.text_classifier(trp_text_features)
         loss_cls_text = F.cross_entropy(text_logits, cls_labels)
         image_logits = self.backbone.image_classifier(image_features)
-        loss_cls_image = F.binary_cross_entropy_with_logits(image_logits, one_hot_labels)
+        loss_cls_image = F.binary_cross_entropy_with_logits(image_logits, multi_hot_labels)
 
         # ---- temperature (clamp to avoid blow-up in large-batch) ----
         with torch.no_grad():
@@ -430,7 +433,7 @@ class CLIPTrainer(Trainer):
             preds = torch.argmax(text_logits, dim=-1)
             acc_text = (preds == cls_labels).float().mean()
             preds = torch.argmax(image_logits, dim=-1)
-            acc_image = (preds == cls_labels).float().mean()
+            acc_image = multi_hot_labels.gather(1, preds.unsqueeze(1)).squeeze(1).float().mean()
 
         # ---- optional logging ----
         if accelerator.is_main_process and "wandb" in self.args.report_to:
@@ -506,6 +509,14 @@ class CLIPRDataset(torch.utils.data.Dataset):
         trp_cls = item["trp_cls"]
         trp_cls_idx = trp_cls_to_idx[trp_cls]
 
+        trp_cls_ls = item.get("trp_cls_ls")
+        if not isinstance(trp_cls_ls, (list, tuple)):
+            raise ValueError(f"trp_cls_ls must be a list/tuple of 3 labels, got: {type(trp_cls_ls)}")
+        if len(trp_cls_ls) != 3:
+            raise ValueError(f"trp_cls_ls must have length 3, got: {len(trp_cls_ls)}")
+
+        trp_cls_ls_idx = [trp_cls_to_idx[x] for x in trp_cls_ls]
+
         img_enc = self.processor(images=image, return_tensors="pt")
         trp_enc = self.processor(text=trp_caption, return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
         
@@ -514,6 +525,7 @@ class CLIPRDataset(torch.utils.data.Dataset):
             "trp_input_ids": trp_enc["input_ids"].squeeze(0),
             "trp_attention_mask": trp_enc.get("attention_mask", torch.ones_like(trp_enc["input_ids"])).squeeze(0),
             "trp_cls": trp_cls_idx,
+            "trp_cls_ls": torch.tensor(trp_cls_ls_idx, dtype=torch.long),
         }
 
 
@@ -671,8 +683,9 @@ def train_clip(args):
     main_print(f"   - TRP Input IDs shape: {sample['trp_input_ids'].shape}")
     main_print(f"   - TRP Attention Mask shape: {sample['trp_attention_mask'].shape}")
     main_print(f"   - TRP Class label: {sample['trp_cls']}")
+    main_print(f"   - TRP Class labels (image): {sample['trp_cls_ls']}")
     main_print(f"   - Pixel values shape: {sample['pixel_values'].shape}")
-    main_print(f"   - ✅ Stage 2 data format validated: (image, trp_text, trp_cls)")
+    main_print(f"   - ✅ Stage 2 data format validated: (image, trp_text, trp_cls, trp_cls_ls)")
     
     # ================================ 训练参数配置 ================================
     # 计算总步数来确定实际的logging、save、eval步数

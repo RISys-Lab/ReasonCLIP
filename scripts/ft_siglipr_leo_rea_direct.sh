@@ -63,7 +63,7 @@ LAUNCH_CMD="accelerate launch \
     --parquet_files_ReasonLite $PARQUET_PATH_LITE \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
-    --batch_size 512 \
+    --batch_size 384 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --default_lr 1e-4 \
@@ -72,7 +72,7 @@ LAUNCH_CMD="accelerate launch \
     --logit_scale_lr 5e-4 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
-    --weight_decay 1e-4 \
+    --weight_decay 0.05 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \

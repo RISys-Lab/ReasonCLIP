@@ -71,7 +71,7 @@ LAUNCH_CMD="accelerate launch \
     --learning_rate 1e-4 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
-    --weight_decay 1e-4 \
+    --weight_decay 0.05 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \

@@ -29,7 +29,7 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_02.parquet"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_1216_140327/finetune_weights/checkpoint-1706"
+MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_0201_135251/finetune_weights/checkpoint-1280"
 PROCESSOR_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
 # MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s2"
@@ -63,6 +63,7 @@ LAUNCH_CMD="accelerate launch \
   --main_process_port $MASTER_PORT \
   trainning/ft_clip_r_s2.py \
     --model_type siglip \
+    --use_sigmoid_loss \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --processor_name $PROCESSOR_PATH \
@@ -73,12 +74,12 @@ LAUNCH_CMD="accelerate launch \
     --default_lr 1e-4 \
     --visual_lr 1e-5 \
     --text_lr 2e-5 \
-    --logit_scale_lr 5e-4 \
+    --logit_scale_lr 1e-4 \
     --classifier_lr 1.5e-3 \
-    --gamma_adv 0.1 \
+    --gamma_adv 0.05 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
-    --weight_decay 1e-4 \
+    --weight_decay 0.1 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \

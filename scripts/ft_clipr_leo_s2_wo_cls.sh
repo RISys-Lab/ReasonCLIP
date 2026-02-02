@@ -71,12 +71,12 @@ LAUNCH_CMD="accelerate launch \
     --default_lr 1e-4 \
     --visual_lr 1e-5 \
     --text_lr 2e-5 \
-    --logit_scale_lr 5e-4 \
+    --logit_scale_lr 1e-4 \
     --classifier_lr 1.5e-3 \
-    --gamma_adv 0.1 \
+    --gamma_adv 0.05 \
     --holdout_ratio 0.002 \
     --warmup_ratio 0.1 \
-    --weight_decay 1e-4 \
+    --weight_decay 0.1 \
     --bf16 \
     --logging_strategy ratio \
     --logging_ratio 0.0005 \
