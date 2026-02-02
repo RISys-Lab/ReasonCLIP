@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_des_direct
+#SBATCH --job-name=siglipr_large_des_direct
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_des_direct.out 
-#SBATCH --error=siglipr_des_direct.err
+#SBATCH --output=siglipr_large_des_direct.out 
+#SBATCH --error=siglipr_large_des_direct.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -31,8 +31,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_DIR="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/final_combined"
 PARQUET_PATH_PRO=("$PARQUET_DIR"/cc12m_tb_chunk_{00..05}.parquet)
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_des_direct"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip-large-patch16-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_large_des_direct"
 
 mkdir -p "$OUT_DIR"
 
@@ -83,7 +83,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers 8 \
     --wandb_log \
     --wandb_project clip-r-training \
-    --run_name siglip_r_des_direct"
+    --run_name siglip_r_large_des_direct"
 
 ########################
 # 启动训练（关键修改）
