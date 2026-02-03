@@ -371,7 +371,7 @@ class CLIPTrainer(Trainer):
         logit_scale = self.backbone.logit_scale.exp() if hasattr(self.backbone, "logit_scale") else 1.0
 
         if self.use_sigmoid_loss and self.model_type == "siglip":
-            logit_bias = getattr(backbone, "logit_bias", None)
+            logit_bias = getattr(self.backbone, "logit_bias", None)
             bias = logit_bias.to(image_features.dtype) if logit_bias is not None else 0.0
         else:
             bias = 0.0  # CLIP 模式强制无 Bias
