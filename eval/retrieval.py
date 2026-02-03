@@ -18,12 +18,14 @@ from collections import defaultdict
 def _infer_model_type(name: str | None) -> str:
     """
     Infer model family from a free-form string by substring match.
-    Rule: lowercase then check if it contains "siglip" else "clip" if contains "clip".
+    Rule: lowercase then check if it contains "siglip2" -> "siglip2", "siglip" -> "siglip", "clip" -> "clip".
     Defaults to "clip" when unknown.
     """
     if name is None:
         return "clip"
     s = str(name).lower()
+    if "siglip2" in s:
+        return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
     if "clip" in s:
@@ -33,9 +35,10 @@ def _infer_model_type(name: str | None) -> str:
 
 class RetrievalDataset(torch.utils.data.Dataset):
     """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption evaluation"""
-    def __init__(self, dataset, processor, split="test", max_samples=None, local_image_dir=None):
+    def __init__(self, dataset, processor, split="test", max_samples=None, local_image_dir=None, lowercase=False):
         self.processor = processor
         self.local_image_dir = local_image_dir  # 本地图片目录
+        self.lowercase = lowercase  # 是否将文本转换为小写（SigLIP2 需要）
         self.image_data = []  # Store image info
         self.caption_data = []  # Store all captions
         self.image_to_captions = {}  # Map image index to caption indices
@@ -50,6 +53,8 @@ class RetrievalDataset(torch.utils.data.Dataset):
         
         print(f"Loading {split} split...")
         print(f"Karpathy evaluation mode: 5 captions per image")
+        if lowercase:
+            print(f"📝 文本小写转换: 已启用 (SigLIP2 模式)")
         if local_image_dir:
             print(f"📁 使用本地图片目录: {local_image_dir}")
         
@@ -99,6 +104,9 @@ class RetrievalDataset(torch.utils.data.Dataset):
             # Store caption mapping (all 5 captions)
             caption_indices = []
             for caption in captions:
+                # SigLIP2 需要小写文本
+                if self.lowercase:
+                    caption = caption.lower()
                 self.caption_data.append(caption)
                 self.caption_to_image[caption_idx] = img_idx
                 caption_indices.append(caption_idx)
@@ -432,18 +440,25 @@ def run_retrieval_evaluation(
     print(f"BF16: {'on' if use_bf16 else 'off'}")
     
     # Load model and processor based on model type
+    # siglip2 被当作 siglip 处理，但需要小写文本
+    use_lowercase = (model_type.lower() == "siglip2")
+    effective_model_type = "siglip" if model_type.lower() == "siglip2" else model_type.lower()
+    
     print(f"Loading {model_type.upper()} model and processor...")
+    if use_lowercase:
+        print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
+    
     torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
-    if model_type.lower() == "clip":
+    if effective_model_type == "clip":
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
-    elif model_type.lower() == "siglip":
+    elif effective_model_type == "siglip":
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Must contain 'clip' or 'siglip' (or pass 'auto').")
+        raise ValueError(f"Unsupported model type: {model_type}. Must contain 'clip', 'siglip', or 'siglip2' (or pass 'auto').")
     
     model.to(device).eval()
     
@@ -481,7 +496,7 @@ def run_retrieval_evaluation(
     print(f"📥 Raw dataset size (before max_samples): {len(ds)}")
     if max_samples:
         print(f"⚠️  max_samples={max_samples} will limit the dataset")
-    dataset = RetrievalDataset(ds, processor, split, max_samples, local_image_dir=local_image_dir)
+    dataset = RetrievalDataset(ds, processor, split, max_samples, local_image_dir=local_image_dir, lowercase=use_lowercase)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,

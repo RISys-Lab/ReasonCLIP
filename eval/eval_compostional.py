@@ -16,6 +16,8 @@ def _infer_model_type(name: str | None) -> str:
     if name is None:
         return "clip"
     s = str(name).lower()
+    if "siglip2" in s:
+        return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
     if "clip" in s:
@@ -58,7 +60,10 @@ def _encode_image_features(model, processor, images, device, autocast_ctx):
     return image_features / image_features.norm(dim=-1, keepdim=True)
 
 
-def _encode_text_features(model, processor, text, device, autocast_ctx):
+def _encode_text_features(model, processor, text, device, autocast_ctx, lowercase=False):
+    # SigLIP2 需要小写文本
+    if lowercase:
+        text = [t.lower() if isinstance(t, str) else t for t in text]
     text_max_len = _get_text_max_len(processor)
     text_inputs = processor(
         text=text,
@@ -73,14 +78,14 @@ def _encode_text_features(model, processor, text, device, autocast_ctx):
     return text_features / text_features.norm(dim=-1, keepdim=True)
 
 
-def compute_similarity(model, processor, images, text, device, autocast_ctx):
+def compute_similarity(model, processor, images, text, device, autocast_ctx, lowercase=False):
     image_features = _encode_image_features(model, processor, images, device, autocast_ctx)
-    text_features = _encode_text_features(model, processor, text, device, autocast_ctx)
+    text_features = _encode_text_features(model, processor, text, device, autocast_ctx, lowercase=lowercase)
     return image_features @ text_features.t()
 
 
-def get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=False):
-    similarity_scores = compute_similarity(model, processor, images, text, device, autocast_ctx)
+def get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=False, lowercase=False):
+    similarity_scores = compute_similarity(model, processor, images, text, device, autocast_ctx, lowercase=lowercase)
     if not return_tot:
         return int(similarity_scores.argmax() == 0), similarity_scores
 
@@ -89,7 +94,7 @@ def get_image_to_text_score(model, processor, images, text, device, autocast_ctx
     i0_c2 = similarity_scores[0, 2].item()
     image_correct = i0_c0 > i0_c2 and i0_c1 > i0_c2
 
-    text_features = _encode_text_features(model, processor, text, device, autocast_ctx)
+    text_features = _encode_text_features(model, processor, text, device, autocast_ctx, lowercase=lowercase)
     text_similarity_scores = text_features @ text_features.t()
     c0_c1 = text_similarity_scores[0, 1].item()
     c0_c2 = text_similarity_scores[0, 2].item()
@@ -99,7 +104,7 @@ def get_image_to_text_score(model, processor, images, text, device, autocast_ctx
     return int(image_correct), similarity_scores, int(text_correct), [c0_c1, c0_c2, c1_c2]
 
 
-def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None):
+def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None, lowercase=False):
     if dataset_path:
         dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
     else:
@@ -108,7 +113,7 @@ def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None):
     for sample in tqdm(dataset, desc="Evaluating WhatsUp"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
-        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
+        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, lowercase=lowercase)
         if sample["original_file_name"].startswith("coco"):
             name = "coco"
         elif sample["original_file_name"].startswith("vg"):
@@ -121,7 +126,7 @@ def eval_whatsup(model, processor, device, autocast_ctx, dataset_path=None):
     return average_result
 
 
-def eval_valse(model, processor, device, autocast_ctx, dataset_path=None):
+def eval_valse(model, processor, device, autocast_ctx, dataset_path=None, lowercase=False):
     if dataset_path:
         dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
     else:
@@ -130,14 +135,14 @@ def eval_valse(model, processor, device, autocast_ctx, dataset_path=None):
     for sample in tqdm(dataset, desc="Evaluating VALSE"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
-        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
+        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, lowercase=lowercase)
         result[sample["linguistic_phenomena"]].append(score)
         result["total"].append(score)
     average_result = {k: 100 * round(sum(v) / len(v), 5) for k, v in result.items()}
     return average_result
 
 
-def eval_crepe(model, processor, device, autocast_ctx, dataset_path=None):
+def eval_crepe(model, processor, device, autocast_ctx, dataset_path=None, lowercase=False):
     if dataset_path:
         dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
     else:
@@ -156,14 +161,14 @@ def eval_crepe(model, processor, device, autocast_ctx, dataset_path=None):
             for i in sample["images"]
         ]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
-        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
+        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, lowercase=lowercase)
         result[sample["original_file_name"]].append(score)
     average_result = {k: 100 * round(sum(v) / len(v), 5) for k, v in result.items()}
     average_result["total"] = round(sum(average_result.values()) / len(average_result), 3)
     return average_result
 
 
-def eval_sugarcrepe(model, processor, device, autocast_ctx, dataset_path=None):
+def eval_sugarcrepe(model, processor, device, autocast_ctx, dataset_path=None, lowercase=False):
     if dataset_path:
         dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
     else:
@@ -172,14 +177,14 @@ def eval_sugarcrepe(model, processor, device, autocast_ctx, dataset_path=None):
     for sample in tqdm(dataset, desc="Evaluating SugarCrepe"):
         images = sample["images"]
         text = [*sample["positive_caption"], *sample["negative_caption"]]
-        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx)
+        score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, lowercase=lowercase)
         result[sample["original_file_name"]].append(score)
     average_result = {k: 100 * round(sum(v) / len(v), 5) for k, v in result.items()}
     average_result["total"] = round(sum(average_result.values()) / len(average_result), 3)
     return average_result
 
 
-def eval_sugarcrepe_pp(model, processor, device, autocast_ctx, dataset_path=None):
+def eval_sugarcrepe_pp(model, processor, device, autocast_ctx, dataset_path=None, lowercase=False):
     if dataset_path:
         dataset = load_dataset(dataset_path, trust_remote_code=True, split="test")
     else:
@@ -188,7 +193,7 @@ def eval_sugarcrepe_pp(model, processor, device, autocast_ctx, dataset_path=None
     for sample in tqdm(dataset, desc="Evaluating SugarCrepe++"):
         images = sample["images"]
         text = [*sample["positive_caption_1"], *sample["positive_caption_2"], *sample["negative_caption"]]
-        itt_score, _, tot_score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=True)
+        itt_score, _, tot_score, _ = get_image_to_text_score(model, processor, images, text, device, autocast_ctx, return_tot=True, lowercase=lowercase)
         result[sample["original_file_name"] + "_itt"].append(itt_score)
         result[sample["original_file_name"] + "_tot"].append(tot_score)
     average_result = {k: 100 * round(sum(v) / len(v), 5) for k, v in result.items()}
@@ -222,6 +227,11 @@ def main():
     processor_path = args.processor_path or args.model_path
     use_bf16 = not args.no_bf16
     model_type = _infer_model_type(args.model_path)
+    
+    # SigLIP2 需要小写文本
+    use_lowercase = (model_type == "siglip2")
+    # siglip2 被当作 siglip 处理模型加载
+    effective_model_type = "siglip" if model_type == "siglip2" else model_type
 
     os.makedirs(args.results_dir, exist_ok=True)
     model_name = args.model_path.replace("/", "_")
@@ -234,15 +244,18 @@ def main():
     print("Compositional Reasoning Evaluation")
     print("=" * 80)
     print(f"Model: {args.model_path}")
+    print(f"Model type: {model_type.upper()}")
     print(f"Processor: {processor_path}")
     print(f"Device: {device}")
     print(f"BF16: {'on' if use_bf16 else 'off'}")
+    if use_lowercase:
+        print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
     print("=" * 80)
     
     # Load model and processor
     print("Loading model and processor...")
     torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
-    if model_type == "siglip":
+    if effective_model_type == "siglip":
         model = SiglipModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = SiglipProcessor.from_pretrained(processor_path)
     else:
@@ -258,11 +271,11 @@ def main():
     # Run all evaluations
     print("\nRunning evaluations...")
     results = {
-        "WhatsUp": eval_whatsup(model, processor, device, autocast_ctx),
-        "VALSE": eval_valse(model, processor, device, autocast_ctx),
-        "CREPE": eval_crepe(model, processor, device, autocast_ctx),
-        "SugarCrepe": eval_sugarcrepe(model, processor, device, autocast_ctx),
-        "SugarCrepe++": eval_sugarcrepe_pp(model, processor, device, autocast_ctx),
+        "WhatsUp": eval_whatsup(model, processor, device, autocast_ctx, lowercase=use_lowercase),
+        "VALSE": eval_valse(model, processor, device, autocast_ctx, lowercase=use_lowercase),
+        "CREPE": eval_crepe(model, processor, device, autocast_ctx, lowercase=use_lowercase),
+        "SugarCrepe": eval_sugarcrepe(model, processor, device, autocast_ctx, lowercase=use_lowercase),
+        "SugarCrepe++": eval_sugarcrepe_pp(model, processor, device, autocast_ctx, lowercase=use_lowercase),
     }
     
     # Print results

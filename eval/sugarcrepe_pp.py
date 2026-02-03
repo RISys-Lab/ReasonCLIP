@@ -17,12 +17,14 @@ from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 def _infer_model_type(name: str | None) -> str:
     """
     Infer model family from a free-form string by substring match.
-    Rule: lowercase then check if it contains "siglip" else "clip" if contains "clip".
+    Rule: lowercase then check if it contains "siglip2" -> "siglip2", "siglip" -> "siglip", "clip" -> "clip".
     Defaults to "clip" when unknown.
     """
     if name is None:
         return "clip"
     s = str(name).lower()
+    if "siglip2" in s:
+        return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
     if "clip" in s:
@@ -57,21 +59,26 @@ def _load_model_and_processor(
 ):
     """
     Load model + processor once and reuse across subset evaluations.
-    Returns: (model, processor, resolved_model_type, resolved_processor_name, resolved_device)
+    Returns: (model, processor, resolved_model_type, resolved_processor_name, resolved_device, use_lowercase)
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Auto-detect model type:
     # - if user passes "auto"/None -> infer from model_id
-    # - else -> infer from the provided string (can be "clip", "siglip", or a model name/path)
+    # - else -> infer from the provided string (can be "clip", "siglip", "siglip2", or a model name/path)
     mt = "auto" if model_type is None else str(model_type).strip().lower()
     if mt == "auto" or mt == "":
         model_type = _infer_model_type(model_id)
     else:
         model_type = _infer_model_type(model_type)
 
-    if model_type.lower() == "clip":
+    # SigLIP2 需要小写文本
+    use_lowercase = (model_type.lower() == "siglip2")
+    # siglip2 被当作 siglip 处理模型加载
+    effective_model_type = "siglip" if model_type.lower() == "siglip2" else model_type.lower()
+
+    if effective_model_type == "clip":
         model = AutoModel.from_pretrained(model_id)
         if processor_name is None:
             resolved_processor_name = model_id
@@ -79,7 +86,7 @@ def _load_model_and_processor(
             resolved_processor_name = processor_name
         processor = AutoProcessor.from_pretrained(resolved_processor_name)
         print(f"Loaded CLIP model: {model_id} and processor: {resolved_processor_name}")
-    elif model_type.lower() == "siglip":
+    elif effective_model_type == "siglip":
         model = SiglipModel.from_pretrained(model_id)
         if processor_name is None:
             resolved_processor_name = model_id
@@ -87,11 +94,13 @@ def _load_model_and_processor(
             resolved_processor_name = processor_name
         processor = SiglipProcessor.from_pretrained(resolved_processor_name)
         print(f"Loaded SigLIP model: {model_id} and processor: {resolved_processor_name}")
+        if use_lowercase:
+            print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
     else:
-        raise ValueError("model_type must be one of: clip, siglip, auto")
+        raise ValueError("model_type must be one of: clip, siglip, siglip2, auto")
 
     model.to(device).eval()
-    return model, processor, model_type, resolved_processor_name, device
+    return model, processor, model_type, resolved_processor_name, device, use_lowercase
 
 
 class SugarCrepePPDataset(torch.utils.data.Dataset):
@@ -147,7 +156,7 @@ class SugarCrepePPDataset(torch.utils.data.Dataset):
         return image, texts, str(filename)
 
 
-def collate_sugarcrepe_pp(batch, processor):
+def collate_sugarcrepe_pp(batch, processor, lowercase=False):
     images, texts_3, filenames = zip(*batch)
 
     image_inputs = processor(images=list(images), return_tensors="pt")
@@ -156,6 +165,10 @@ def collate_sugarcrepe_pp(batch, processor):
     flat_texts = []
     for t3 in texts_3:
         flat_texts.extend(list(t3))
+    
+    # SigLIP2 需要小写文本
+    if lowercase:
+        flat_texts = [t.lower() if isinstance(t, str) else t for t in flat_texts]
 
     proc_name = processor.__class__.__name__.lower()
     text_max_len = 64 if "siglip" in proc_name else 77
@@ -227,6 +240,7 @@ def run_sugarcrepe_pp_eval(
     skip_if_exists: bool = False,
     model=None,
     processor=None,
+    use_lowercase: bool = False,
 ):
     if results_dir is not None and (save_json or save_txt):
         safe_model = model_id.replace("/", "_")
@@ -242,7 +256,7 @@ def run_sugarcrepe_pp_eval(
     # If model/processor are not provided, load them here (single-subset mode).
     # In ALL-SUBSETS mode, caller passes preloaded objects to avoid reloading 5x.
     if model is None or processor is None:
-        model, processor, model_type, processor_name, device = _load_model_and_processor(
+        model, processor, model_type, processor_name, device, use_lowercase = _load_model_and_processor(
             model_id=model_id,
             model_type=model_type,
             processor_name=processor_name,
@@ -273,7 +287,7 @@ def run_sugarcrepe_pp_eval(
         shuffle=False,
         num_workers=0,
         pin_memory=True,
-        collate_fn=lambda b: collate_sugarcrepe_pp(b, processor),
+        collate_fn=lambda b: collate_sugarcrepe_pp(b, processor, lowercase=use_lowercase),
     )
 
     # Metrics:
@@ -454,7 +468,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
             return []
 
     # Load model/processor ONCE and reuse across subsets.
-    model, processor, resolved_model_type, resolved_processor_name, device = _load_model_and_processor(
+    model, processor, resolved_model_type, resolved_processor_name, device, use_lowercase = _load_model_and_processor(
         model_id=model_id,
         model_type=model_type,
         processor_name=processor_name,
@@ -483,6 +497,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
             save_txt=False,
             model=model,
             processor=processor,
+            use_lowercase=use_lowercase,
         )
         all_results.append(res)
 

@@ -16,6 +16,25 @@ from torch.utils.data import DataLoader
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+def _infer_model_type(name: str | None) -> str:
+    """
+    Infer model family from a free-form string by substring match.
+    Rule: lowercase then check if it contains "siglip2" -> "siglip2", "siglip" -> "siglip", "clip" -> "clip".
+    Defaults to "clip" when unknown.
+    """
+    if name is None:
+        return "clip"
+    s = str(name).lower()
+    if "siglip2" in s:
+        return "siglip2"  # SigLIP2 需要小写文本
+    if "siglip" in s:
+        return "siglip"
+    if "clip" in s:
+        return "clip"
+    return "clip"
+
+
 # Dataset configs: (name, hf_id, split)
 DATASETS_CONFIG = {
     "imagenet1k": ("clip-benchmark/wds_imagenet1k", "test"),
@@ -59,14 +78,20 @@ def load_wds_metadata(hf_id, classnames_file=None, templates_file=None):
     return classnames, templates
 
 
-def create_text_features(classnames, templates, processor, model, device, is_siglip):
+def create_text_features(classnames, templates, processor, model, device, is_siglip, lowercase=False):
     """Create text features for all classes using prompt templates"""
     print(f"Computing text features for {len(classnames)} classes with {len(templates)} templates...")
+    if lowercase:
+        print(f"📝 文本小写转换: 已启用 (SigLIP2 模式)")
     
     all_text_features = []
     
     for classname in tqdm(classnames, desc="Processing classes"):
         class_prompts = [template.format(c=classname) for template in templates]
+        
+        # SigLIP2 需要小写文本
+        if lowercase:
+            class_prompts = [p.lower() for p in class_prompts]
         
         with torch.no_grad():
             if is_siglip:
@@ -186,7 +211,13 @@ def run_zeroshot_evaluation(
     
     # Load model and processor
     print(f"Loading model...")
-    is_siglip = "siglip" in (model_path or "").lower() or "siglip" in (processor_path or "").lower()
+    model_type = _infer_model_type(model_path)
+    is_siglip = model_type in ("siglip", "siglip2")
+    use_lowercase = (model_type == "siglip2")
+    
+    if use_lowercase:
+        print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
+    
     if device != "cpu":
         if is_siglip:
             torch_dtype = torch.bfloat16 if use_bf16 else None
@@ -216,7 +247,7 @@ def run_zeroshot_evaluation(
     else:
         autocast_ctx = nullcontext()
     with autocast_ctx:
-        text_features = create_text_features(classnames, templates, processor, model, device, is_siglip)
+        text_features = create_text_features(classnames, templates, processor, model, device, is_siglip, lowercase=use_lowercase)
     
     # Load dataset
     print(f"\n📥 Loading dataset...")
@@ -327,7 +358,13 @@ def run_all_evaluations(
     
     # Load model and processor once
     print(f"\nLoading model...")
-    is_siglip = "siglip" in (model_path or "").lower() or "siglip" in (processor_path or "").lower()
+    model_type = _infer_model_type(model_path)
+    is_siglip = model_type in ("siglip", "siglip2")
+    use_lowercase = (model_type == "siglip2")
+    
+    if use_lowercase:
+        print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
+    
     if device != "cpu":
         if is_siglip:
             torch_dtype = torch.bfloat16 if use_bf16 else None
@@ -364,7 +401,7 @@ def run_all_evaluations(
         
         # Create text features for this dataset
         with autocast_ctx:
-            text_features = create_text_features(classnames, templates, processor, model, device, is_siglip)
+            text_features = create_text_features(classnames, templates, processor, model, device, is_siglip, lowercase=use_lowercase)
         
         # Load dataset
         hf_dataset = load_dataset(hf_id, split=split)
