@@ -30,9 +30,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_02.parquet"
 MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_s1/run_1207_155136/finetune_weights/checkpoint-1280"
-# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_s2"
-
+PROCESSOR_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14"
 mkdir -p "$OUT_DIR"
 
 ########################
@@ -64,6 +63,7 @@ LAUNCH_CMD="accelerate launch \
     --model_type clip \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
+    --processor_name $PROCESSOR_PATH \
     --output_dir $OUT_DIR \
     --batch_size 512 \
     --gradient_accumulation_steps 2 \
