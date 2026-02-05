@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=siglip2_r_go_s1
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
+#SBATCH --nodes=12
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
@@ -48,8 +48,8 @@ echo "[INFO] NUM_MACHINES=$NUM_MACHINES GPUS_PER_NODE=$GPUS_PER_NODE NUM_WORKERS
 LAUNCH_CMD="accelerate launch \
   --multi_gpu \
   --mixed_precision=bf16 \
-  --num_machines 8 \
-  --num_processes 32 \
+  --num_machines 12 \
+  --num_processes 48 \
   --main_process_ip $MASTER_ADDR \
   --main_process_port $MASTER_PORT \
   --machine_rank \$SLURM_NODEID \
@@ -60,7 +60,7 @@ LAUNCH_CMD="accelerate launch \
     --parquet_files $PARQUET_PATH \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
-    --batch_size 384 \
+    --batch_size 256 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --learning_rate 1e-4 \
@@ -92,7 +92,7 @@ LAUNCH_CMD="accelerate launch \
 ########################
 # 使用 srun 将命令分发到所有节点
 # --ntasks-per-node=1: 每个节点启动一个"管家"进程
-srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
+srun --nodes=12 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
 
 echo "Finetune CLIP-R (multi-node) completed."
