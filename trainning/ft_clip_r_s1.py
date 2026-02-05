@@ -455,9 +455,10 @@ class CLIPTrainer(Trainer):
 
 
 class CLIPRDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, lowercase_text=False):
         self.dataset = dataset_dict
         self.processor = processor
+        self.lowercase_text = lowercase_text
         # 每个样本有3个tb + 3个trp = 6个caption，交叉组合生成3*3=9个图像-文本对
         self.captions_per_image = 9  # 3个tb * 3个trp = 9个组合
         proc_name = processor.__class__.__name__.lower()
@@ -487,6 +488,11 @@ class CLIPRDataset(torch.utils.data.Dataset):
         trp_captions = item["trl"]
         tb_idx, trp_idx = pair_idx // 3, pair_idx % 3
         tb_caption, trp_caption = tb_captions[tb_idx], trp_captions[trp_idx]
+        if self.lowercase_text:
+            if isinstance(tb_caption, str):
+                tb_caption = tb_caption.lower()
+            if isinstance(trp_caption, str):
+                trp_caption = trp_caption.lower()
         
         img_enc = self.processor(images=image, return_tensors="pt")
         tb_enc = self.processor(text=[tb_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
@@ -624,8 +630,9 @@ def train_clip(args):
             main_print(f"   - No eval holdout")
 
     # 3) 用 HF Dataset 构建你的自定义 Dataset（无需 to_dict('records')）
-    train_dataset = CLIPRDataset(train_hf, processor)
-    eval_dataset  = CLIPRDataset(eval_hf, processor) if eval_hf else None
+    lowercase_text = model_type == "siglip" and "siglip2" in str(model_name).lower()
+    train_dataset = CLIPRDataset(train_hf, processor, lowercase_text=lowercase_text)
+    eval_dataset  = CLIPRDataset(eval_hf, processor, lowercase_text=lowercase_text) if eval_hf else None
 
     main_print(f"   - Train dataset size: {len(train_dataset)} (with 9x augmentation)")
     if eval_dataset:

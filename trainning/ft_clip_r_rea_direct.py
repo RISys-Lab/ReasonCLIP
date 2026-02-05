@@ -339,9 +339,10 @@ class CLIPTrainer(Trainer):
         return (loss.detach(), None, None)
 
 class CLIPRLiteDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, lowercase_text=False):
         self.dataset = dataset_dict
         self.processor = processor
+        self.lowercase_text = lowercase_text
         # 每个样本有3个TRL caption，每个caption生成一个训练样本
         self.captions_per_image = 3
         proc_name = processor.__class__.__name__.lower()
@@ -366,6 +367,8 @@ class CLIPRLiteDataset(torch.utils.data.Dataset):
         # 只使用TRL caption，不使用TB
         trl_captions = item["trl"]
         trl_caption = trl_captions[trl_idx]  # 选择对应的TRL caption
+        if self.lowercase_text and isinstance(trl_caption, str):
+            trl_caption = trl_caption.lower()
         
         img_enc = self.processor(images=image, return_tensors="pt")
         trl_enc = self.processor(text=[trl_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
@@ -378,9 +381,10 @@ class CLIPRLiteDataset(torch.utils.data.Dataset):
         }
 
 class CLIPRProDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, lowercase_text=False):
         self.dataset = dataset_dict
         self.processor = processor
+        self.lowercase_text = lowercase_text
         proc_name = processor.__class__.__name__.lower()
         if "siglip" in proc_name:
             self.text_max_len = 64
@@ -397,6 +401,8 @@ class CLIPRProDataset(torch.utils.data.Dataset):
         image = Image.open(image_path).convert("RGB")
         
         trp_caption = item["trp"]
+        if self.lowercase_text and isinstance(trp_caption, str):
+            trp_caption = trp_caption.lower()
 
         img_enc = self.processor(images=image, return_tensors="pt")
         trp_enc = self.processor(text=trp_caption, return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
@@ -551,12 +557,13 @@ def train_clip(args):
 
     # 3) 用不同的自定义 Dataset 类处理不同的数据格式
     # ReasonLite 用 CLIPRLiteDataset（每个样本扩展成3个，因为有3个TRL caption）
-    train_lite_dataset = CLIPRLiteDataset(train_lite_hf, processor)
-    eval_lite_dataset = CLIPRLiteDataset(eval_lite_hf, processor) if eval_lite_hf else None
+    lowercase_text = model_type == "siglip" and "siglip2" in str(model_name).lower()
+    train_lite_dataset = CLIPRLiteDataset(train_lite_hf, processor, lowercase_text=lowercase_text)
+    eval_lite_dataset = CLIPRLiteDataset(eval_lite_hf, processor, lowercase_text=lowercase_text) if eval_lite_hf else None
     
     # ReasonPro 用 CLIPRProDataset（1:1映射，每个样本1个TRP caption）
-    train_pro_dataset = CLIPRProDataset(train_pro_hf, processor)
-    eval_pro_dataset = CLIPRProDataset(eval_pro_hf, processor) if eval_pro_hf else None
+    train_pro_dataset = CLIPRProDataset(train_pro_hf, processor, lowercase_text=lowercase_text)
+    eval_pro_dataset = CLIPRProDataset(eval_pro_hf, processor, lowercase_text=lowercase_text) if eval_pro_hf else None
     
     # 4) 合并处理后的数据集（使用 PyTorch 的 ConcatDataset）
     # 处理后的格式已经统一：都是 (image, text_input_ids, text_attention_mask)

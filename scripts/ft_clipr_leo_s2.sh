@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=clipr_336_ft_s2
+#SBATCH --job-name=clipr_b32_ft_s2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=clipr_336_ft_s2.out
-#SBATCH --error=clipr_336_ft_s2.err
+#SBATCH --output=clipr_b32_ft_s2.out
+#SBATCH --error=clipr_b32_ft_s2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -29,9 +29,9 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_02.parquet"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_336_s1/run_1215_081150/finetune_weights/checkpoint-1280"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_336_s2"
-PROCESSOR_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-large-patch14-336"
+MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/clip_r_b32_s1/run_0109_211647/finetune_weights/checkpoint-853"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/clip_r_b32_s2"
+PROCESSOR_PATH="$WORK/fmohamma/CLIP-R/data/clip-vit-base-patch32"
 mkdir -p "$OUT_DIR"
 
 ########################
@@ -65,7 +65,7 @@ LAUNCH_CMD="accelerate launch \
     --model_name $MODEL_PATH \
     --processor_name $PROCESSOR_PATH \
     --output_dir $OUT_DIR \
-    --batch_size 512 \
+    --batch_size 768 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --default_lr 1e-4 \
@@ -88,7 +88,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers $NUM_WORKERS \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"clip_r_336_s2\""
+    --run_name \"clip_r_b32_s2\""
 
 srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"

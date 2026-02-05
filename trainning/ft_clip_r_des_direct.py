@@ -337,9 +337,10 @@ class CLIPTrainer(Trainer):
         return (loss.detach(), None, None)
 
 class CC12MRefinedDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, lowercase_text=False):
         self.dataset = dataset_dict
         self.processor = processor
+        self.lowercase_text = lowercase_text
         # 每个样本有3个TB caption，每个caption生成一个训练样本
         self.captions_per_image = 3
         proc_name = processor.__class__.__name__.lower()
@@ -363,6 +364,8 @@ class CC12MRefinedDataset(torch.utils.data.Dataset):
         
         tb_captions = item["tb"]
         tb_caption = tb_captions[tb_idx]  # 选择对应的TB caption
+        if self.lowercase_text and isinstance(tb_caption, str):
+            tb_caption = tb_caption.lower()
         
         img_enc = self.processor(images=image, return_tensors="pt")
         tb_enc = self.processor(text=[tb_caption], return_tensors="pt", padding="max_length", truncation=True, max_length=self.text_max_len)
@@ -493,8 +496,9 @@ def train_clip(args):
             main_print(f"   - No eval holdout")
 
     # 3) 用不同的自定义 Dataset 类处理不同的数据格式
-    train_dataset = CC12MRefinedDataset(train_hf, processor)
-    eval_dataset = CC12MRefinedDataset(eval_hf, processor) if eval_hf else None
+    lowercase_text = model_type == "siglip" and "siglip2" in str(model_name).lower()
+    train_dataset = CC12MRefinedDataset(train_hf, processor, lowercase_text=lowercase_text)
+    eval_dataset = CC12MRefinedDataset(eval_hf, processor, lowercase_text=lowercase_text) if eval_hf else None
     
     main_print(f"   - Train dataset size: {len(train_dataset)}")
 
