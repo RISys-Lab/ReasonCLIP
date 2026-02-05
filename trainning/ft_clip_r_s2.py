@@ -487,9 +487,10 @@ trp_cls_to_idx = {
     "P": 4,
 }
 class CLIPRDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_dict, processor):
+    def __init__(self, dataset_dict, processor, lowercase_text=False):
         self.dataset = dataset_dict
         self.processor = processor
+        self.lowercase_text = lowercase_text
         proc_name = processor.__class__.__name__.lower()
         if "siglip" in proc_name:
             self.text_max_len = 64
@@ -506,6 +507,8 @@ class CLIPRDataset(torch.utils.data.Dataset):
         image = Image.open(image_path).convert("RGB")
         
         trp_caption = item["trp"]
+        if self.lowercase_text and isinstance(trp_caption, str):
+            trp_caption = trp_caption.lower()
         trp_cls = item["trp_cls"]
         trp_cls_idx = trp_cls_to_idx[trp_cls]
 
@@ -668,8 +671,9 @@ def train_clip(args):
             main_print(f"   - No eval holdout")
 
     # 3) 用 HF Dataset 构建你的自定义 Dataset（无需 to_dict('records')）
-    train_dataset = CLIPRDataset(train_hf, processor)
-    eval_dataset  = CLIPRDataset(eval_hf, processor) if eval_hf else None
+    lowercase_text = model_type == "siglip" and "siglip2" in str(model_name).lower()
+    train_dataset = CLIPRDataset(train_hf, processor, lowercase_text=lowercase_text)
+    eval_dataset  = CLIPRDataset(eval_hf, processor, lowercase_text=lowercase_text) if eval_hf else None
 
     main_print(f"   - Train dataset size: {len(train_dataset)}")
     if eval_dataset:
