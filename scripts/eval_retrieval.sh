@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_flickr
+#SBATCH --job-name=eval_retrieval
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=eval_flickr.out
-#SBATCH --error=eval_flickr.err
+#SBATCH --output=eval_retrieval.out
+#SBATCH --error=eval_retrieval.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=64G
 
@@ -34,7 +34,41 @@ if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
   exit 1
 fi
 
+for i in "${!models[@]}"; do
+  python eval/retrieval.py \
+    --model_path "${models[$i]}" \
+    --processor_path "${processors[$i]}" \
+    --model_name auto \
+    --urban1k_json "$WORK/fmohamma/CLIP-R/data/Urban1k/data.json" \
+    --local_image_dir "$WORK/fmohamma/CLIP-R/data/Urban1k/image" \
+    --dataset_name urban1k \
+    --split test \
+    --batch_size 512 \
+    --device cuda:0 \
+    --skip_if_exists \
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_urban1k" &
 
+  while [ "$(jobs -rp | wc -l)" -ge 1 ]; do
+    wait -n
+  done
+done
+
+for i in "${!models[@]}"; do
+  python eval/retrieval.py \
+    --model_path "${models[$i]}" \
+    --processor_path "${processors[$i]}" \
+    --model_name auto \
+    --dataset_name wds_mscoco \
+    --split test \
+    --batch_size 512 \
+    --device cuda:0 \
+    --skip_if_exists \
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_wds_mscoco" &
+
+  while [ "$(jobs -rp | wc -l)" -ge 1 ]; do
+    wait -n
+  done
+done
 
 for i in "${!models[@]}"; do
   python eval/retrieval.py \
@@ -52,5 +86,8 @@ for i in "${!models[@]}"; do
     wait -n
   done
 done
+
+
+
 
 wait

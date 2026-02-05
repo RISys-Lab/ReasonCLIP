@@ -34,11 +34,21 @@ def _infer_model_type(name: str | None) -> str:
 
 
 class RetrievalDataset(torch.utils.data.Dataset):
-    """Standard retrieval dataset for COCO/Flickr30K with Karpathy 5-caption evaluation"""
-    def __init__(self, dataset, processor, split="test", max_samples=None, local_image_dir=None, lowercase=False):
+    """Standard retrieval dataset for COCO/Flickr30K (Karpathy) or single-caption sets"""
+    def __init__(
+        self,
+        dataset,
+        processor,
+        split="test",
+        max_samples=None,
+        local_image_dir=None,
+        lowercase=False,
+        pad_captions_to=5,
+    ):
         self.processor = processor
         self.local_image_dir = local_image_dir  # 本地图片目录
         self.lowercase = lowercase  # 是否将文本转换为小写（SigLIP2 需要）
+        self.pad_captions_to = pad_captions_to
         self.image_data = []  # Store image info
         self.caption_data = []  # Store all captions
         self.image_to_captions = {}  # Map image index to caption indices
@@ -52,7 +62,10 @@ class RetrievalDataset(torch.utils.data.Dataset):
             self.text_max_len = 77  # CLIP uses 77
         
         print(f"Loading {split} split...")
-        print(f"Karpathy evaluation mode: 5 captions per image")
+        if pad_captions_to is not None:
+            print(f"Evaluation mode: {pad_captions_to} captions per image")
+        else:
+            print("Evaluation mode: variable captions per image")
         if lowercase:
             print(f"📝 文本小写转换: 已启用 (SigLIP2 模式)")
         if local_image_dir:
@@ -89,19 +102,22 @@ class RetrievalDataset(torch.utils.data.Dataset):
                 captions = sample['captions']
             elif 'caption' in sample:
                 captions = sample['caption']
+                if isinstance(captions, str):
+                    captions = [captions]
             # print(f"captions: {captions}")
             # print(len(captions))
             # exit()
             
-            # Ensure we have exactly 5 captions (pad or truncate)
-            if len(captions) < 5:
-                # Repeat captions to reach 5 (common practice)
-                while len(captions) < 5:
-                    print(f"Padding captions for image {img_idx} with {len(captions)} captions")
-                    captions.extend(captions[:5-len(captions)])
-            captions = captions[:5]  # Take first 5
+            # Ensure we have exactly pad_captions_to captions when required
+            if self.pad_captions_to is not None:
+                if len(captions) < self.pad_captions_to:
+                    # Repeat captions to reach target (common for Karpathy eval)
+                    while len(captions) < self.pad_captions_to:
+                        print(f"Padding captions for image {img_idx} with {len(captions)} captions")
+                        captions.extend(captions[: self.pad_captions_to - len(captions)])
+                captions = captions[: self.pad_captions_to]
             
-            # Store caption mapping (all 5 captions)
+            # Store caption mapping
             caption_indices = []
             for caption in captions:
                 # SigLIP2 需要小写文本
@@ -152,6 +168,17 @@ class RetrievalDataset(torch.utils.data.Dataset):
                         image = Image.new('RGB', (224, 224), color='black')
                 else:
                     image = Image.new('RGB', (224, 224), color='black')
+            except Exception as e:
+                print(f"Error loading image from local path {local_path}: {e}")
+                image = Image.new('RGB', (224, 224), color='black')
+        elif self.local_image_dir and 'image_name' in sample:
+            image_name = sample['image_name']
+            local_path = os.path.join(self.local_image_dir, f"{image_name}")
+            try:
+                image = Image.open(local_path).convert("RGB")
+            except FileNotFoundError:
+                print(f"⚠️  本地图片不存在: {local_path}")
+                image = Image.new('RGB', (224, 224), color='black')
             except Exception as e:
                 print(f"Error loading image from local path {local_path}: {e}")
                 image = Image.new('RGB', (224, 224), color='black')
@@ -256,6 +283,23 @@ def load_coco_captions_val2017(captions_json_path: str):
             }
         )
 
+    return samples
+
+
+def load_urban1k_json(json_path):
+    import json
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("urban1k json must be a list of records")
+    samples = []
+    for row in data:
+        image_name = row.get("image_name")
+        caption = row.get("caption")
+        if image_name is None or caption is None:
+            raise ValueError("urban1k record missing 'image_name' or 'caption'")
+        samples.append({"image_name": image_name, "caption": caption})
     return samples
 
 
@@ -390,6 +434,7 @@ def run_retrieval_evaluation(
     device=None,
     local_image_dir=None,  # ✅ 本地图片目录
     coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
+    urban1k_json=None,  # ✅ urban1k json with image_name/caption
     results_dir=None,  # 结果保存目录
     use_bf16=True,
     skip_if_exists=False
@@ -489,6 +534,11 @@ def run_retrieval_evaluation(
                 print(f"   - {split_name}: {len(all_splits[split_name])} samples")
         except:
             pass
+    elif dataset_name.lower() == "urban1k":
+        if not local_image_dir or not urban1k_json:
+            raise ValueError("urban1k requires --urban1k_json and --local_image_dir")
+        ds = load_urban1k_json(urban1k_json)
+        print(f"✅ Loaded urban1k: {len(ds)} samples (from {urban1k_json})")
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     
@@ -496,7 +546,16 @@ def run_retrieval_evaluation(
     print(f"📥 Raw dataset size (before max_samples): {len(ds)}")
     if max_samples:
         print(f"⚠️  max_samples={max_samples} will limit the dataset")
-    dataset = RetrievalDataset(ds, processor, split, max_samples, local_image_dir=local_image_dir, lowercase=use_lowercase)
+    pad_captions_to = 1 if dataset_name.lower() == "urban1k" else 5
+    dataset = RetrievalDataset(
+        ds,
+        processor,
+        split,
+        max_samples,
+        local_image_dir=local_image_dir,
+        lowercase=use_lowercase,
+        pad_captions_to=pad_captions_to,
+    )
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -659,8 +718,8 @@ def parse_args():
         "--dataset_name",
         type=str,
         default="flickr30k",
-        choices=["mscoco", "flickr30k", "wds_mscoco"],
-        help="Dataset name: 'mscoco', 'flickr30k', or 'wds_mscoco' (clip-benchmark/wds_mscoco_captions)"
+        choices=["mscoco", "flickr30k", "wds_mscoco", "urban1k"],
+        help="Dataset name: 'mscoco', 'flickr30k', 'wds_mscoco', or 'urban1k'"
     )
     
     parser.add_argument(
@@ -706,6 +765,12 @@ def parse_args():
              "If provided with --dataset_name mscoco, we will load captions locally instead of HF Karpathy split. "
              "Requires --local_image_dir pointing to val2017/.",
     )
+    parser.add_argument(
+        "--urban1k_json",
+        type=str,
+        default=None,
+        help="Urban1k json path with fields: image_name, caption. Use with --dataset_name urban1k.",
+    )
     
     parser.add_argument(
         "--results_dir",
@@ -733,7 +798,11 @@ if __name__ == "__main__":
     args = parse_args()
     
     print("="*80)
-    print("CLIP/SigLIP Retrieval Evaluation (Karpathy-style, 5 captions/image)")
+    print("CLIP/SigLIP Retrieval Evaluation")
+    if args.dataset_name.lower() == "urban1k":
+        print("Evaluation mode: 1 caption/image")
+    else:
+        print("Evaluation mode: Karpathy-style (5 captions/image)")
     print("="*80)
     print(f"Model Path: {args.model_path}")
     print(f"Model Type: {args.model_name.upper()}")
@@ -754,6 +823,7 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         local_image_dir=args.local_image_dir,
         coco_captions_json=args.coco_captions_json,
+        urban1k_json=args.urban1k_json,
         results_dir=args.results_dir,
         use_bf16=not args.no_bf16,
         skip_if_exists=args.skip_if_exists
