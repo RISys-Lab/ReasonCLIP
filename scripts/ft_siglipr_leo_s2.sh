@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=siglipr_ft_s2
+#SBATCH --job-name=siglipr_ft_large_s2
 #SBATCH --time=24:00:00
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglipr_ft_s2.out
-#SBATCH --error=siglipr_ft_s2.err
+#SBATCH --output=siglipr_ft_large_s2.out
+#SBATCH --error=siglipr_ft_large_s2.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -29,10 +29,9 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_00.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_01.parquet /leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/outputs/ReasonPro/cc12m_trp/combined_flat_full_cls/cc12m_trp_chunk_02.parquet"
-MODEL_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_0201_135251/finetune_weights/checkpoint-1280"
-PROCESSOR_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
-# MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_s2"
+MODEL_PATH=""/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_large_s1/run_0202_212226/finetune_weights/checkpoint-1280""
+PROCESSOR_PATH="/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-large-patch16-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip_r_large_s2"
 
 mkdir -p "$OUT_DIR"
 
@@ -68,7 +67,7 @@ LAUNCH_CMD="accelerate launch \
     --model_name $MODEL_PATH \
     --processor_name $PROCESSOR_PATH \
     --output_dir $OUT_DIR \
-    --batch_size 384 \
+    --batch_size 512 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --default_lr 1e-4 \
@@ -91,7 +90,7 @@ LAUNCH_CMD="accelerate launch \
     --num_workers $NUM_WORKERS \
     --wandb_log \
     --wandb_project \"clip-r-training\" \
-    --run_name \"siglip_r_s2\""
+    --run_name \"siglip_r_large_s2\""
 
 srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
