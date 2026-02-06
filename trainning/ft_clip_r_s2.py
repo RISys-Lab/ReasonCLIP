@@ -626,7 +626,16 @@ def train_clip(args):
 
     main_print(f"🔧 Initializing Reasoning Classifier...")
     backbone = model.module if hasattr(model, "module") else model
-    embed_dim = backbone.config.text_config.hidden_size
+    if hasattr(backbone.config.text_config, "projection_size"):
+        embed_dim = backbone.config.text_config.projection_size
+    # 2. 其次检查通用的 projection_dim (CLIP常用)
+    elif hasattr(backbone.config.text_config, "projection_dim"):
+        embed_dim = backbone.config.text_config.projection_dim
+    # 3. 最后才用 hidden_size 兜底
+    else:
+        embed_dim = backbone.config.text_config.hidden_size
+    main_print(f"   - Detected Output Dimension: {embed_dim}")
+    
     num_classes = 5 
     text_classifier = ReasoningClassifier(embed_dim, num_classes).to(accelerator.device).to(torch.bfloat16)
     backbone.text_classifier = text_classifier
