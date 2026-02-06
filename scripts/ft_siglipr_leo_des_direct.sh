@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=siglip2_r_des_direct
+#SBATCH --job-name=siglip2_r_go_des_direct
 #SBATCH --time=24:00:00
-#SBATCH --nodes=8
+#SBATCH --nodes=12
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --partition=boost_usr_prod
 #SBATCH --qos=normal
-#SBATCH --output=siglip2_r_des_direct.out 
-#SBATCH --error=siglip2_r_des_direct.err
+#SBATCH --output=siglip2_r_go_des_direct.out 
+#SBATCH --error=siglip2_r_go_des_direct.err
 #SBATCH --account=EUHPC_R04_192
 #SBATCH --mem=256G
 
@@ -31,8 +31,8 @@ cd $WORK/fmohamma/CLIP-R/
 
 PARQUET_DIR="$WORK/fmohamma/CLIP-R/outputs/ReasonLite/cc12m_tb/final_combined"
 PARQUET_PATH_PRO=("$PARQUET_DIR"/cc12m_tb_chunk_{00..05}.parquet)
-MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
-OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip2_r_des_direct"
+MODEL_PATH="$WORK/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+OUT_DIR="$WORK/fmohamma/CLIP-R/weights/siglip2_r_go_des_direct"
 
 mkdir -p "$OUT_DIR"
 
@@ -50,8 +50,8 @@ echo "[INFO] MASTER_ADDR=$MASTER_ADDR MASTER_PORT=$MASTER_PORT"
 LAUNCH_CMD="accelerate launch \
     --multi_gpu \
     --mixed_precision=bf16 \
-    --num_machines 8 \
-    --num_processes 32 \
+    --num_machines 12 \
+    --num_processes 48 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank \$SLURM_NODEID \
@@ -62,7 +62,7 @@ LAUNCH_CMD="accelerate launch \
     --parquet_files "${PARQUET_PATH_PRO[@]}" \
     --model_name $MODEL_PATH \
     --output_dir $OUT_DIR \
-    --batch_size 512 \
+    --batch_size 256 \
     --gradient_accumulation_steps 2 \
     --epochs 1 \
     --default_lr 1e-4 \
@@ -83,14 +83,14 @@ LAUNCH_CMD="accelerate launch \
     --num_workers 8 \
     --wandb_log \
     --wandb_project clip-r-training \
-    --run_name siglip2_r_des_direct"
+    --run_name siglip2_r_go_des_direct"
 
 ########################
 # 启动训练（关键修改）
 ########################
 # 使用 srun 将命令分发到所有节点
 # --ntasks-per-node=1: 每个节点启动一个"管家"进程
-srun --nodes=8 --ntasks-per-node=1 --cpus-per-task=32 \
+srun --nodes=12 --ntasks-per-node=1 --cpus-per-task=32 \
     bash -c "$LAUNCH_CMD"
 
 echo "Finetune CLIP-R (multi-node) completed."
