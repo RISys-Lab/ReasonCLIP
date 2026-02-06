@@ -44,10 +44,14 @@ models=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_large_s2/run_0206_043818/finetune_weights/checkpoint-505"
 
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_des_direct/run_0206_065521/finetune_weights/checkpoint-949"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s1/run_0205_013331/finetune_weights/checkpoint-1280"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s2/run_0206_071346/finetune_weights/checkpoint-505"
 
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_des_direct/run_0206_070924/finetune_weights/checkpoint-1266"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_s1/run_0205_015917/finetune_weights/checkpoint-1706"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_s2/run_0206_072054/finetune_weights/checkpoint-673"
 )
 
 processors=(
@@ -93,7 +97,11 @@ processors=(
 
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-so400m-patch14-384"
 
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
 )
