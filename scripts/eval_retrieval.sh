@@ -53,6 +53,26 @@ for i in "${!models[@]}"; do
   done
 done
 
+
+for i in "${!models[@]}"; do
+  python eval/retrieval.py \
+    --model_path "${models[$i]}" \
+    --processor_path "${processors[$i]}" \
+    --model_name auto \
+    --dataset_name mscoco \
+    --split test \
+    --coco_captions_json "$COCO2017_CAPTIONS_JSON" \
+    --local_image_dir "$COCO2017_IMAGE_DIR" \
+    --batch_size 512 \
+    --device cuda:0 \
+    --skip_if_exists \
+    --results_dir "$WORK/fmohamma/CLIP-R/eval/results/retrieval_coco2017" &
+
+  while [ "$(jobs -rp | wc -l)" -ge 1 ]; do
+    wait -n
+  done
+done
+
 for i in "${!models[@]}"; do
   python eval/retrieval.py \
     --model_path "${models[$i]}" \
