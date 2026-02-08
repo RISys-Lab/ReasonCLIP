@@ -34,6 +34,7 @@ models=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_0129_161714/finetune_weights/checkpoint-1280"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s1/run_0201_135251/finetune_weights/checkpoint-1280"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2/run_0203_195004/finetune_weights/checkpoint-673"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_s2_wo_cls/run_0208_011811/finetune_weights/checkpoint-505"
   
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-large-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip_r_large_rea_direct/run_0202_215557/finetune_weights/checkpoint-931"
@@ -47,6 +48,7 @@ models=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_des_direct/run_0206_065521/finetune_weights/checkpoint-949"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s1/run_0205_013331/finetune_weights/checkpoint-1280"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s2/run_0206_071346/finetune_weights/checkpoint-505"
+  "
 
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_des_direct/run_0206_070924/finetune_weights/checkpoint-1266"
@@ -79,6 +81,7 @@ processors=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/clip-vit-large-patch14"
 
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip-so400m-patch14-384"
