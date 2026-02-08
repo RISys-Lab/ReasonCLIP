@@ -48,7 +48,6 @@ models=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_des_direct/run_0206_065521/finetune_weights/checkpoint-949"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s1/run_0205_013331/finetune_weights/checkpoint-1280"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_s2/run_0206_071346/finetune_weights/checkpoint-505"
-  "
 
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/weights/siglip2_r_go_des_direct/run_0206_070924/finetune_weights/checkpoint-1266"
@@ -108,4 +107,10 @@ processors=(
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
   "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
+  "/leonardo_work/EUHPC_R04_192/fmohamma/CLIP-R/data/siglip2-giant-opt-patch16-384"
 )
+
+if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
+  echo "ERROR: models (${#models[@]}) and processors (${#processors[@]}) count mismatch. Keep arrays aligned by index." >&2
+  exit 1
+fi
