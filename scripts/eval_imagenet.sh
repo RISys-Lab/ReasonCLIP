@@ -35,7 +35,7 @@ if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
 fi
 
 for i in "${!models[@]}"; do
-  python eval/zeroshot_imagenet.py \
+  python eval/eval_zeroshot_imagenet.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --dataset all \

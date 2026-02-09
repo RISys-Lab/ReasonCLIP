@@ -35,7 +35,7 @@ if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
 fi
 
 for i in "${!models[@]}"; do
-  python eval/retrieval.py \
+  python eval/eval_retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --model_name auto \
@@ -55,7 +55,7 @@ done
 
 
 for i in "${!models[@]}"; do
-  python eval/retrieval.py \
+  python eval/eval_retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --model_name auto \
@@ -74,7 +74,7 @@ for i in "${!models[@]}"; do
 done
 
 for i in "${!models[@]}"; do
-  python eval/retrieval.py \
+  python eval/eval_retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --model_name auto \
@@ -91,7 +91,7 @@ for i in "${!models[@]}"; do
 done
 
 for i in "${!models[@]}"; do
-  python eval/retrieval.py \
+  python eval/eval_retrieval.py \
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --model_name auto \

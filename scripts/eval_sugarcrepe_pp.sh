@@ -38,7 +38,7 @@ fi
 
 
 for i in "${!models[@]}"; do
-  python eval/sugarcrepe_pp.py \
+  python eval/eval_sugarcrepe_pp.py \
     --model_path "${models[$i]}" \
     --processor_name "${processors[$i]}" \
     --model_name auto \
