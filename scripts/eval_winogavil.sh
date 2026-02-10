@@ -39,6 +39,7 @@ for i in "${!models[@]}"; do
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --skip_if_exists \
+    --batch_size 32 \
     --results_dir "$WORK/fmohamma/CLIP-R/eval/results/winogavil" &
 
   while [ "$(jobs -rp | wc -l)" -ge 1 ]; do

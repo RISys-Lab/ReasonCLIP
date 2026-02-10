@@ -51,7 +51,8 @@ def run_winogavil_evaluation(
     use_bf16=True,
     max_samples=None,
     template="a {}",
-    skip_if_exists=False
+    skip_if_exists=False,
+    batch_size=1
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -83,6 +84,7 @@ def run_winogavil_evaluation(
     print(f"Dataset: {dataset_name} [{split}]")
     print(f"Output File: {result_file}")
     print(f"Device: {device}")
+    print(f"Batch Size: {batch_size}")
     print("=" * 80)
 
     # --- 2. Load Model & Processor ---
@@ -140,80 +142,191 @@ def run_winogavil_evaluation(
     print("\n🚀 Starting evaluation...")
     
     with torch.no_grad(), autocast_ctx:
-        for i, sample in tqdm(enumerate(dataset), total=len(dataset), desc="Evaluating"):
-            
-            # Extract Data
-            cue_word = sample.get("cue")
-            candidates_text = sample.get("candidates")
-            associations_text = sample.get("associations")
-            k = sample.get("num_associations") 
-            candidate_images = sample.get("candidate_images")
-            
-            if not candidate_images or not cue_word:
+        batch = []
+        for _, sample in tqdm(enumerate(dataset), total=len(dataset), desc="Evaluating"):
+            batch.append(sample)
+            if len(batch) < batch_size:
                 continue
 
-            # --- Text Processing (Updated Logic) ---
-            if use_lowercase:
-                cue_word = cue_word.lower()
-            
-            prompt = template.format(cue_word)
-            
-            # STRICT ALIGNMENT with your ImageNet script:
+            # Process batch
+            cues = []
+            candidates_texts = []
+            associations_texts = []
+            ks = []
+            candidate_images_list = []
+            offsets = []
+            total_imgs = 0
+
+            for s in batch:
+                cue_word = s.get("cue")
+                candidate_images = s.get("candidate_images")
+                candidates_text = s.get("candidates")
+                associations_text = s.get("associations")
+                k = s.get("num_associations")
+
+                if not candidate_images or not cue_word:
+                    continue
+
+                if use_lowercase:
+                    cue_word = cue_word.lower()
+
+                cues.append(template.format(cue_word))
+                candidates_texts.append(candidates_text)
+                associations_texts.append(associations_text)
+                ks.append(k)
+                candidate_images_list.extend(candidate_images)
+                offsets.append((total_imgs, total_imgs + len(candidate_images)))
+                total_imgs += len(candidate_images)
+
+            if len(cues) == 0:
+                batch = []
+                continue
+
             if is_siglip:
                 text_inputs = processor(
-                    text=[prompt],
+                    text=cues,
                     return_tensors="pt",
-                    padding="max_length", # Specific to SigLIP script logic
+                    padding="max_length",
                     truncation=True,
-                    max_length=64         # Specific to SigLIP script logic
+                    max_length=64
                 )
             else:
                 text_inputs = processor(
-                    text=[prompt],
+                    text=cues,
                     return_tensors="pt",
-                    padding=True,         # Default for CLIP
+                    padding=True,
                     truncation=True
                 )
-            
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
 
-            # Image Processing
-            image_inputs = processor(images=candidate_images, return_tensors="pt")
+            image_inputs = processor(images=candidate_images_list, return_tensors="pt")
             image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
 
-            # Inference
             image_features = model.get_image_features(**image_inputs)
             text_features = model.get_text_features(**text_inputs)
 
-            # Normalize
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-            # Similarity
-            logits = text_features @ image_features.T
-            scores = logits.squeeze(0) 
+            for i in range(len(cues)):
+                start, end = offsets[i]
+                image_feats_i = image_features[start:end]
+                text_feat_i = text_features[i : i + 1]
 
-            # Top-K Selection
-            _, topk_indices = scores.topk(k)
-            pred_indices = topk_indices.cpu().tolist()
+                logits = text_feat_i @ image_feats_i.T
+                scores = logits.squeeze(0)
 
-            # Map GT text to indices
-            target_indices = []
-            for assoc in associations_text:
-                if assoc in candidates_text:
-                    target_indices.append(candidates_text.index(assoc))
-            
-            # Jaccard Calculation
-            jaccard = compute_jaccard(pred_indices, target_indices)
-            
-            total_jaccard += jaccard
-            total_samples += 1
+                k = ks[i]
+                if k is None:
+                    k = len(associations_texts[i]) if associations_texts[i] else 0
 
-            # Track by difficulty
-            num_cand = len(candidate_images)
-            if num_cand not in metrics_by_candidates:
-                metrics_by_candidates[num_cand] = []
-            metrics_by_candidates[num_cand].append(jaccard)
+                _, topk_indices = scores.topk(k)
+                pred_indices = topk_indices.cpu().tolist()
+
+                target_indices = []
+                for assoc in associations_texts[i]:
+                    if assoc in candidates_texts[i]:
+                        target_indices.append(candidates_texts[i].index(assoc))
+
+                jaccard = compute_jaccard(pred_indices, target_indices)
+
+                total_jaccard += jaccard
+                total_samples += 1
+
+                num_cand = end - start
+                if num_cand not in metrics_by_candidates:
+                    metrics_by_candidates[num_cand] = []
+                metrics_by_candidates[num_cand].append(jaccard)
+
+            batch = []
+
+        if len(batch) > 0:
+            # Process remaining samples
+            cues = []
+            candidates_texts = []
+            associations_texts = []
+            ks = []
+            candidate_images_list = []
+            offsets = []
+            total_imgs = 0
+
+            for s in batch:
+                cue_word = s.get("cue")
+                candidate_images = s.get("candidate_images")
+                candidates_text = s.get("candidates")
+                associations_text = s.get("associations")
+                k = s.get("num_associations")
+
+                if not candidate_images or not cue_word:
+                    continue
+
+                if use_lowercase:
+                    cue_word = cue_word.lower()
+
+                cues.append(template.format(cue_word))
+                candidates_texts.append(candidates_text)
+                associations_texts.append(associations_text)
+                ks.append(k)
+                candidate_images_list.extend(candidate_images)
+                offsets.append((total_imgs, total_imgs + len(candidate_images)))
+                total_imgs += len(candidate_images)
+
+            if len(cues) > 0:
+                if is_siglip:
+                    text_inputs = processor(
+                        text=cues,
+                        return_tensors="pt",
+                        padding="max_length",
+                        truncation=True,
+                        max_length=64
+                    )
+                else:
+                    text_inputs = processor(
+                        text=cues,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True
+                    )
+                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+
+                image_inputs = processor(images=candidate_images_list, return_tensors="pt")
+                image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+
+                image_features = model.get_image_features(**image_inputs)
+                text_features = model.get_text_features(**text_inputs)
+
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+                for i in range(len(cues)):
+                    start, end = offsets[i]
+                    image_feats_i = image_features[start:end]
+                    text_feat_i = text_features[i : i + 1]
+
+                    logits = text_feat_i @ image_feats_i.T
+                    scores = logits.squeeze(0)
+
+                    k = ks[i]
+                    if k is None:
+                        k = len(associations_texts[i]) if associations_texts[i] else 0
+
+                    _, topk_indices = scores.topk(k)
+                    pred_indices = topk_indices.cpu().tolist()
+
+                    target_indices = []
+                    for assoc in associations_texts[i]:
+                        if assoc in candidates_texts[i]:
+                            target_indices.append(candidates_texts[i].index(assoc))
+
+                    jaccard = compute_jaccard(pred_indices, target_indices)
+
+                    total_jaccard += jaccard
+                    total_samples += 1
+
+                    num_cand = end - start
+                    if num_cand not in metrics_by_candidates:
+                        metrics_by_candidates[num_cand] = []
+                    metrics_by_candidates[num_cand].append(jaccard)
 
     # --- 6. Final Results Calculation ---
     avg_jaccard = (total_jaccard / total_samples) * 100 if total_samples > 0 else 0.0
@@ -253,6 +366,7 @@ if __name__ == "__main__":
     parser.add_argument("--template", type=str, default="a {}", help="Prompt template")
     parser.add_argument("--no_bf16", action="store_true", help="Disable bfloat16")
     parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--skip_if_exists", action="store_true", help="Skip if output file exists")
     
     args = parser.parse_args()
@@ -265,5 +379,6 @@ if __name__ == "__main__":
         template=args.template,
         use_bf16=not args.no_bf16,
         max_samples=args.max_samples,
-        skip_if_exists=args.skip_if_exists
+        skip_if_exists=args.skip_if_exists,
+        batch_size=args.batch_size
     )
