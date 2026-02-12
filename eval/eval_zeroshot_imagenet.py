@@ -30,6 +30,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "metaclip" in s:
+        return "metaclip"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -196,7 +198,7 @@ def run_zeroshot_evaluation(
     print("=" * 80)
 
     if results_dir is None:
-        results_dir = os.path.join(SCRIPT_DIR, "results")
+        results_dir = os.path.join(SCRIPT_DIR, "results", "classification_imagenet")
     os.makedirs(results_dir, exist_ok=True)
     model_name = model_path.replace("/", "_")
     result_file = os.path.join(results_dir, f"zeroshot_{model_name}_{dataset_name}.txt")
@@ -454,7 +456,7 @@ def run_all_evaluations(
     
     # Save combined results
     if results_dir is None:
-        results_dir = os.path.join(SCRIPT_DIR, "results")
+        results_dir = os.path.join(SCRIPT_DIR, "results", "classification_imagenet")
     os.makedirs(results_dir, exist_ok=True)
     
     model_name = model_path.replace("/", "_")
@@ -521,7 +523,12 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--max_samples", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--results_dir", type=str, default=None)
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default=None,
+        help="Results directory (default: eval/results/classification_imagenet)",
+    )
     parser.add_argument("--classnames_file", type=str, default=None)
     parser.add_argument("--templates_file", type=str, default=None)
     parser.add_argument(

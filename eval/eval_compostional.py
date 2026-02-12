@@ -20,6 +20,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "metaclip" in s:
+        return "metaclip"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -215,7 +217,12 @@ def parse_args():
     parser.add_argument("--model_path", type=str, required=True, help="Model path or HF model ID")
     parser.add_argument("--processor_path", type=str, default=None, help="Processor path (default: same as model_path)")
     parser.add_argument("--device", type=str, default=None, help="Device (default: auto-detect)")
-    parser.add_argument("--results_dir", type=str, default="eval/results", help="Results directory")
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default="eval/results/compositional_results",
+        help="Results directory (default: eval/results/compositional_results)",
+    )
     parser.add_argument("--no_bf16", action="store_true", help="Disable bf16 autocast (use fp32)")
     parser.add_argument("--skip_if_exists", action="store_true", help="Skip evaluation when output txt already exists")
     return parser.parse_args()
@@ -258,9 +265,13 @@ def main():
     if effective_model_type == "siglip":
         model = SiglipModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = SiglipProcessor.from_pretrained(processor_path)
-    else:
+    elif effective_model_type in ("clip", "metaclip"):
         model = AutoModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = AutoProcessor.from_pretrained(processor_path)
+    else:
+        raise ValueError(
+            f"Unsupported model type: {model_type}. Must contain 'metaclip', 'clip', 'siglip', or 'siglip2'."
+        )
     
     # Setup autocast context
     if use_bf16 and device != "cpu":

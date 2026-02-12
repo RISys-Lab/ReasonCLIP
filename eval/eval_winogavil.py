@@ -25,6 +25,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"
     if "siglip" in s:
         return "siglip"
+    if "metaclip" in s:
+        return "metaclip"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -62,7 +64,7 @@ def run_winogavil_evaluation(
 
     # --- 1. Setup Results Directory & Check Skip Logic ---
     if results_dir is None:
-        results_dir = os.path.join(SCRIPT_DIR, "results")
+        results_dir = os.path.join(SCRIPT_DIR, "results", "winogavil")
     os.makedirs(results_dir, exist_ok=True)
     
     # Construct filename based on model and dataset
@@ -362,7 +364,12 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, required=True, help="HF model path")
     parser.add_argument("--processor_path", type=str, default=None)
     parser.add_argument("--dataset", type=str, default="nlphuji/winogavil")
-    parser.add_argument("--results_dir", type=str, default=None, help="Directory to save results")
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default=None,
+        help="Directory to save results (default: eval/results/winogavil)",
+    )
     parser.add_argument("--template", type=str, default="a {}", help="Prompt template")
     parser.add_argument("--no_bf16", action="store_true", help="Disable bfloat16")
     parser.add_argument("--max_samples", type=int, default=None)

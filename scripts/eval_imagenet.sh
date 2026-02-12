@@ -29,6 +29,16 @@ source $WORK/fmohamma/venvs/clipr/bin/activate
 cd $WORK/fmohamma/CLIP-R/
 
 source "$WORK/fmohamma/CLIP-R/scripts/eval_models.sh"
+
+# Optional: run an extra MetaCLIP checkpoint in the same loop.
+# Example:
+#   export METACLIP_MODEL="facebook/metaclip-b32-400m"
+#   export METACLIP_PROCESSOR="facebook/metaclip-b32-400m"
+if [ -n "${METACLIP_MODEL:-}" ]; then
+  models+=("${METACLIP_MODEL}")
+  processors+=("${METACLIP_PROCESSOR:-$METACLIP_MODEL}")
+fi
+
 if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
   echo "models/processors length mismatch: ${#models[@]} vs ${#processors[@]}"
   exit 1

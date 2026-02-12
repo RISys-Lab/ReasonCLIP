@@ -14,11 +14,14 @@ import requests
 import argparse
 from collections import defaultdict
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def _infer_model_type(name: str | None) -> str:
     """
     Infer model family from a free-form string by substring match.
-    Rule: lowercase then check if it contains "siglip2" -> "siglip2", "siglip" -> "siglip", "clip" -> "clip".
+    Rule: lowercase then check if it contains
+    "siglip2" -> "siglip2", "siglip" -> "siglip", "metaclip" -> "metaclip", "clip" -> "clip".
     Defaults to "clip" when unknown.
     """
     if name is None:
@@ -28,6 +31,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "metaclip" in s:
+        return "metaclip"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -468,7 +473,7 @@ def run_retrieval_evaluation(
         model_type = _infer_model_type(model_type)
 
     if results_dir is None:
-        results_dir = "/home/muzammal/Projects/CLIP-R/eval/results"
+        results_dir = os.path.join(SCRIPT_DIR, "results", "retrieval")
     os.makedirs(results_dir, exist_ok=True)
     model_name = model_id.replace("/", "_")
     text_file = os.path.join(results_dir, f"retrieval_results_{model_type}_{model_name}_{dataset_name}_{split}.txt")
@@ -494,7 +499,7 @@ def run_retrieval_evaluation(
         print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
     
     torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
-    if effective_model_type == "clip":
+    if effective_model_type in ("clip", "metaclip"):
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
@@ -503,7 +508,9 @@ def run_retrieval_evaluation(
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Must contain 'clip', 'siglip', or 'siglip2' (or pass 'auto').")
+        raise ValueError(
+            f"Unsupported model type: {model_type}. Must contain 'metaclip', 'clip', 'siglip', or 'siglip2' (or pass 'auto')."
+        )
     
     model.to(device).eval()
     
@@ -775,8 +782,8 @@ def parse_args():
     parser.add_argument(
         "--results_dir",
         type=str,
-        default="/home/muzammal/Projects/CLIP-R/eval/results",
-        help="Directory to save evaluation results (default: '/home/muzammal/Projects/CLIP-R/eval/results')"
+        default="eval/results/retrieval",
+        help="Directory to save evaluation results (default: 'eval/results/retrieval')"
     )
     
     parser.add_argument(
