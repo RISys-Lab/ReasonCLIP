@@ -367,7 +367,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--results_dir",
         type=str,
-        default=None,
+        default="eval/results/winogavil",
         help="Directory to save results (default: eval/results/winogavil)",
     )
     parser.add_argument("--template", type=str, default="a {}", help="Prompt template")
