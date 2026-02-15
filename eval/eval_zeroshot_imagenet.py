@@ -555,7 +555,10 @@ if __name__ == "__main__":
             use_bf16=not args.no_bf16,
             skip_if_exists=args.skip_if_exists
         )
-        print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
+        if result.get("skipped"):
+            print(f"\n⏩ [SKIP] Results already exist: {result.get('result_file')}")
+        else:
+            print(f"\n🎯 Final Average Top-1: {result['avg_top1']:.2f}%")
     else:
         result = run_zeroshot_evaluation(
             model_path=args.model_path,
