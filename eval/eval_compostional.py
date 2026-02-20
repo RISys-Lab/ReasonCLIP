@@ -8,6 +8,7 @@ import torch
 import numpy as np
 from PIL import Image
 from datasets import load_dataset
+import open_clip
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 from tqdm import tqdm
 
@@ -20,6 +21,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "open_clip" in s or "openclip" in s or "::" in s:
+        return "open_clip"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -55,10 +58,15 @@ def _ensure_rgb_images(images):
 
 def _encode_image_features(model, processor, images, device, autocast_ctx):
     images = _ensure_rgb_images(images)
-    image_inputs = processor(images=images, return_tensors="pt")
-    image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
-    with autocast_ctx:
-        image_features = model.get_image_features(**image_inputs)
+    if isinstance(processor, dict):
+        image_tensors = torch.stack([processor["image_preprocess"](img) for img in images], dim=0).to(device)
+        with autocast_ctx:
+            image_features = model.encode_image(image_tensors)
+    else:
+        image_inputs = processor(images=images, return_tensors="pt")
+        image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+        with autocast_ctx:
+            image_features = model.get_image_features(**image_inputs)
     return image_features / image_features.norm(dim=-1, keepdim=True)
 
 
@@ -66,17 +74,22 @@ def _encode_text_features(model, processor, text, device, autocast_ctx, lowercas
     # SigLIP2 需要小写文本
     if lowercase:
         text = [t.lower() if isinstance(t, str) else t for t in text]
-    text_max_len = _get_text_max_len(processor)
-    text_inputs = processor(
-        text=text,
-        return_tensors="pt",
-        padding="max_length",
-        truncation=True,
-        max_length=text_max_len,
-    )
-    text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-    with autocast_ctx:
-        text_features = model.get_text_features(**text_inputs)
+    if isinstance(processor, dict):
+        text_tokens = processor["tokenizer"](text).to(device)
+        with autocast_ctx:
+            text_features = model.encode_text(text_tokens)
+    else:
+        text_max_len = _get_text_max_len(processor)
+        text_inputs = processor(
+            text=text,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=text_max_len,
+        )
+        text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+        with autocast_ctx:
+            text_features = model.get_text_features(**text_inputs)
     return text_features / text_features.norm(dim=-1, keepdim=True)
 
 
@@ -265,12 +278,20 @@ def main():
     if effective_model_type == "siglip":
         model = SiglipModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = SiglipProcessor.from_pretrained(processor_path)
+    elif effective_model_type == "open_clip":
+        model_name, pretrained = args.model_path.split("::")
+        model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": open_clip.get_tokenizer(model_name),
+        }
+        model = model.to(device).eval()
     elif effective_model_type in ("clip", "metaclip"):
         model = AutoModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = AutoProcessor.from_pretrained(processor_path)
     else:
         raise ValueError(
-            f"Unsupported model type: {model_type}. Must contain 'metaclip', 'clip', 'siglip', or 'siglip2'."
+            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'metaclip', 'clip', 'siglip', or 'siglip2'."
         )
     
     # Setup autocast context

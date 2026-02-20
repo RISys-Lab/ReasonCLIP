@@ -10,6 +10,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoModel, AutoProcessor
 from contextlib import nullcontext
+import open_clip
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,6 +26,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"
     if "siglip" in s:
         return "siglip"
+    if "open_clip" in s or "openclip" in s or "::" in s:
+        return "open_clip"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -92,6 +95,7 @@ def run_winogavil_evaluation(
     # --- 2. Load Model & Processor ---
     model_type = _infer_model_type(model_path)
     is_siglip = model_type in ("siglip", "siglip2")
+    is_open_clip = model_type == "open_clip"
     use_lowercase = (model_type == "siglip2")
     
     if use_lowercase:
@@ -107,8 +111,16 @@ def run_winogavil_evaluation(
 
     print(f"Loading model ({torch_dtype})...")
     try:
-        model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype, trust_remote_code=True)
-        processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
+        if is_open_clip:
+            model_name, pretrained = model_path.split("::")
+            model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+            processor = {
+                "image_preprocess": image_preprocess,
+                "tokenizer": open_clip.get_tokenizer(model_name),
+            }
+        else:
+            model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype, trust_remote_code=True)
+            processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
     except Exception as e:
         print(f"❌ Error loading model/processor: {e}")
         return
@@ -184,7 +196,9 @@ def run_winogavil_evaluation(
                 batch = []
                 continue
 
-            if is_siglip:
+            if is_open_clip:
+                text_inputs = {"input_ids": processor["tokenizer"](cues).to(device)}
+            elif is_siglip:
                 text_inputs = processor(
                     text=cues,
                     return_tensors="pt",
@@ -199,13 +213,16 @@ def run_winogavil_evaluation(
                     padding=True,
                     truncation=True
                 )
-            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-
-            image_inputs = processor(images=candidate_images_list, return_tensors="pt")
-            image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
-
-            image_features = model.get_image_features(**image_inputs)
-            text_features = model.get_text_features(**text_inputs)
+            if is_open_clip:
+                image_tensors = torch.stack([processor["image_preprocess"](img) for img in candidate_images_list], dim=0).to(device)
+                image_features = model.encode_image(image_tensors)
+                text_features = model.encode_text(text_inputs["input_ids"])
+            else:
+                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+                image_inputs = processor(images=candidate_images_list, return_tensors="pt")
+                image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+                image_features = model.get_image_features(**image_inputs)
+                text_features = model.get_text_features(**text_inputs)
 
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
@@ -274,7 +291,9 @@ def run_winogavil_evaluation(
                 total_imgs += len(candidate_images)
 
             if len(cues) > 0:
-                if is_siglip:
+                if is_open_clip:
+                    text_inputs = {"input_ids": processor["tokenizer"](cues).to(device)}
+                elif is_siglip:
                     text_inputs = processor(
                         text=cues,
                         return_tensors="pt",
@@ -289,13 +308,16 @@ def run_winogavil_evaluation(
                         padding=True,
                         truncation=True
                     )
-                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-
-                image_inputs = processor(images=candidate_images_list, return_tensors="pt")
-                image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
-
-                image_features = model.get_image_features(**image_inputs)
-                text_features = model.get_text_features(**text_inputs)
+                if is_open_clip:
+                    image_tensors = torch.stack([processor["image_preprocess"](img) for img in candidate_images_list], dim=0).to(device)
+                    image_features = model.encode_image(image_tensors)
+                    text_features = model.encode_text(text_inputs["input_ids"])
+                else:
+                    text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+                    image_inputs = processor(images=candidate_images_list, return_tensors="pt")
+                    image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+                    image_features = model.get_image_features(**image_inputs)
+                    text_features = model.get_text_features(**text_inputs)
 
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)

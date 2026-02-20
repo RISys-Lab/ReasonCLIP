@@ -11,6 +11,7 @@ from PIL import Image
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
+import open_clip
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 
 
@@ -27,6 +28,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "open_clip" in s or "openclip" in s or "::" in s:
+        return "open_clip"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -78,7 +81,16 @@ def _load_model_and_processor(
     # siglip2 被当作 siglip 处理模型加载
     effective_model_type = "siglip" if model_type.lower() == "siglip2" else model_type.lower()
 
-    if effective_model_type == "clip":
+    if effective_model_type == "open_clip":
+        model_name, pretrained = model_id.split("::")
+        model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+        resolved_processor_name = "open_clip"
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": open_clip.get_tokenizer(model_name),
+        }
+        print(f"Loaded OpenCLIP model: {model_name} ({pretrained})")
+    elif effective_model_type == "clip":
         model = AutoModel.from_pretrained(model_id)
         if processor_name is None:
             resolved_processor_name = model_id
@@ -97,7 +109,7 @@ def _load_model_and_processor(
         if use_lowercase:
             print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
     else:
-        raise ValueError("model_type must be one of: clip, siglip, siglip2, auto")
+        raise ValueError("model_type must be one of: open_clip, clip, siglip, siglip2, auto")
 
     model.to(device).eval()
     return model, processor, model_type, resolved_processor_name, device, use_lowercase
@@ -156,10 +168,14 @@ class SugarCrepePPDataset(torch.utils.data.Dataset):
         return image, texts, str(filename)
 
 
-def collate_sugarcrepe_pp(batch, processor, lowercase=False):
+def collate_sugarcrepe_pp(batch, processor, model_type="clip", lowercase=False):
     images, texts_3, filenames = zip(*batch)
 
-    image_inputs = processor(images=list(images), return_tensors="pt")
+    if model_type == "open_clip":
+        image_tensors = torch.stack([processor["image_preprocess"](img) for img in images], dim=0)
+        image_inputs = {"pixel_values": image_tensors}
+    else:
+        image_inputs = processor(images=list(images), return_tensors="pt")
 
     # Flatten texts: [B, 3] -> [3B]
     flat_texts = []
@@ -170,15 +186,18 @@ def collate_sugarcrepe_pp(batch, processor, lowercase=False):
     if lowercase:
         flat_texts = [t.lower() if isinstance(t, str) else t for t in flat_texts]
 
-    proc_name = processor.__class__.__name__.lower()
-    text_max_len = 64 if "siglip" in proc_name else 77
-    text_inputs = processor(
-        text=flat_texts,
-        return_tensors="pt",
-        padding="max_length",
-        truncation=True,
-        max_length=text_max_len,
-    )
+    if model_type == "open_clip":
+        text_inputs = {"input_ids": processor["tokenizer"](flat_texts)}
+    else:
+        proc_name = processor.__class__.__name__.lower()
+        text_max_len = 64 if "siglip" in proc_name else 77
+        text_inputs = processor(
+            text=flat_texts,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=text_max_len,
+        )
 
     return image_inputs, text_inputs, list(filenames)
 
@@ -287,7 +306,7 @@ def run_sugarcrepe_pp_eval(
         shuffle=False,
         num_workers=0,
         pin_memory=True,
-        collate_fn=lambda b: collate_sugarcrepe_pp(b, processor, lowercase=use_lowercase),
+        collate_fn=lambda b: collate_sugarcrepe_pp(b, processor, model_type=model_type, lowercase=use_lowercase),
     )
 
     # Metrics:
@@ -306,13 +325,15 @@ def run_sugarcrepe_pp_eval(
 
     with torch.no_grad():
         for image_inputs, text_inputs, filenames in tqdm(dataloader, desc="Evaluating"):
-            image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
-            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-
-            image_features = model.get_image_features(**image_inputs)
+            if model_type == "open_clip":
+                image_features = model.encode_image(image_inputs["pixel_values"].to(device))
+                text_features = model.encode_text(text_inputs["input_ids"].to(device))
+            else:
+                image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+                image_features = model.get_image_features(**image_inputs)
+                text_features = model.get_text_features(**text_inputs)
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-
-            text_features = model.get_text_features(**text_inputs)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
             B = image_features.shape[0]

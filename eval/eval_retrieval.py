@@ -4,6 +4,7 @@ from datasets import load_dataset
 from PIL import Image
 import io
 from tqdm import tqdm
+import open_clip
 from transformers import CLIPModel, CLIPProcessor, SiglipModel, SiglipProcessor
 from transformers import AutoModel, AutoProcessor
 from torch.utils.data import DataLoader
@@ -21,7 +22,8 @@ def _infer_model_type(name: str | None) -> str:
     """
     Infer model family from a free-form string by substring match.
     Rule: lowercase then check if it contains
-    "siglip2" -> "siglip2", "siglip" -> "siglip", "metaclip" -> "metaclip", "clip" -> "clip".
+    "siglip2" -> "siglip2", "siglip" -> "siglip", "open_clip"/"openclip" -> "open_clip",
+    "metaclip" -> "metaclip", "clip" -> "clip".
     Defaults to "clip" when unknown.
     """
     if name is None:
@@ -31,6 +33,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "open_clip" in s or "openclip" in s:
+        return "open_clip"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -217,23 +221,43 @@ class RetrievalDataset(torch.utils.data.Dataset):
         return image, caption, idx
 
 
-def collate_retrieval_fn(batch, processor):
+def collate_retrieval_fn(batch, processor, model_type="clip"):
     """Collate function for retrieval evaluation (CPU only, move to device later)"""
     images, captions, indices = zip(*batch)
-    
-    # Process images (keep on CPU)
-    image_inputs = processor(images=list(images), return_tensors="pt")
-    
-    # Set text max length based on processor type
-    proc_name = processor.__class__.__name__.lower()
-    text_max_len = 64 if "siglip" in proc_name else 77
-    
-    # Process captions (keep on CPU)
-    text_inputs = processor(text=list(captions), return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
-    
+    model_type = str(model_type).lower()
     indices = torch.tensor(indices)
-    
-    return image_inputs, text_inputs, indices
+
+    # 1) OpenCLIP: torchvision preprocess + open_clip tokenizer
+    if model_type == "open_clip":
+        image_tensors = torch.stack([processor["image_preprocess"](img) for img in images], dim=0)
+        text_tokens = processor["tokenizer"](list(captions))
+        return {"pixel_values": image_tensors}, {"input_ids": text_tokens}, indices
+
+    # 2) SigLIP/SigLIP2: HF processor, text length 64
+    if model_type in ("siglip", "siglip2"):
+        image_inputs = processor(images=list(images), return_tensors="pt")
+        text_inputs = processor(
+            text=list(captions),
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=64,
+        )
+        return image_inputs, text_inputs, indices
+
+    # 3) CLIP/MetaCLIP: HF processor, text length 77
+    if model_type in ("clip", "metaclip"):
+        image_inputs = processor(images=list(images), return_tensors="pt")
+        text_inputs = processor(
+            text=list(captions),
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=77,
+        )
+        return image_inputs, text_inputs, indices
+
+    raise ValueError(f"Unsupported model_type in collate: {model_type}")
 
 
 def load_coco_captions_val2017(captions_json_path: str):
@@ -484,7 +508,7 @@ def run_retrieval_evaluation(
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
     print(f"Model type: {model_type.upper()}")
-    print(f"Processor: {processor_path or model_id}")
+    print(f"Processor: {'N/A (open_clip)' if model_type.lower() == 'open_clip' else (processor_path or model_id)}")
     print(f"Dataset: {dataset_name} ({split})")
     print(f"Batch size: {batch_size}, Workers: {num_workers}")
     print(f"BF16: {'on' if use_bf16 else 'off'}")
@@ -507,9 +531,16 @@ def run_retrieval_evaluation(
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
+    elif effective_model_type == "open_clip":
+        model_name, pretrained = model_id.split("::")
+        model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": open_clip.get_tokenizer(model_name),
+        }
     else:
         raise ValueError(
-            f"Unsupported model type: {model_type}. Must contain 'metaclip', 'clip', 'siglip', or 'siglip2' (or pass 'auto')."
+            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'metaclip', 'clip', 'siglip', or 'siglip2' (or pass 'auto')."
         )
     
     model.to(device).eval()
@@ -569,7 +600,7 @@ def run_retrieval_evaluation(
         shuffle=False,
         num_workers=4,  # ✅ 修改为 0 避免 pickle 序列化问题
         pin_memory=True,
-        collate_fn=lambda batch: collate_retrieval_fn(batch, processor)
+        collate_fn=lambda batch: collate_retrieval_fn(batch, processor, effective_model_type)
     )
     
     print(f"✅ Final dataset size: {len(dataset)} images, {dataset.get_num_captions()} captions")
@@ -584,9 +615,11 @@ def run_retrieval_evaluation(
     with torch.no_grad(), autocast_ctx:
         for image_inputs, text_inputs, indices in tqdm(dataloader, desc="Processing image batches"):
             # Move data to device in main process (not in workers)
-            image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
-            
-            image_features = model.get_image_features(**image_inputs)
+            if effective_model_type == "open_clip":
+                image_features = model.encode_image(image_inputs["pixel_values"].to(device))
+            else:
+                image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
+                image_features = model.get_image_features(**image_inputs)
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             
             all_image_features.append(image_features.cpu())
@@ -605,15 +638,16 @@ def run_retrieval_evaluation(
         end_idx = min(start_idx + caption_batch_size, num_captions)
         batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
         
-        # Process caption batch
-        proc_name = processor.__class__.__name__.lower()
-        text_max_len = 64 if "siglip" in proc_name else 77
-
-        text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
-        text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-        
         with torch.no_grad(), autocast_ctx:
-            text_features = model.get_text_features(**text_inputs)
+            if effective_model_type == "open_clip":
+                text_features = model.encode_text(processor["tokenizer"](batch_captions).to(device))
+            else:
+                # Process caption batch
+                proc_name = processor.__class__.__name__.lower()
+                text_max_len = 64 if "siglip" in proc_name else 77
+                text_inputs = processor(text=batch_captions, return_tensors="pt", padding="max_length", truncation=True, max_length=text_max_len)
+                text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+                text_features = model.get_text_features(**text_inputs)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             
             all_text_features.append(text_features)  # Keep on GPU
@@ -696,7 +730,7 @@ def run_retrieval_evaluation(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="CLIP/SigLIP Retrieval Evaluation")
+    parser = argparse.ArgumentParser(description="CLIP/SigLIP/OpenCLIP Retrieval Evaluation")
     
     parser.add_argument(
         "--model_path",
@@ -716,7 +750,7 @@ def parse_args():
         "--model_name",
         type=str,
         default="auto",
-        help="Model type/name (auto-detected by substring match; pass 'auto' to infer from --model_path)"
+        help="Model type/name (supports open_clip/clip/siglip/siglip2/metaclip; pass 'auto' to infer from --model_path)"
     )
     
     
@@ -746,7 +780,7 @@ def parse_args():
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda:3",
+        default="cuda:1",
         help="Device to use (e.g., 'cuda:0', 'cuda:1'). If None, auto-detect"
     )
     
@@ -813,7 +847,7 @@ if __name__ == "__main__":
     print("="*80)
     print(f"Model Path: {args.model_path}")
     print(f"Model Type: {args.model_name.upper()}")
-    print(f"Processor: {args.processor_path or args.model_path}")
+    print(f"Processor: {'N/A (open_clip)' if args.model_name.lower() == 'open_clip' else (args.processor_path or args.model_path)}")
     print(f"Dataset: {args.dataset_name.upper()}")
     print(f"Split: {args.split}")
     print(f"Batch Size: {args.batch_size}")
