@@ -1,6 +1,7 @@
 import argparse
 from collections import defaultdict
 import os
+import sys
 from datetime import datetime
 from contextlib import nullcontext
 
@@ -23,6 +24,10 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip"
     if "open_clip" in s or "openclip" in s or "::" in s:
         return "open_clip"
+    if "longclip" in s:
+        return "longclip"
+    if "pe-core" in s or s.startswith("pe"):
+        return "pe"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -286,12 +291,34 @@ def main():
             "tokenizer": open_clip.get_tokenizer(model_name),
         }
         model = model.to(device).eval()
+    elif effective_model_type == "longclip":
+        longclip_root = os.path.join(os.path.dirname(__file__), "Long-CLIP")
+        if longclip_root not in sys.path:
+            sys.path.insert(0, longclip_root)
+        from model import longclip
+        model, image_preprocess = longclip.load(args.model_path, device=device)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": longclip.tokenize,
+        }
+        model = model.to(device).eval()
+    elif effective_model_type == "pe":
+        if os.path.dirname(__file__) not in sys.path:
+            sys.path.insert(0, os.path.dirname(__file__))
+        import core.vision_encoder.pe as pe
+        import core.vision_encoder.transforms as transforms
+        model = pe.CLIP.from_config(args.model_path, pretrained=True)
+        processor = {
+            "image_preprocess": transforms.get_image_transform(model.image_size),
+            "tokenizer": transforms.get_text_tokenizer(model.context_length),
+        }
+        model = model.to(device).eval()
     elif effective_model_type in ("clip", "metaclip"):
         model = AutoModel.from_pretrained(args.model_path, torch_dtype=torch_dtype).to(device).eval()
         processor = AutoProcessor.from_pretrained(processor_path)
     else:
         raise ValueError(
-            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'metaclip', 'clip', 'siglip', or 'siglip2'."
+            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'longclip', 'pe', 'metaclip', 'clip', 'siglip', or 'siglip2'."
         )
     
     # Setup autocast context
@@ -307,7 +334,7 @@ def main():
         "VALSE": eval_valse(model, processor, device, autocast_ctx, lowercase=use_lowercase),
         "CREPE": eval_crepe(model, processor, device, autocast_ctx, lowercase=use_lowercase),
         "SugarCrepe": eval_sugarcrepe(model, processor, device, autocast_ctx, lowercase=use_lowercase),
-        "SugarCrepe++": eval_sugarcrepe_pp(model, processor, device, autocast_ctx, lowercase=use_lowercase),
+        # "SugarCrepe++": eval_sugarcrepe_pp(model, processor, device, autocast_ctx, lowercase=use_lowercase),
     }
     
     # Print results

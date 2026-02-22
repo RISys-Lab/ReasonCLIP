@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 import open_clip
 from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
+import sys
 
 
 def _infer_model_type(name: str | None) -> str:
@@ -30,6 +31,10 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip"
     if "open_clip" in s or "openclip" in s or "::" in s:
         return "open_clip"
+    if "longclip" in s:
+        return "longclip"
+    if "pe-core" in s or s.startswith("pe"):
+        return "pe"
     if "clip" in s:
         return "clip"
     return "clip"
@@ -90,6 +95,30 @@ def _load_model_and_processor(
             "tokenizer": open_clip.get_tokenizer(model_name),
         }
         print(f"Loaded OpenCLIP model: {model_name} ({pretrained})")
+    elif effective_model_type == "longclip":
+        longclip_root = os.path.join(os.path.dirname(__file__), "Long-CLIP")
+        if longclip_root not in sys.path:
+            sys.path.insert(0, longclip_root)
+        from model import longclip
+        model, image_preprocess = longclip.load(model_id, device=device)
+        resolved_processor_name = "longclip"
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": longclip.tokenize,
+        }
+        print(f"Loaded LongCLIP model: {model_id}")
+    elif effective_model_type == "pe":
+        if os.path.dirname(__file__) not in sys.path:
+            sys.path.insert(0, os.path.dirname(__file__))
+        import core.vision_encoder.pe as pe
+        import core.vision_encoder.transforms as transforms
+        model = pe.CLIP.from_config(model_id, pretrained=True)
+        resolved_processor_name = "pe"
+        processor = {
+            "image_preprocess": transforms.get_image_transform(model.image_size),
+            "tokenizer": transforms.get_text_tokenizer(model.context_length),
+        }
+        print(f"Loaded PE model: {model_id}")
     elif effective_model_type == "clip":
         model = AutoModel.from_pretrained(model_id)
         if processor_name is None:
@@ -109,7 +138,7 @@ def _load_model_and_processor(
         if use_lowercase:
             print(f"📝 SigLIP2 检测到: 将对所有文本进行小写转换")
     else:
-        raise ValueError("model_type must be one of: open_clip, clip, siglip, siglip2, auto")
+        raise ValueError("model_type must be one of: open_clip, longclip, pe, clip, siglip, siglip2, auto")
 
     model.to(device).eval()
     return model, processor, model_type, resolved_processor_name, device, use_lowercase
@@ -171,7 +200,7 @@ class SugarCrepePPDataset(torch.utils.data.Dataset):
 def collate_sugarcrepe_pp(batch, processor, model_type="clip", lowercase=False):
     images, texts_3, filenames = zip(*batch)
 
-    if model_type == "open_clip":
+    if model_type in ("open_clip", "longclip", "pe"):
         image_tensors = torch.stack([processor["image_preprocess"](img) for img in images], dim=0)
         image_inputs = {"pixel_values": image_tensors}
     else:
@@ -186,7 +215,7 @@ def collate_sugarcrepe_pp(batch, processor, model_type="clip", lowercase=False):
     if lowercase:
         flat_texts = [t.lower() if isinstance(t, str) else t for t in flat_texts]
 
-    if model_type == "open_clip":
+    if model_type in ("open_clip", "longclip", "pe"):
         text_inputs = {"input_ids": processor["tokenizer"](flat_texts)}
     else:
         proc_name = processor.__class__.__name__.lower()
@@ -325,7 +354,7 @@ def run_sugarcrepe_pp_eval(
 
     with torch.no_grad():
         for image_inputs, text_inputs, filenames in tqdm(dataloader, desc="Evaluating"):
-            if model_type == "open_clip":
+            if model_type in ("open_clip", "longclip", "pe"):
                 image_features = model.encode_image(image_inputs["pixel_values"].to(device))
                 text_features = model.encode_text(text_inputs["input_ids"].to(device))
             else:
@@ -581,8 +610,8 @@ def parse_args():
     parser.add_argument(
         "--processor_name",
         type=str,
-        default="/home/muzammal/.cache/huggingface/hub/models--openai--clip-vit-large-patch14-336/snapshots/ce19dc912ca5cd21c8a653c79e251e808ccabcd1",
-        help="Optional processor name (defaults: CLIP->openai/clip-vit-large-patch14-336, SigLIP->google/siglip2-so400m-patch14-384)",
+        default=None,
+        help="Optional processor name/path. If not set, use model-matched default (usually same as --model_path).",
     )
 
     parser.add_argument(

@@ -185,3 +185,5 @@ eval/results_clip/
 eval/results_reasonpro/
 *.err
 *.out
+
+eval/Long-CLIP/checkpoints/*.pt

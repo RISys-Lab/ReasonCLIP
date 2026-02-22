@@ -5,6 +5,7 @@ Includes: Output directory, Skip logic, and Specific SigLIP text processing
 """
 import torch
 import os
+import sys
 import argparse
 from datasets import load_dataset
 from tqdm import tqdm
@@ -28,6 +29,10 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip"
     if "open_clip" in s or "openclip" in s or "::" in s:
         return "open_clip"
+    if "longclip" in s:
+        return "longclip"
+    if "pe-core" in s or s.startswith("pe"):
+        return "pe"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -96,6 +101,9 @@ def run_winogavil_evaluation(
     model_type = _infer_model_type(model_path)
     is_siglip = model_type in ("siglip", "siglip2")
     is_open_clip = model_type == "open_clip"
+    is_longclip = model_type == "longclip"
+    is_pe = model_type == "pe"
+    is_custom_clip = model_type in ("open_clip", "longclip", "pe")
     use_lowercase = (model_type == "siglip2")
     
     if use_lowercase:
@@ -118,6 +126,26 @@ def run_winogavil_evaluation(
                 "image_preprocess": image_preprocess,
                 "tokenizer": open_clip.get_tokenizer(model_name),
             }
+        elif is_longclip:
+            longclip_root = os.path.join(os.path.dirname(__file__), "Long-CLIP")
+            if longclip_root not in sys.path:
+                sys.path.insert(0, longclip_root)
+            from model import longclip
+            model, image_preprocess = longclip.load(model_path, device=device)
+            processor = {
+                "image_preprocess": image_preprocess,
+                "tokenizer": longclip.tokenize,
+            }
+        elif is_pe:
+            if SCRIPT_DIR not in sys.path:
+                sys.path.insert(0, SCRIPT_DIR)
+            import core.vision_encoder.pe as pe
+            import core.vision_encoder.transforms as transforms
+            model = pe.CLIP.from_config(model_path, pretrained=True)
+            processor = {
+                "image_preprocess": transforms.get_image_transform(model.image_size),
+                "tokenizer": transforms.get_text_tokenizer(model.context_length),
+            }
         else:
             model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype, trust_remote_code=True)
             processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
@@ -130,7 +158,7 @@ def run_winogavil_evaluation(
     # --- 3. Load Dataset ---
     print(f"Loading dataset {dataset_name}...")
     try:
-        dataset = load_dataset(dataset_name, split=split)
+        dataset = load_dataset(dataset_name, split=split, trust_remote_code=True)
     except Exception as e:
         print(f"❌ Failed to load dataset: {e}")
         return
@@ -196,7 +224,7 @@ def run_winogavil_evaluation(
                 batch = []
                 continue
 
-            if is_open_clip:
+            if is_custom_clip:
                 text_inputs = {"input_ids": processor["tokenizer"](cues).to(device)}
             elif is_siglip:
                 text_inputs = processor(
@@ -213,10 +241,13 @@ def run_winogavil_evaluation(
                     padding=True,
                     truncation=True
                 )
-            if is_open_clip:
+            if is_custom_clip:
                 image_tensors = torch.stack([processor["image_preprocess"](img) for img in candidate_images_list], dim=0).to(device)
-                image_features = model.encode_image(image_tensors)
-                text_features = model.encode_text(text_inputs["input_ids"])
+                if is_pe:
+                    image_features, text_features, _ = model(image_tensors, text_inputs["input_ids"])
+                else:
+                    image_features = model.encode_image(image_tensors)
+                    text_features = model.encode_text(text_inputs["input_ids"])
             else:
                 text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
                 image_inputs = processor(images=candidate_images_list, return_tensors="pt")
@@ -291,7 +322,7 @@ def run_winogavil_evaluation(
                 total_imgs += len(candidate_images)
 
             if len(cues) > 0:
-                if is_open_clip:
+                if is_custom_clip:
                     text_inputs = {"input_ids": processor["tokenizer"](cues).to(device)}
                 elif is_siglip:
                     text_inputs = processor(
@@ -308,10 +339,13 @@ def run_winogavil_evaluation(
                         padding=True,
                         truncation=True
                     )
-                if is_open_clip:
+                if is_custom_clip:
                     image_tensors = torch.stack([processor["image_preprocess"](img) for img in candidate_images_list], dim=0).to(device)
-                    image_features = model.encode_image(image_tensors)
-                    text_features = model.encode_text(text_inputs["input_ids"])
+                    if is_pe:
+                        image_features, text_features, _ = model(image_tensors, text_inputs["input_ids"])
+                    else:
+                        image_features = model.encode_image(image_tensors)
+                        text_features = model.encode_text(text_inputs["input_ids"])
                 else:
                     text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
                     image_inputs = processor(images=candidate_images_list, return_tensors="pt")

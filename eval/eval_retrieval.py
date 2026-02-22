@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 import json
 from contextlib import nullcontext
 import os
+import sys
 import requests
 import argparse
 from collections import defaultdict
@@ -35,6 +36,10 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip"
     if "open_clip" in s or "openclip" in s:
         return "open_clip"
+    if "longclip" in s:
+        return "longclip"
+    if "pe-core" in s or s.startswith("pe"):
+        return "pe"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -227,8 +232,8 @@ def collate_retrieval_fn(batch, processor, model_type="clip"):
     model_type = str(model_type).lower()
     indices = torch.tensor(indices)
 
-    # 1) OpenCLIP: torchvision preprocess + open_clip tokenizer
-    if model_type == "open_clip":
+    # 1) OpenCLIP/LongCLIP/PE: custom preprocess + tokenizer
+    if model_type in ("open_clip", "longclip", "pe"):
         image_tensors = torch.stack([processor["image_preprocess"](img) for img in images], dim=0)
         text_tokens = processor["tokenizer"](list(captions))
         return {"pixel_values": image_tensors}, {"input_ids": text_tokens}, indices
@@ -508,7 +513,7 @@ def run_retrieval_evaluation(
     print(f"Using device: {device}")
     print(f"Model: {model_id}")
     print(f"Model type: {model_type.upper()}")
-    print(f"Processor: {'N/A (open_clip)' if model_type.lower() == 'open_clip' else (processor_path or model_id)}")
+    print(f"Processor: {'N/A (open_clip/longclip/pe)' if model_type.lower() in ('open_clip', 'longclip', 'pe') else (processor_path or model_id)}")
     print(f"Dataset: {dataset_name} ({split})")
     print(f"Batch size: {batch_size}, Workers: {num_workers}")
     print(f"BF16: {'on' if use_bf16 else 'off'}")
@@ -538,9 +543,29 @@ def run_retrieval_evaluation(
             "image_preprocess": image_preprocess,
             "tokenizer": open_clip.get_tokenizer(model_name),
         }
+    elif effective_model_type == "longclip":
+        longclip_root = os.path.join(SCRIPT_DIR, "Long-CLIP")
+        if longclip_root not in sys.path:
+            sys.path.insert(0, longclip_root)
+        from model import longclip
+        model, image_preprocess = longclip.load(model_id, device=device)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": longclip.tokenize,
+        }
+    elif effective_model_type == "pe":
+        if SCRIPT_DIR not in sys.path:
+            sys.path.insert(0, SCRIPT_DIR)
+        import core.vision_encoder.pe as pe
+        import core.vision_encoder.transforms as transforms
+        model = pe.CLIP.from_config(model_id, pretrained=True)
+        processor = {
+            "image_preprocess": transforms.get_image_transform(model.image_size),
+            "tokenizer": transforms.get_text_tokenizer(model.context_length),
+        }
     else:
         raise ValueError(
-            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'metaclip', 'clip', 'siglip', or 'siglip2' (or pass 'auto')."
+            f"Unsupported model type: {model_type}. Must contain 'open_clip', 'longclip', 'pe', 'metaclip', 'clip', 'siglip', or 'siglip2' (or pass 'auto')."
         )
     
     model.to(device).eval()
@@ -615,7 +640,7 @@ def run_retrieval_evaluation(
     with torch.no_grad(), autocast_ctx:
         for image_inputs, text_inputs, indices in tqdm(dataloader, desc="Processing image batches"):
             # Move data to device in main process (not in workers)
-            if effective_model_type == "open_clip":
+            if effective_model_type in ("open_clip", "longclip", "pe"):
                 image_features = model.encode_image(image_inputs["pixel_values"].to(device))
             else:
                 image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
@@ -639,7 +664,7 @@ def run_retrieval_evaluation(
         batch_captions = [dataset.get_caption_by_idx(i) for i in range(start_idx, end_idx)]
         
         with torch.no_grad(), autocast_ctx:
-            if effective_model_type == "open_clip":
+            if effective_model_type in ("open_clip", "longclip", "pe"):
                 text_features = model.encode_text(processor["tokenizer"](batch_captions).to(device))
             else:
                 # Process caption batch
@@ -750,7 +775,7 @@ def parse_args():
         "--model_name",
         type=str,
         default="auto",
-        help="Model type/name (supports open_clip/clip/siglip/siglip2/metaclip; pass 'auto' to infer from --model_path)"
+        help="Model type/name (supports open_clip/longclip/pe/clip/siglip/siglip2/metaclip; pass 'auto' to infer from --model_path)"
     )
     
     
@@ -847,7 +872,7 @@ if __name__ == "__main__":
     print("="*80)
     print(f"Model Path: {args.model_path}")
     print(f"Model Type: {args.model_name.upper()}")
-    print(f"Processor: {'N/A (open_clip)' if args.model_name.lower() == 'open_clip' else (args.processor_path or args.model_path)}")
+    print(f"Processor: {'N/A (open_clip/longclip/pe)' if args.model_name.lower() in ('open_clip', 'longclip', 'pe') else (args.processor_path or args.model_path)}")
     print(f"Dataset: {args.dataset_name.upper()}")
     print(f"Split: {args.split}")
     print(f"Batch Size: {args.batch_size}")
