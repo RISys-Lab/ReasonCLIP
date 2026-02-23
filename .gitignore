@@ -187,3 +187,4 @@ eval/results_reasonpro/
 *.out
 
 eval/Long-CLIP/checkpoints/*.pt
+LLaVA-NeXT/checkpoints/*
