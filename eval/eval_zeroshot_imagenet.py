@@ -6,6 +6,7 @@ Same logic as CLIP_benchmark
 import torch
 import os
 import argparse
+import sys
 from contextlib import nullcontext
 from datasets import load_dataset
 from PIL import Image
@@ -30,6 +31,8 @@ def _infer_model_type(name: str | None) -> str:
         return "siglip2"  # SigLIP2 需要小写文本
     if "siglip" in s:
         return "siglip"
+    if "longclip" in s:
+        return "longclip"
     if "metaclip" in s:
         return "metaclip"
     if "clip" in s:
@@ -96,7 +99,10 @@ def create_text_features(classnames, templates, processor, model, device, is_sig
             class_prompts = [p.lower() for p in class_prompts]
         
         with torch.no_grad():
-            if is_siglip:
+            if isinstance(processor, dict):
+                text_tokens = processor["tokenizer"](class_prompts).to(device)
+                text_features = model.encode_text(text_tokens)
+            elif is_siglip:
                 inputs = processor(
                     text=class_prompts,
                     return_tensors="pt",
@@ -111,9 +117,8 @@ def create_text_features(classnames, templates, processor, model, device, is_sig
                     padding=True,
                     truncation=True,
                 )
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            text_features = model.get_text_features(**inputs)
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                text_features = model.get_text_features(**inputs)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             
             # Average over all templates
@@ -161,7 +166,10 @@ class ZeroShotDataset(torch.utils.data.Dataset):
 def collate_fn(batch, processor):
     """Batch collate function"""
     images, labels = zip(*batch)
-    image_inputs = processor(images=list(images), return_tensors="pt")
+    if isinstance(processor, dict):
+        image_inputs = {"pixel_values": torch.stack([processor["image_preprocess"](img) for img in images], dim=0)}
+    else:
+        image_inputs = processor(images=list(images), return_tensors="pt")
     labels = torch.tensor(labels)
     return image_inputs, labels
 
@@ -227,8 +235,19 @@ def run_zeroshot_evaluation(
             torch_dtype = torch.float16
     else:
         torch_dtype = None
-    model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
-    processor = AutoProcessor.from_pretrained(processor_path)
+    if model_type == "longclip":
+        longclip_root = os.path.join(SCRIPT_DIR, "Long-CLIP")
+        if longclip_root not in sys.path:
+            sys.path.insert(0, longclip_root)
+        from model import longclip
+        model, image_preprocess = longclip.load(model_path, device=device)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": longclip.tokenize,
+        }
+    else:
+        model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
+        processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
     
     # Load classnames and templates from dataset (same as CLIP_benchmark)
@@ -274,7 +293,10 @@ def run_zeroshot_evaluation(
             image_inputs = {k: v.to(device) for k, v in image_inputs.items()}
             labels = labels.to(device)
             
-            image_features = model.get_image_features(**image_inputs)
+            if model_type == "longclip":
+                image_features = model.encode_image(image_inputs["pixel_values"].to(device))
+            else:
+                image_features = model.get_image_features(**image_inputs)
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
             
             logits = image_features @ text_features.T
@@ -374,8 +396,19 @@ def run_all_evaluations(
             torch_dtype = torch.float16
     else:
         torch_dtype = None
-    model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
-    processor = AutoProcessor.from_pretrained(processor_path)
+    if model_type == "longclip":
+        longclip_root = os.path.join(SCRIPT_DIR, "Long-CLIP")
+        if longclip_root not in sys.path:
+            sys.path.insert(0, longclip_root)
+        from model import longclip
+        model, image_preprocess = longclip.load(model_path, device=device)
+        processor = {
+            "image_preprocess": image_preprocess,
+            "tokenizer": longclip.tokenize,
+        }
+    else:
+        model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
+        processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
     
     all_results = []
@@ -427,7 +460,10 @@ def run_all_evaluations(
                 image_inputs = {k_: v.to(device) for k_, v in image_inputs.items()}
                 labels = labels.to(device)
                 
-                image_features = model.get_image_features(**image_inputs)
+                if model_type == "longclip":
+                    image_features = model.encode_image(image_inputs["pixel_values"].to(device))
+                else:
+                    image_features = model.get_image_features(**image_inputs)
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
                 logits = image_features @ text_features.T
                 topk = logits.topk(k, dim=-1).indices

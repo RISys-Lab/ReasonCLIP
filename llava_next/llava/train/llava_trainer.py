@@ -2,22 +2,40 @@ import os
 import torch
 import torch.nn as nn
 import datetime
-
+import math
 from accelerate import Accelerator
-from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin
+try:
+    from accelerate import DataLoaderConfiguration
+except ImportError:
+    DataLoaderConfiguration = None
+from accelerate.utils import InitProcessGroupKwargs, GradientAccumulationPlugin, DistributedType
 from torch.utils.data import Dataset, Sampler, DataLoader
 
 from trl.trainer import DPOTrainer
 from trl.trainer.utils import DPODataCollatorWithPadding
 
 from transformers import Trainer
-from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, ALL_LAYERNORM_LAYERS, logger, is_accelerate_available, is_datasets_available, GradientAccumulationPlugin
+from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, logger, is_accelerate_available, is_datasets_available
+from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_utils import seed_worker
+from transformers.utils import is_torch_xla_available
+try:
+    from transformers.trainer_callback import TrainerState
+except ImportError:
+    from transformers.trainer_utils import TrainerState
 from transformers.trainer_pt_utils import get_length_grouped_indices as get_length_grouped_indices_hf
-from transformers.trainer_pt_utils import AcceleratorConfig
+from transformers.trainer_pt_utils import AcceleratorConfig, get_model_param_count
+try:
+    from transformers.integrations.deepspeed import deepspeed_init, deepspeed_load_checkpoint
+except ImportError:
+    from transformers.deepspeed import deepspeed_init, deepspeed_load_checkpoint
+try:
+    from transformers.debug_utils import DebugOption
+except ImportError:
+    from transformers.trainer_utils import DebugOption
 from typing import List, Optional
 from datetime import timedelta
-
+import time
 if is_accelerate_available():
     from accelerate import Accelerator, skip_first_batches, InitProcessGroupKwargs
 
@@ -277,6 +295,11 @@ class LLaVATrainer(Trainer):
 
         self.mezo_update_history = []
 
+    @property
+    def current_gradient_accumulation_steps(self):
+        """Compatibility shim for newer transformers Trainer APIs."""
+        return getattr(self, "_current_gradient_accumulation_steps", self.args.gradient_accumulation_steps)
+
     ########################
     # MeZO-specific Methods
     ########################
@@ -452,10 +475,25 @@ class LLaVATrainer(Trainer):
         accelerator_kwargs = InitProcessGroupKwargs(timeout=timedelta(weeks=52))
         rank0_print("Setting NCCL timeout to INF to avoid running errors.")
 
-        # create accelerator object
-        self.accelerator = Accelerator(
-            dispatch_batches=self.args.dispatch_batches, split_batches=self.args.split_batches, deepspeed_plugin=self.args.deepspeed_plugin, gradient_accumulation_plugin=gradient_accumulation_plugin, kwargs_handlers=[accelerator_kwargs]
-        )
+        # create accelerator object (compatible with old/new accelerate APIs)
+        if DataLoaderConfiguration is not None:
+            self.accelerator = Accelerator(
+                dataloader_config=DataLoaderConfiguration(
+                    dispatch_batches=getattr(self.args, "dispatch_batches", None),
+                    split_batches=getattr(self.args, "split_batches", False),
+                ),
+                deepspeed_plugin=getattr(self.args, "deepspeed_plugin", None),
+                gradient_accumulation_plugin=gradient_accumulation_plugin,
+                kwargs_handlers=[accelerator_kwargs],
+            )
+        else:
+            self.accelerator = Accelerator(
+                dispatch_batches=getattr(self.args, "dispatch_batches", None),
+                split_batches=getattr(self.args, "split_batches", False),
+                deepspeed_plugin=getattr(self.args, "deepspeed_plugin", None),
+                gradient_accumulation_plugin=gradient_accumulation_plugin,
+                kwargs_handlers=[accelerator_kwargs],
+            )
         # some Trainer classes need to use `gather` instead of `gather_for_metrics`, thus we store a flag
         self.gather_function = self.accelerator.gather_for_metrics
 
@@ -551,7 +589,19 @@ class LLaVATrainer(Trainer):
         if not isinstance(train_dataset, torch.utils.data.IterableDataset):
             dataloader_params["sampler"] = self._get_train_sampler()
             dataloader_params["drop_last"] = self.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
+            def _seed_worker_compat(worker_id):
+                try:
+                    # Older transformers: seed_worker(worker_id)
+                    return seed_worker(worker_id)
+                except TypeError:
+                    # Newer transformers: seed_worker(worker_id, num_workers, rank)
+                    return seed_worker(
+                        worker_id,
+                        self.args.dataloader_num_workers,
+                        getattr(self.args, "process_index", 0),
+                    )
+
+            dataloader_params["worker_init_fn"] = _seed_worker_compat
             dataloader_params["prefetch_factor"] = self.args.dataloader_num_workers * 2 if self.args.dataloader_num_workers != 0 else None
 
         dataloader = self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
@@ -1127,7 +1177,13 @@ class LLaVATrainer(Trainer):
                     self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
-                    self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+                    try:
+                        self._maybe_log_save_evaluate(
+                            tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
+                        )
+                    except TypeError:
+                        # Backward compatibility with older transformers signatures.
+                        self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
                 else:
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
@@ -1148,7 +1204,13 @@ class LLaVATrainer(Trainer):
                 self.control.should_training_stop = True
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+            try:
+                self._maybe_log_save_evaluate(
+                    tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
+                )
+            except TypeError:
+                # Backward compatibility with older transformers signatures.
+                self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
 
             if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
                 if is_torch_xla_available():

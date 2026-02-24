@@ -1417,6 +1417,15 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeSparseMoeBlock
 
                 deepspeed.utils.set_z3_leaf_modules(model, [Qwen2MoeSparseMoeBlock])
+            elif "qwen3" in model_args.model_name_or_path.lower():
+                model = LlavaQwen3ForCausalLM.from_pretrained(
+                    model_args.model_name_or_path,
+                    cache_dir=training_args.cache_dir,
+                    attn_implementation=training_args.attn_implementation,
+                    torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+                    low_cpu_mem_usage=False,
+                    **customized_kwargs,
+                )
             else:
                 model = LlavaQwenForCausalLM.from_pretrained(
                     model_args.model_name_or_path,

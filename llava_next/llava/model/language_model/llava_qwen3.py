@@ -16,41 +16,36 @@
 from typing import List, Optional, Tuple, Union, Dict
 import torch
 import torch.nn as nn
-from torch.nn import CrossEntropyLoss
 
-import transformers
-from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
-# from ...constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
-from transformers import Qwen2Config, Qwen2Model, Qwen2ForCausalLM
+from transformers import Qwen3Config, Qwen3Model, Qwen3ForCausalLM
 
 
-class LlavaQwenConfig(Qwen2Config):
-    model_type = "llava_qwen"
+class LlavaQwen3Config(Qwen3Config):
+    model_type = "llava_qwen3"
 
 
-class LlavaQwenModel(LlavaMetaModel, Qwen2Model):
-    config_class = LlavaQwenConfig
+class LlavaQwen3Model(LlavaMetaModel, Qwen3Model):
+    config_class = LlavaQwen3Config
 
-    def __init__(self, config: Qwen2Config):
-        super(LlavaQwenModel, self).__init__(config)
+    def __init__(self, config: Qwen3Config):
+        super(LlavaQwen3Model, self).__init__(config)
 
 
-class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
-    config_class = LlavaQwenConfig
+class LlavaQwen3ForCausalLM(Qwen3ForCausalLM, LlavaMetaForCausalLM):
+    config_class = LlavaQwen3Config
 
     def __init__(self, config):
-        # super(Qwen2ForCausalLM, self).__init__(config)
-        Qwen2ForCausalLM.__init__(self, config)
-        config.model_type = "llava_qwen"
+        Qwen3ForCausalLM.__init__(self, config)
+        config.model_type = "llava_qwen3"
 
-        self.model = LlavaQwenModel(config)
+        self.model = LlavaQwen3Model(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        # Initialize weights and apply final processing
         self.post_init()
 
     def get_model(self):
@@ -73,23 +68,11 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         dpo_forward: Optional[bool] = False,
         cache_position=None,
-        grid_thw: Optional[torch.Tensor] = None,
-        patch_positions: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
+
         if inputs_embeds is None:
-            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = (
-                self.prepare_inputs_labels_for_multimodal(
-                    input_ids,
-                    position_ids,
-                    attention_mask,
-                    past_key_values,
-                    labels,
-                    images,
-                    modalities,
-                    image_sizes,
-                    grid_thw=grid_thw,
-                    patch_positions=patch_positions,
-                )
+            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(
+                input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes
             )
 
         if dpo_forward:
@@ -130,7 +113,6 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         images: Optional[torch.Tensor] = None,
         image_sizes: Optional[torch.Tensor] = None,
         modalities: Optional[List[str]] = ["image"],
-        grid_thw: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
@@ -140,30 +122,17 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
 
         if images is not None:
             (inputs, position_ids, attention_mask, _, inputs_embeds, _) = self.prepare_inputs_labels_for_multimodal(
-                inputs,
-                position_ids,
-                attention_mask,
-                None,
-                None,
-                images,
-                modalities,
-                image_sizes=image_sizes,
-                grid_thw=grid_thw,
-                patch_positions=kwargs.pop("patch_positions", None),
+                inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes
             )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
 
-        return super().generate(
-            position_ids=position_ids, attention_mask=attention_mask, inputs_embeds=inputs_embeds, **kwargs
-        )
+        return super().generate(position_ids=position_ids, attention_mask=attention_mask, inputs_embeds=inputs_embeds, **kwargs)
 
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
         images = kwargs.pop("images", None)
         image_sizes = kwargs.pop("image_sizes", None)
-        inputs = super().prepare_inputs_for_generation(
-            input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
-        )
+        inputs = super().prepare_inputs_for_generation(input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs)
         if images is not None:
             inputs["images"] = images
         if image_sizes is not None:
@@ -171,5 +140,5 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         return inputs
 
 
-AutoConfig.register("llava_qwen", LlavaQwenConfig)
-AutoModelForCausalLM.register(LlavaQwenConfig, LlavaQwenForCausalLM)
+AutoConfig.register("llava_qwen3", LlavaQwen3Config)
+AutoModelForCausalLM.register(LlavaQwen3Config, LlavaQwen3ForCausalLM)

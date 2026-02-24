@@ -36,12 +36,21 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutput,
     TokenClassifierOutput,
 )
-from transformers.modeling_utils import (
-    PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
-)
+from transformers.modeling_utils import PreTrainedModel
+try:
+    # Newer transformers versions expose these helpers in pytorch_utils.
+    from transformers.pytorch_utils import (
+        find_pruneable_heads_and_indices,
+        prune_linear_layer,
+        apply_chunking_to_forward,
+    )
+except ImportError:
+    # Backward compatibility for older transformers releases.
+    from transformers.modeling_utils import (
+        find_pruneable_heads_and_indices,
+        prune_linear_layer,
+        apply_chunking_to_forward,
+    )
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
 
