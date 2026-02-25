@@ -1,10 +1,11 @@
 export OMP_NUM_THREADS=8
 export PYTHONPATH="/home/localadmin/bz/CLIP-R/llava_next:${PYTHONPATH}"
 
+
 LLM_VERSION="Qwen/Qwen3-1.7B"
 LLM_VERSION_CLEAN="Qwen3-1.7B"
-VISION_MODEL_VERSION="fesvhtr/clip-r-336-s1-run1215-1280"
-VISION_MODEL_VERSION_CLEAN="clipr-336-s1"
+VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+VISION_MODEL_VERSION_CLEAN="clip-336"
 
 PROMPT_VERSION=plain
 
@@ -16,7 +17,7 @@ echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 OUTPUT_DIR="/home/localadmin/bz/CLIP-R/llava_next/checkpoints/projectors/${BASE_RUN_NAME}"
 mkdir -p $OUTPUT_DIR
 
-export CUDA_VISIBLE_DEVICES=1,3
+export CUDA_VISIBLE_DEVICES=0,2
 accelerate launch \
   --mixed_precision=bf16 \
   --num_machines 1 \

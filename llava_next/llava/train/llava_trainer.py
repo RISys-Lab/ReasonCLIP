@@ -17,12 +17,16 @@ from trl.trainer.utils import DPODataCollatorWithPadding
 from transformers import Trainer
 from transformers.trainer import is_sagemaker_mp_enabled, get_parameter_names, has_length, logger, is_accelerate_available, is_datasets_available
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
-from transformers.trainer_utils import seed_worker
+from transformers.trainer_utils import seed_worker, speed_metrics, TrainOutput
 from transformers.utils import is_torch_xla_available
 try:
     from transformers.trainer_callback import TrainerState
 except ImportError:
     from transformers.trainer_utils import TrainerState
+try:
+    from transformers.trainer_callback import ExportableState
+except ImportError:
+    ExportableState = None
 from transformers.trainer_pt_utils import get_length_grouped_indices as get_length_grouped_indices_hf
 from transformers.trainer_pt_utils import AcceleratorConfig, get_model_param_count
 try:
@@ -717,7 +721,19 @@ class LLaVATrainer(Trainer):
                 self.model.config.save_pretrained(output_dir)
                 torch.save(weight_to_save, os.path.join(output_dir, f"mm_projector.bin"))
         else:
-            super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
+            # Newer transformers expect stateful callback slots to exist before saving.
+            if not hasattr(self.state, "stateful_callbacks") or self.state.stateful_callbacks is None:
+                self.state.stateful_callbacks = {}
+            if ExportableState is not None:
+                for cb in [cb for cb in self.callback_handler.callbacks + [self.control] if isinstance(cb, ExportableState)]:
+                    cb_name = cb.__class__.__name__
+                    if cb_name not in self.state.stateful_callbacks:
+                        self.state.stateful_callbacks[cb_name] = []
+            try:
+                super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
+            except TypeError:
+                # Newer transformers may use _save_checkpoint(self, model, trial) signature.
+                super(LLaVATrainer, self)._save_checkpoint(model, trial)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, "tune_mm_mlp_adapter", False):
@@ -1181,9 +1197,13 @@ class LLaVATrainer(Trainer):
                         self._maybe_log_save_evaluate(
                             tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
                         )
-                    except TypeError:
-                        # Backward compatibility with older transformers signatures.
-                        self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+                    except TypeError as e:
+                        # Backward compatibility with older transformers signatures only.
+                        msg = str(e)
+                        if "_maybe_log_save_evaluate" in msg and "start_time" in msg:
+                            self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+                        else:
+                            raise
                 else:
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
@@ -1208,9 +1228,13 @@ class LLaVATrainer(Trainer):
                 self._maybe_log_save_evaluate(
                     tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
                 )
-            except TypeError:
-                # Backward compatibility with older transformers signatures.
-                self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+            except TypeError as e:
+                # Backward compatibility with older transformers signatures only.
+                msg = str(e)
+                if "_maybe_log_save_evaluate" in msg and "start_time" in msg:
+                    self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+                else:
+                    raise
 
             if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
                 if is_torch_xla_available():
@@ -1282,11 +1306,16 @@ class LLaVATrainer(Trainer):
         if self.neftune_noise_alpha is not None:
             self._deactivate_neftune(self.model)
 
-        plot_graphs_based_on_log_history(
-            log_history=self.state.log_history,
-            output_dir=run_dir,
-            metrics=["train_loss"],
-        )
+        # Keep plotting optional for forks that don't ship this helper.
+        plot_fn = globals().get("plot_graphs_based_on_log_history")
+        if callable(plot_fn):
+            plot_fn(
+                log_history=self.state.log_history,
+                output_dir=run_dir,
+                metrics=["train_loss"],
+            )
+        else:
+            logger.warning("plot_graphs_based_on_log_history is not available; skipping training plot generation.")
 
         return TrainOutput(self.state.global_step, train_loss, metrics)
 

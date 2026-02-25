@@ -572,7 +572,7 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
         tokenizer.add_tokens(["<image>"], special_tokens=True)
 
     image_token_index = tokenizer.convert_tokens_to_ids("<image>")
-    im_start, im_end = tokenizer.additional_special_tokens_ids
+    im_start, im_end = tokenizer.additional_special_tokens_ids[:2]
     # unmask_tokens = ["<|im_start|>", "<|im_start|>", "\n"]
     unmask_tokens_idx =  [198, im_start, im_end]
     nl_tokens = tokenizer("\n").input_ids
