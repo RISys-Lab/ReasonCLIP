@@ -20,6 +20,19 @@ from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_utils import seed_worker, speed_metrics, TrainOutput
 from transformers.utils import is_torch_xla_available
 try:
+    from transformers.trainer import _is_peft_model
+except ImportError:
+    def _is_peft_model(model):
+        try:
+            from peft import PeftModel
+        except Exception:
+            return False
+        return isinstance(model, PeftModel)
+try:
+    from transformers.trainer import TRAINER_STATE_NAME
+except ImportError:
+    TRAINER_STATE_NAME = "trainer_state.json"
+try:
     from transformers.trainer_callback import TrainerState
 except ImportError:
     from transformers.trainer_utils import TrainerState
