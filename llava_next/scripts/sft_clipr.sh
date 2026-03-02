@@ -19,12 +19,12 @@ echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-mlp2x_gelu-ft-llava_1_6"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
-export CUDA_VISIBLE_DEVICES=0,3
+# export CUDA_VISIBLE_DEVICES=1,3
 accelerate launch \
     --multi_gpu \
     --mixed_precision=bf16 \
     --num_machines 1 \
-    --num_processes 2 \
+    --num_processes 4 \
     --machine_rank 0 \
     --main_process_ip "localhost" \
     --main_process_port 29501 \
@@ -47,7 +47,7 @@ accelerate launch \
         --run_name $MID_RUN_NAME \
         --output_dir "${CLIPR_ROOT}/llava_next/checkpoints/${MID_RUN_NAME}" \
         --num_train_epochs 1 \
-        --per_device_train_batch_size 4\
+        --per_device_train_batch_size 2\
         --per_device_eval_batch_size 4 \
         --gradient_accumulation_steps 8\
         --eval_strategy no \
@@ -60,7 +60,7 @@ accelerate launch \
         --lr_scheduler_type cosine \
         --logging_steps 1 \
         --tf32 True \
-        --model_max_length 8192 \
+        --model_max_length 4096 \
         --gradient_checkpointing True \
         --dataloader_num_workers 0 \
         --lazy_preprocess True \

@@ -6,7 +6,8 @@ import io
 from tqdm import tqdm
 import open_clip
 from transformers import CLIPModel, CLIPProcessor, SiglipModel, SiglipProcessor
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoConfig
+from transformers.utils.hub import cached_file
 from torch.utils.data import DataLoader
 import json
 from contextlib import nullcontext

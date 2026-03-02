@@ -140,6 +140,25 @@ def load_state_dict(checkpoint_path: str, map_location='cpu'):
     return state_dict
 
 
+def _resize_embedding_state_dict(state_dict, model):
+    """If checkpoint has embedding (e.g. 576, D) and model has (577, D), pad checkpoint by one row to avoid size mismatch."""
+    model_sd = model.state_dict()
+    for key in list(state_dict.keys()):
+        if key not in model_sd:
+            continue
+        ckpt_t = state_dict[key]
+        model_t = model_sd[key]
+        if ckpt_t.dim() != 2 or model_t.dim() != 2:
+            continue
+        if ckpt_t.shape[1] != model_t.shape[1]:
+            continue
+        if ckpt_t.shape[0] + 1 == model_t.shape[0]:
+            # pad one row (copy first row) so checkpoint matches model
+            extra = ckpt_t[0:1].clone().to(ckpt_t.device)
+            state_dict[key] = torch.cat([ckpt_t, extra], dim=0)
+    return state_dict
+
+
 def load_checkpoint(model, checkpoint_path, strict=True):
     if Path(checkpoint_path).suffix in ('.npz', '.npy'):
         from .big_vision import load_big_vision_weights
@@ -159,6 +178,7 @@ def load_checkpoint(model, checkpoint_path, strict=True):
         del state_dict[position_id_key]
     resize_pos_embed(state_dict, model)
     resize_text_pos_embed(state_dict, model)
+    state_dict = _resize_embedding_state_dict(state_dict, model)
     incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
 
