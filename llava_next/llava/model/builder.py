@@ -24,6 +24,15 @@ from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, D
 from llava.utils import rank0_print
 
 
+def _load_tokenizer(model_id_or_path, **kwargs):
+    # transformers may warn for some Qwen/Mistral tokenizer regex patterns;
+    # enable fix_mistral_regex when supported, fallback silently otherwise.
+    try:
+        return AutoTokenizer.from_pretrained(model_id_or_path, fix_mistral_regex=True, **kwargs)
+    except TypeError:
+        return AutoTokenizer.from_pretrained(model_id_or_path, **kwargs)
+
+
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",attn_implementation="flash_attention_2", customized_config=None, overwrite_config=None, **kwargs):
     kwargs["device_map"] = device_map
 
@@ -204,7 +213,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
 
             elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_path)
+                tokenizer = _load_tokenizer(model_path)
                 if "moe" in model_name.lower() or "A14B" in model_name.lower():
                     from llava.model.language_model.llava_qwen_moe import LlavaQwenMoeConfig
                     if overwrite_config is not None:
@@ -302,7 +311,16 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             vision_tower.load_model(device_map=device_map)
         if device_map != "auto":
             vision_tower.to(device="cuda", dtype=torch.float16)
-        image_processor = vision_tower.image_processor
+        image_processor = getattr(vision_tower, "image_processor", None)
+        if image_processor is None:
+            from transformers import CLIPImageProcessor
+            vision_tower_name = getattr(model.config, "mm_vision_tower", None) or getattr(model.config, "vision_tower", None)
+            if vision_tower_name:
+                rank0_print(f"Loading image processor from {vision_tower_name} (vision_tower.image_processor was None)")
+                image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
+                vision_tower.image_processor = image_processor
+            else:
+                raise ValueError("Cannot determine vision tower name for image processor. vision_tower.image_processor is None.")
 
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length

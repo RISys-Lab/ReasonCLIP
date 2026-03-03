@@ -9,8 +9,8 @@ export PYTHONPATH="${CLIPR_ROOT}/llava_next:${PYTHONPATH:-}"
 
 LLM_VERSION="Qwen/Qwen3-1.7B"
 LLM_VERSION_CLEAN="Qwen3-1.7B"
-VISION_MODEL_VERSION="fesvhtr/clip-r-336-s1-run1215-1280"
-VISION_MODEL_VERSION_CLEAN="clipr-336-s1"
+VISION_MODEL_VERSION="fesvhtr/clip-r-336-s2-run0204-505"
+VISION_MODEL_VERSION_CLEAN="clipr-336-s2"
 
 ############### Finetune (LoRA) ################
 PROMPT_VERSION="qwen_1_5"
