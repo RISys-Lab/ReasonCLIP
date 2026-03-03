@@ -188,3 +188,94 @@ eval/results_reasonpro/
 
 eval/Long-CLIP/checkpoints/*.pt
 llava_next/checkpoints/*
+
+# ----------------------------------------------------------------------
+# lmms-eval local ignores (moved from lmms-eval/.gitignore)
+# These patterns only apply under the lmms-eval/ directory.
+# ----------------------------------------------------------------------
+
+# Python
+lmms-eval/*.pyc
+lmms-eval/__pycache__
+lmms-eval/*.egg-info
+lmms-eval/*.isorted
+
+# Virtual environments
+lmms-eval/env
+lmms-eval/venv
+lmms-eval/.venv
+
+# Build artifacts
+lmms-eval/build
+lmms-eval/dist
+!lmms-eval/lmms_eval/tui/web/dist
+
+# Package manager
+lmms-eval/node_modules/
+lmms-eval/uv.lock
+
+# IDE / Editor
+lmms-eval/.idea
+lmms-eval/.vscode/
+lmms-eval/.ipynb_checkpoints
+lmms-eval/profile_default/
+lmms-eval/ipython_config.py
+
+# OS
+lmms-eval/.DS_STORE
+
+# Environment and secrets
+lmms-eval/.env
+
+# Caches and temp
+lmms-eval/**/.cache
+lmms-eval/lm_cache
+lmms-eval/cache_dir
+lmms-eval/temp/
+lmms-eval/outputs/
+lmms-eval/output/
+
+# Logs
+lmms-eval/logs/
+lmms-eval/*logs
+lmms-eval/wandb/
+lmms-eval/zk.log
+lmms-eval/span.log
+
+# Data and models (large / local-only)
+lmms-eval/data/
+lmms-eval/pretrained/
+lmms-eval/ckpt
+lmms-eval/submissions/
+lmms-eval/remote_code/*
+
+# External repos cloned locally
+lmms-eval/LLaVA/
+lmms-eval/InternVL/
+lmms-eval/llava-video/
+lmms-eval/Video-MME/
+lmms-eval/VATEX/
+
+# Task-specific generated files
+lmms-eval/lmms_eval/tasks/hallusion_bench/hallusion_output_vs_model.json
+lmms-eval/lmms_eval/tasks/hallusion_bench/hallusion_output_vd_model.json
+lmms-eval/lmms_eval/tasks/vatex/__pycache__/utils.cpython-310.pyc
+lmms-eval/lmms_eval/tasks/mlvu/__pycache__/utils.cpython-310.pyc
+
+# Fonts
+lmms-eval/SimSun.ttf
+
+# Scripts and workspace (local-only)
+lmms-eval/scripts/
+lmms-eval/workspace/*
+lmms-eval/docs/plans/
+
+# Agent / AI assistant memory files (user-local, not tracked)
+lmms-eval/AGENTS.md
+lmms-eval/CLAUDE.md
+lmms-eval/.claude/*
+!lmms-eval/.claude-plugin/
+lmms-eval/.opencode/
+lmms-eval/.opencode
+lmms-eval/.ignored/
+lmms-eval/.worktrees/
