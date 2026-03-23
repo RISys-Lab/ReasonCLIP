@@ -364,72 +364,51 @@ def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, d
     
     print(f"Computing Karpathy metrics on {device}: {num_images} images, {num_captions} captions")
     
-    # Compute similarity matrix in batches to save memory
-    # Instead of storing full sim_matrix, compute ranks on-the-fly
+    # Pre-build ground-truth index tensors on device for vectorized rank computation
+    image_gt_caption_idx = torch.tensor(
+        [dataset.image_to_captions[i] for i in range(num_images)],
+        dtype=torch.long,
+        device=device,
+    )  # [N_images, 5]
+    caption_gt_image_idx = torch.tensor(
+        [dataset.caption_to_image[i] for i in range(num_captions)],
+        dtype=torch.long,
+        device=device,
+    )  # [N_captions]
+
+    # Compute ranks in batches on GPU to avoid large CPU transfers and Python loops
     print("Computing Image-to-Text ranks (memory-efficient)...")
     i2t_ranks = []
     
     # I2T: for each image, find rank of its captions among all captions
-    batch_size_i2t = 100  # Smaller batch to save memory
+    batch_size_i2t = 100
     for batch_start in tqdm(range(0, num_images, batch_size_i2t), desc="I2T ranks"):
         batch_end = min(batch_start + batch_size_i2t, num_images)
-        # Compute similarity for this batch of images against all captions
-        batch_img_features = image_features[batch_start:batch_end]  # [batch, D]
-        batch_sims = batch_img_features @ text_features.T  # [batch, N_captions]
-        
-        # Move to CPU for argsort to avoid GPU OOM
-        batch_sims_cpu = batch_sims.cpu()
-        del batch_sims
-        torch.cuda.empty_cache() if device != "cpu" else None
-        
-        for local_idx, img_idx in enumerate(range(batch_start, batch_end)):
-            sims = batch_sims_cpu[local_idx]  # [N_captions]
-            # Find ranks of the 5 ground-truth captions for this image
-            gt_caption_indices = dataset.image_to_captions[img_idx]
-            
-            # Efficient rank computation: count how many scores are higher than each gt caption's score
-            ranks = []
-            for cap_idx in gt_caption_indices:
-                gt_score = sims[cap_idx].item()
-                # Rank = 1 + number of captions with higher score
-                rank = (sims > gt_score).sum().item() + 1
-                ranks.append(rank)
-            
-            # Use the best (minimum) rank among the 5 captions (standard practice)
-            best_rank = min(ranks)
-            i2t_ranks.append(best_rank)
-        
-        del batch_sims_cpu
+        batch_img_features = image_features[batch_start:batch_end]      # [B, D]
+        batch_sims = batch_img_features @ text_features.T               # [B, N_captions]
+        batch_gt_idx = image_gt_caption_idx[batch_start:batch_end]      # [B, 5]
+        batch_gt_scores = batch_sims.gather(dim=1, index=batch_gt_idx)  # [B, 5]
+        # Best (minimum) GT rank == rank of max GT score
+        batch_best_gt_scores = batch_gt_scores.max(dim=1).values         # [B]
+        batch_ranks = (batch_sims > batch_best_gt_scores.unsqueeze(1)).sum(dim=1) + 1
+        i2t_ranks.append(batch_ranks.cpu().numpy())
     
     # T2I: for each caption, find rank of its image among all images
     print("Computing Text-to-Image ranks (memory-efficient)...")
     t2i_ranks = []
     
-    batch_size_t2i = 500  # Smaller batch to save memory
+    batch_size_t2i = 500
     for batch_start in tqdm(range(0, num_captions, batch_size_t2i), desc="T2I ranks"):
         batch_end = min(batch_start + batch_size_t2i, num_captions)
-        # Compute similarity for this batch of captions against all images
-        batch_txt_features = text_features[batch_start:batch_end]  # [batch, D]
-        batch_sims = batch_txt_features @ image_features.T  # [batch, N_images]
-        
-        # Move to CPU for rank computation
-        batch_sims_cpu = batch_sims.cpu()
-        del batch_sims
-        torch.cuda.empty_cache() if device != "cpu" else None
-        
-        for local_idx, cap_idx in enumerate(range(batch_start, batch_end)):
-            sims = batch_sims_cpu[local_idx]  # [N_images]
-            # Find rank of the ground-truth image for this caption
-            gt_img_idx = dataset.caption_to_image[cap_idx]
-            gt_score = sims[gt_img_idx].item()
-            # Rank = 1 + number of images with higher score
-            rank = (sims > gt_score).sum().item() + 1
-            t2i_ranks.append(rank)
-        
-        del batch_sims_cpu
-    
-    i2t_ranks = np.array(i2t_ranks)
-    t2i_ranks = np.array(t2i_ranks)
+        batch_txt_features = text_features[batch_start:batch_end]                  # [B, D]
+        batch_sims = batch_txt_features @ image_features.T                         # [B, N_images]
+        batch_gt_img_idx = caption_gt_image_idx[batch_start:batch_end].unsqueeze(1)  # [B, 1]
+        batch_gt_scores = batch_sims.gather(dim=1, index=batch_gt_img_idx).squeeze(1)  # [B]
+        batch_ranks = (batch_sims > batch_gt_scores.unsqueeze(1)).sum(dim=1) + 1
+        t2i_ranks.append(batch_ranks.cpu().numpy())
+
+    i2t_ranks = np.concatenate(i2t_ranks, axis=0)
+    t2i_ranks = np.concatenate(t2i_ranks, axis=0)
     
     # Compute standard metrics
     metrics = {

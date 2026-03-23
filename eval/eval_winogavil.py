@@ -158,7 +158,7 @@ def run_winogavil_evaluation(
     # --- 3. Load Dataset ---
     print(f"Loading dataset {dataset_name}...")
     try:
-        dataset = load_dataset(dataset_name, split=split, trust_remote_code=True)
+        dataset = load_dataset(dataset_name, split=split)
     except Exception as e:
         print(f"❌ Failed to load dataset: {e}")
         return

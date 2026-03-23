@@ -23,6 +23,8 @@ DEFAULT_DATA_BY_VERSION = {
     "v1": "/home/localadmin/bz/RCLIP/rclip_5k_v1_gpt_new.jsonl",
     "v2": "/home/localadmin/bz/RCLIP/rclip_5k_v2_gpt_new.jsonl",
     "v3": "/home/localadmin/bz/RCLIP/rclip_5k_v3_gpt_new.jsonl",
+    "v2_gpt5": "/home/localadmin/bz/RCLIP/rclip_5k_v2_gpt5_new_v2.jsonl",
+    "v3_gpt5": "/home/localadmin/bz/RCLIP/rclip_5k_v3_gpt5_new_v2.jsonl",
 }
 
 
@@ -416,7 +418,7 @@ def _resolve_data_path(version: str, data_override: Optional[str]) -> str:
       1) --data override with v1/v2/v3 replacement
       2) built-in fixed paths
     """
-    if version not in ("v1", "v2", "v3"):
+    if version not in ("v1", "v2", "v3", "v2_gpt5", "v3_gpt5"):
         raise ValueError(f"Unsupported version: {version}")
     if data_override:
         return _replace_data_version(data_override, version)
@@ -553,8 +555,12 @@ def main():
     ap.add_argument(
         "--data-version",
         default="v2",
-        choices=["v1", "v2", "v3", "all"],
-        help="Dataset version selector. If 'all', run v1/v2/v3 sequentially and save into corresponding subfolders.",
+        choices=["v1", "v2", "v3", "v2_gpt5", "v3_gpt5", "all"],
+        help=(
+            "Dataset version selector. "
+            "'v1'/'v2'/'v3' are GPT-4 versions; 'v2_gpt5'/'v3_gpt5' are GPT-5 versions. "
+            "If 'all', run v1/v2/v3 sequentially."
+        ),
     )
     ap.add_argument("--model", required=True, help="Model repo/path (HF or custom, depending on --model-type).")
     ap.add_argument(
@@ -607,6 +613,7 @@ def main():
     else:
         name_model_type = _infer_model_type(args.model_type)
 
+    # NOTE: 'all' 目前只遍历 v1/v2/v3，gpt5 版本需单独跑
     versions = ["v1", "v2", "v3"] if args.data_version == "all" else [args.data_version]
     model_name_for_check = str(args.model).replace("/", "_").replace(":", "_")
     need_run = False
