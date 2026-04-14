@@ -1,41 +1,85 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "/home/localadmin/bz/CLIP-R/model/models_all.sh"
-if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
-  echo "models/processors length mismatch: ${#models[@]} vs ${#processors[@]}"
-  exit 1
-fi
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-RESULTS_DIR="/home/localadmin/bz/CLIP-R/eval/results/rclip_gpt5"
-SCRIPT="/home/localadmin/bz/CLIP-R/eval/eval_RCLIP.py"
+export TOKENIZERS_PARALLELISM=false
 
-# 使用 4 张卡并行，每张卡依次跑自己负责的一串模型
-GPU_IDS=(0 1 2 3)
-NUM_GPUS=${#GPU_IDS[@]}
+# Default example: CLIP
+MODEL_PATH="clip-vit-large-patch14"
+PROCESSOR_PATH="clip-vit-large-patch14"
+MODEL_TYPE="auto"
 
-run_worker() {
-  local gpu="$1"
-  local start_idx="$2"
-  local stride="$3"
-  local n="${#models[@]}"
+# SigLIP
+# MODEL_PATH="siglip-so400m-patch14-384"
+# PROCESSOR_PATH="siglip-so400m-patch14-384"
+# MODEL_TYPE="auto"
 
-  for ((i=start_idx; i<n; i+=stride)); do
-    echo "==== GPU ${gpu} Running: ${models[$i]} ===="
-    CUDA_VISIBLE_DEVICES="${gpu}" python "${SCRIPT}" \
-      --model "${models[$i]}" \
-      --processor "${processors[$i]}" \
-      --model-type auto \
-      --data-version v3_gpt5 \
-      --device cuda \
-      --batch-size 256 \
-      --num-workers 4 \
-      --results-dir "${RESULTS_DIR}"
-  done
-}
+# SigLIP2
+# MODEL_PATH="siglip2-so400m-patch14-384"
+# PROCESSOR_PATH="siglip2-so400m-patch14-384"
+# MODEL_TYPE="auto"
 
-for ((w=0; w<NUM_GPUS; w++)); do
-  run_worker "${GPU_IDS[$w]}" "$w" "$NUM_GPUS" &
-done
+# MetaCLIP
+# MODEL_PATH="facebook/metaclip-b32-400m"
+# PROCESSOR_PATH="facebook/metaclip-b32-400m"
+# MODEL_TYPE="metaclip"
 
-wait
+# OpenCLIP
+# MODEL_PATH="ViT-B-32::laion2b_s34b_b79k"
+# PROCESSOR_PATH=""
+# MODEL_TYPE="open_clip"
+
+# LongCLIP
+# MODEL_PATH="./eval/Long-CLIP/checkpoints/longclip-B.pt"
+# PROCESSOR_PATH=""
+# MODEL_TYPE="longclip"
+
+# PE
+# MODEL_PATH="./weights/pe_model"
+# PROCESSOR_PATH=""
+# MODEL_TYPE="pe"
+
+# RCLIP commonsense reasoning eval
+# data-version: v1, v2, v3, all
+# v1: Visual Grounding
+# v2: Evidence Awareness
+# v3: Visually Grounded Reasoning
+# all: all three versions
+
+# TODO: Update to parquet format
+
+RCLIP_DEVICE="cuda"
+RCLIP_RESULTS_DIR="./eval/results/rclip"
+mkdir -p "$RCLIP_RESULTS_DIR"
+
+python eval/eval_RCLIP.py \
+  --model "$MODEL_PATH" \
+  --processor "$PROCESSOR_PATH" \
+  --model-type "$MODEL_TYPE" \
+  --data-version all \
+  --device "$RCLIP_DEVICE" \
+  --batch-size 256 \
+  --num-workers 4 \
+  --results-dir "$RCLIP_RESULTS_DIR"
+
+# RCLIP retrieval
+# TODO: Update to parquet format
+RCLIP_DATA="./data/rclip_5k_v3_gpt_new.jsonl"
+RCLIP_DEVICE="cuda"
+RCLIP_RETRIEVAL_RESULTS_DIR="./eval/results/rclip/v3_retrieval"
+mkdir -p "$RCLIP_RETRIEVAL_RESULTS_DIR"
+
+python eval/eval_RCLIP_retrieval.py \
+  --data "$RCLIP_DATA" \
+  --model "$MODEL_PATH" \
+  --processor "$PROCESSOR_PATH" \
+  --model-type "$MODEL_TYPE" \
+  --device "$RCLIP_DEVICE" \
+  --batch-size 256 \
+  --text-batch-size 2048 \
+  --sim-chunk-size 512 \
+  --k-values 1,5,10 \
+  --num-workers 4 \
+  --results-dir "$RCLIP_RETRIEVAL_RESULTS_DIR"
