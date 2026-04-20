@@ -1,0 +1,88 @@
+<svg width="1600" height="350" viewBox="0 0 1600 350" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>ReasonCLIP hero wordmark compact</title>
+  <desc>Compact crop of the artistic ReasonCLIP header with reduced bottom whitespace.</desc>
+
+  <defs>
+    <linearGradient id="textGradientC" x1="330" y1="130" x2="1260" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9C76A6"/>
+      <stop offset="0.52" stop-color="#7A7FB9"/>
+      <stop offset="1" stop-color="#5F84C7"/>
+    </linearGradient>
+
+    <linearGradient id="strokeGradientC" x1="180" y1="70" x2="1410" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B086B4" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#6B89CB" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <radialGradient id="glowLeftC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(430 200) rotate(1.2) scale(320 120)">
+      <stop stop-color="#AF7EB0" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#AF7EB0" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glowRightC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1160 205) rotate(-3) scale(360 130)">
+      <stop stop-color="#6988CC" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#6988CC" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="softGlowC" x="-20%" y="-30%" width="140%" height="160%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="lineBlurC" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.8"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="350" fill="transparent"/>
+  <ellipse cx="430" cy="180" rx="320" ry="115" fill="url(#glowLeftC)"/>
+  <ellipse cx="1160" cy="185" rx="360" ry="125" fill="url(#glowRightC)"/>
+
+  <g opacity="0.9">
+    <path d="M182 234C276 154 386 106 528 114C646 120 727 175 820 179C937 184 1026 121 1147 107C1255 94 1356 128 1420 180"
+      stroke="url(#strokeGradientC)" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M194 266C316 212 430 200 573 217C690 231 786 273 904 263C1020 253 1101 188 1234 184C1308 182 1373 197 1416 216"
+      stroke="url(#strokeGradientC)" stroke-width="2.2" stroke-linecap="round" opacity="0.75"/>
+    <path d="M268 88C328 158 413 183 516 178C628 173 721 121 834 122C938 124 1020 168 1116 171C1229 175 1312 143 1378 75"
+      stroke="url(#strokeGradientC)" stroke-width="1.8" stroke-linecap="round" opacity="0.45" filter="url(#lineBlurC)"/>
+  </g>
+
+  <g fill="url(#strokeGradientC)">
+    <circle cx="272" cy="155" r="6"/>
+    <circle cx="400" cy="120" r="5"/>
+    <circle cx="546" cy="120" r="7"/>
+    <circle cx="693" cy="156" r="5"/>
+    <circle cx="825" cy="179" r="7"/>
+    <circle cx="962" cy="151" r="5"/>
+    <circle cx="1108" cy="113" r="7"/>
+    <circle cx="1261" cy="116" r="5"/>
+    <circle cx="1369" cy="149" r="6"/>
+    <circle cx="346" cy="225" r="4"/>
+    <circle cx="602" cy="222" r="4"/>
+    <circle cx="906" cy="263" r="4"/>
+    <circle cx="1234" cy="184" r="4"/>
+  </g>
+
+  <g opacity="0.18">
+    <path d="M350 50L410 80L344 101L350 50Z" fill="#AD7CAD"/>
+    <path d="M1272 257L1329 228L1325 291L1272 257Z" fill="#6E88CB"/>
+    <path d="M1183 40L1215 68L1178 87L1183 40Z" fill="#8A7DB8"/>
+  </g>
+
+  <g filter="url(#softGlowC)">
+    <text x="800" y="218" text-anchor="middle" fill="url(#textGradientC)"
+      font-family="'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+      font-size="170" font-weight="800" letter-spacing="1.5">ReasonCLIP</text>
+  </g>
+
+  <text x="800" y="218" text-anchor="middle" fill="url(#textGradientC)"
+    font-family="'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+    font-size="170" font-weight="800" letter-spacing="1.5">ReasonCLIP</text>
+
+  <text x="800" y="258" text-anchor="middle" fill="#7E7FB6" fill-opacity="0.88"
+    font-family="'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+    font-size="28" font-weight="500" letter-spacing="5">VISUALLY GROUNDED COMMONSENSE REASONING</text>
+</svg>

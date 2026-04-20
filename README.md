@@ -1,14 +1,5 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="asset/logo_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="asset/logo_light.png">
-  <img alt="ReasonCLIP Series" src="output/logo.png" width="1200" style="max-width: 100%;">
-</picture>
-
-<p align="center">
-  <strong>Codec-Aligned Sparsity as a Foundational Principle for Multimodal Intelligence</strong>
-</p>
-
 <div align="center">
+  <img src="asset/reasonclip_wordmark_compact.svg" alt="ReasonCLIP" width="100%">
 
 📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** |
 🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** |
