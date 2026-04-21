@@ -9,7 +9,7 @@ import copy
 import torch
 from transformers import CLIPVisionModel, CLIPImageProcessor
 
-pretrained = "/home/localadmin/bz/CLIP-R/llava_next/checkpoints/merged/clipr_qwen3_sft"
+pretrained = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clipr_qwen3_sft"
 model_name = "qwen3"
 vision_tower_name = "fesvhtr/clip-r-336-s1-run1215-1280"
 device = "cuda"
@@ -35,7 +35,7 @@ vt.vision_tower = vt_model
 vt.image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
 image_processor = vt.image_processor
 
-url = "/home/localadmin/bz/CLIP-R/data/llava-sft-data/images/ai2d/abc_images/5.png"
+url = "/home/localadmin/bz/ReasonCLIP/data/Urban1k/Urban1k/image/1.jpg"
 image = Image.open(url).convert("RGB")
 image_tensor = process_images([image], image_processor, model.config)
 model_dtype = next(model.parameters()).dtype

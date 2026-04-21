@@ -40,10 +40,8 @@ from tqdm import tqdm
 
 DEFAULT_DATA_BY_VERSION = {
     "v1": "/home/localadmin/bz/RCLIP/rclip_5k_v1_gpt_new.jsonl",
-    # "v2": "/home/localadmin/bz/RCLIP/rclip_5k_v2_gpt_new.jsonl",
     "v3": "/home/localadmin/bz/RCLIP/rclip_5k_v3_gpt_new.jsonl",
     "v2_gpt5": "/home/localadmin/bz/RCLIP/rclip_5k_v2_gpt5_new_v2.jsonl",
-    "v3_gpt5": "/home/localadmin/bz/RCLIP/rclip_5k_v3_gpt5_new_v2.jsonl",
 }
 
 SYSTEM = (
