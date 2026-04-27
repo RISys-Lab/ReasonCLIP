@@ -6,9 +6,8 @@ cd "$ROOT_DIR"
 
 export TOKENIZERS_PARALLELISM=false
 
-# Default example: CLIP
-MODEL_PATH="clip-vit-large-patch14"
-PROCESSOR_PATH="clip-vit-large-patch14"
+MODEL_PATH="${MODEL_PATH:-fesvhtr/RC-B32-S1}"
+PROCESSOR_PATH="${PROCESSOR_PATH:-}"
 MODEL_TYPE="auto"
 
 # SigLIP
@@ -54,9 +53,14 @@ RCLIP_DEVICE="cuda"
 RCLIP_RESULTS_DIR="./eval/results/rclip"
 mkdir -p "$RCLIP_RESULTS_DIR"
 
+PROCESSOR_ARGS=()
+if [[ -n "$PROCESSOR_PATH" ]]; then
+  PROCESSOR_ARGS=(--processor "$PROCESSOR_PATH")
+fi
+
 python eval/eval_RCLIP.py \
   --model "$MODEL_PATH" \
-  --processor "$PROCESSOR_PATH" \
+  "${PROCESSOR_ARGS[@]}" \
   --model-type "$MODEL_TYPE" \
   --data-version all \
   --device "$RCLIP_DEVICE" \
@@ -74,7 +78,7 @@ mkdir -p "$RCLIP_RETRIEVAL_RESULTS_DIR"
 python eval/eval_RCLIP_retrieval.py \
   --data "$RCLIP_DATA" \
   --model "$MODEL_PATH" \
-  --processor "$PROCESSOR_PATH" \
+  "${PROCESSOR_ARGS[@]}" \
   --model-type "$MODEL_TYPE" \
   --device "$RCLIP_DEVICE" \
   --batch-size 256 \

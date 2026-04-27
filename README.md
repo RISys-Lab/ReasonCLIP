@@ -2,11 +2,14 @@
   <img src="asset/reasonclip_wordmark_compact.svg" alt="ReasonCLIP" width="100%">
 </div>
 
-📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** | 
-🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** | 
-🤗 **[Dataset](https://img.shields.io/badge/Dataset-TODO-gray)** | 
-🤗 **[BenchMark](https://img.shields.io/badge/Dataset-TODO-gray)** | 
+<div align="center">
+
+📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** |  
+🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** |  
+🤗 **[Dataset](https://img.shields.io/badge/Dataset-TODO-gray)** |  
+🤗 **[BenchMark](https://img.shields.io/badge/Dataset-TODO-gray)** |  
 📊 **[Model Card](https://img.shields.io/badge/Models-TODO-gray)**
+</div>
 ## News
 
 - `[TODO date]` Release ReasonCLIP Datasets, Benchmark and Models.
@@ -47,8 +50,9 @@ from PIL import Image
 import requests
 from transformers import AutoModel, AutoProcessor
 
-model = AutoModel.from_pretrained("fesvhtr/ReasonSigLIP-so400m-patch14-384-S2")
-processor = AutoProcessor.from_pretrained("fesvhtr/ReasonSigLIP-so400m-patch14-384-S2")
+model_id = "fesvhtr/RC-B32-S1"
+model = AutoModel.from_pretrained(model_id)
+processor = AutoProcessor.from_pretrained(model_id)
 
 url = "http://images.cocodataset.org/val2017/000000039769.jpg"
 image = Image.open(requests.get(url, stream=True).raw)
@@ -65,9 +69,7 @@ probs = logits_per_image.softmax(dim=1)
 Evaluate one checkpoint with the standard benchmark suite:
 
 ```bash
-bash scripts/eval_single.sh \
-  RISys-Lab/ReasonCLIP-B32-S1 \
-  openai/clip-vit-base-patch32
+bash scripts/eval_single.sh fesvhtr/RC-B32-S1
 ```
 
 To reproduce the full released-model table, run the full sweep:
@@ -123,12 +125,10 @@ bash scripts/train_rea_direct.sh
 ### Evaluate a Single Model
 
 ```bash
-bash scripts/eval_single.sh \
-  RISys-Lab/ReasonCLIP-B32-S1 \
-  openai/clip-vit-base-patch32
+bash scripts/eval_single.sh fesvhtr/RC-B32-S1
 ```
 
-Replace the first argument with any checkpoint from the model table. Use the processor path of the corresponding base model as the second argument, for example `openai/clip-vit-base-patch32`, `openai/clip-vit-large-patch14`, `openai/clip-vit-large-patch14-336`, `google/siglip-so400m-patch14-384`, or `google/siglip2-giant-opt-patch16-384`.
+Replace the argument with any checkpoint from the model table. Released checkpoints include their processor files, so no processor argument is required. To override the processor manually, pass it as the second argument.
 
 This runs the standard evaluation suite for one checkpoint:
 
@@ -146,7 +146,7 @@ This runs the standard evaluation suite for one checkpoint:
 bash scripts/eval_all.sh
 ```
 
-This script evaluates every released ReasonCLIP checkpoint listed in `model/models_final.sh`. The `models` and `processors` arrays in that file are aligned by index, and `eval_all.sh` calls `scripts/eval_single.sh` once for each pair.
+This script evaluates every released ReasonCLIP checkpoint listed in `model/models_final.sh`. `eval_all.sh` calls `scripts/eval_single.sh` once for each model. If a model list defines an optional `processors` array, those processor paths are used as overrides.
 
 Use this only when reproducing the full table or benchmarking all released models. For normal use, evaluate a single checkpoint with `scripts/eval_single.sh`.
 
