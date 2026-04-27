@@ -1,15 +1,15 @@
 <div align="center">
   <img src="asset/reasonclip_wordmark_compact.svg" alt="ReasonCLIP" width="100%">
+
+  📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** | 
+  🤗 **[Models](https://huggingface.co/collections/RISys-Lab/reasonclip-models)** | 
+  🤗 **[Dataset](https://huggingface.co/collections/RISys-Lab/reasonclip-data)** | 
+  🤗 **[BenchMark](https://huggingface.co/RISys-Lab/RCLIP-Bench)** | 
+  📊 **[Model Card](doc/model_card.md)**
 </div>
 
-<div align="center">
 
-📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** |  
-🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** |  
-🤗 **[Dataset](https://img.shields.io/badge/Dataset-TODO-gray)** |  
-🤗 **[BenchMark](https://img.shields.io/badge/Dataset-TODO-gray)** |  
-📊 **[Model Card](https://img.shields.io/badge/Models-TODO-gray)**
-</div>
+
 ## News
 
 - `[TODO date]` Release ReasonCLIP Datasets, Benchmark and Models.
