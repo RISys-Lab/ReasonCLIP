@@ -1,53 +1,47 @@
 <div align="center">
   <img src="asset/reasonclip_wordmark_compact.svg" alt="ReasonCLIP" width="100%">
-
-📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** |
-🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** |
-🤗 **[Dataset](https://img.shields.io/badge/Dataset-TODO-gray)** |
-🤗 **[BenchMark](https://img.shields.io/badge/Dataset-TODO-gray)** |
-📊 **[Model Card](https://img.shields.io/badge/Models-TODO-gray)**
 </div>
 
+📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** | 
+🤗 **[Models](https://img.shields.io/badge/Models-TODO-gray)** | 
+🤗 **[Dataset](https://img.shields.io/badge/Dataset-TODO-gray)** | 
+🤗 **[BenchMark](https://img.shields.io/badge/Dataset-TODO-gray)** | 
+📊 **[Model Card](https://img.shields.io/badge/Models-TODO-gray)**
 ## News
 
-- `[TODO date]` Add project release note here.
-- `[TODO date]` Add model / dataset / code update here.
-- `[TODO date]` Add paper / benchmark / checkpoint update here.
+- `[TODO date]` Release ReasonCLIP Datasets, Benchmark and Models.
 
 
-<details>
+<!-- <details>
 <summary>More</summary>
 
 - `[TODO older date]` Older update 1.
 - `[TODO older date]` Older update 2.
 
-</details>
+</details> -->
 
 ---
 ## 📖 Table of Contents
 TL,DR: ✅ marks the most important parts, scroll down to find them.
-- Introduction
-- Quick Start
-- Training
-- Evaluation
-- LLaVA-NeXT Integration
-- Citation
-- License
+- [Introduction](#-introduction)
+- [Quick Start](#-quick-start)
+- [Training](#-training)
+- [Evaluation](#-evaluation)
+- [Integration](#integration)
+- [Citation](#-citation)
+- [License](#-license)
 
 ---
 ## 🔍 Introduction
 
-ReasonCLIP is a CLIP-style training framework for improving visual representation learning with reasoning-aware supervision. This repository currently contains staged training recipes, direct-training variants, evaluation pipelines, and a bundled `llava_next/` workspace for downstream multimodal experiments.
-
-
+ReasonCLIP is a CLIP-style training framework for improving visual representation learning with reasoning-aware supervision. This repository currently contains staged training recipes, evaluation pipelines, and a bundled llava_next workspace for downstream multimodal experiments.
 
 ## ⚡ Quick Start
-
 ### Quick Inference ✅
 
 ReasonCLIP **does not modify any model architecture**. For inference/loading, please use the **official Hugging Face `transformers` code path**. You only need to replace the model ID with a ReasonCLIP checkpoint.
 
-- Inference with ReasonCLIP
+- Inference with ReasonCLIP or ReasonSigLIP
 ```python
 from PIL import Image
 import requests
@@ -68,56 +62,45 @@ probs = logits_per_image.softmax(dim=1)
 
 ### Quick Evaluation
 
-Run the bundled evaluation sweep:
+Evaluate one checkpoint with the standard benchmark suite:
+
+```bash
+bash scripts/eval_single.sh \
+  RISys-Lab/ReasonCLIP-B32-S1 \
+  openai/clip-vit-base-patch32
+```
+
+To reproduce the full released-model table, run the full sweep:
 
 ```bash
 bash scripts/eval_all.sh
 ```
 
-Or run the reasoning benchmark only:
-
-```bash
-bash scripts/eval_rclip.sh
-```
-
-
 ---
 
 ## 🚀 Training
-
-`TODO: add your final training recipe overview here.`
-
-Suggested way to write this section:
-
-- Stage 1: what supervision is used and what is initialized
-- Stage 2: what extra heads / objectives / losses are introduced
-- Direct variants: when to use `des_direct` vs `rea_direct`
-- CLIP vs SigLIP switching notes
-
-### Dataset Preparation ✅
+### Before Training
+#### Dataset Preparation ✅
 All the training data are available at Huggingface. Detailed Dataset Card.
 <details>
 <summary>Click to expand data download code</summary>
 </details>
 
+#### Environment Preparation
 
 ### Stage 1
+
+> [!NOTE]
+> **To reproduce these results, use the `llava_next` folder contents.**
 
 ```bash
 bash scripts/train_s1.sh
 ```
-<details>
-<summary>Click to expand Stage 1 Training scripts</summary>
-</details>
 
 ### Stage 2
-
 ```bash
 bash scripts/train_s2.sh
 ```
-<details>
-<summary>Click to expand Stage 2 Training scripts</summary>
-</details>
 
 ### Direct Training (S0-Rea & S0-Des)
 
@@ -126,30 +109,28 @@ Descriptive supervision:
 ```bash
 bash scripts/train_des_direct.sh
 ```
-<details>
-<summary>Click to expand Stage 0 - Descriptive Training scripts</summary>
-</details>
 
 Reasoning supervision:
 
 ```bash
 bash scripts/train_rea_direct.sh
 ```
-<details>
-<summary>Click to expand Stage 0 - Reasoning Training scripts</summary>
-</details>
 
 ---
 
 ## 📊 Evaluation
 
-### Full Evaluation Sweep
+### Evaluate a Single Model
 
 ```bash
-bash scripts/eval_all.sh
+bash scripts/eval_single.sh \
+  RISys-Lab/ReasonCLIP-B32-S1 \
+  openai/clip-vit-base-patch32
 ```
 
-This script covers these benchmarks:
+Replace the first argument with any checkpoint from the model table. Use the processor path of the corresponding base model as the second argument, for example `openai/clip-vit-base-patch32`, `openai/clip-vit-large-patch14`, `openai/clip-vit-large-patch14-336`, `google/siglip-so400m-patch14-384`, or `google/siglip2-giant-opt-patch16-384`.
+
+This runs the standard evaluation suite for one checkpoint:
 
 - ImageNet zero-shot classification
 - Urban1k retrieval
@@ -159,7 +140,17 @@ This script covers these benchmarks:
 - compositional evaluation
 - SugarCrepe++
 
-This script covers these models:
+### Full ReasonCLIP Evaluation Sweep
+
+```bash
+bash scripts/eval_all.sh
+```
+
+This script evaluates every released ReasonCLIP checkpoint listed in `model/models_final.sh`. The `models` and `processors` arrays in that file are aligned by index, and `eval_all.sh` calls `scripts/eval_single.sh` once for each pair.
+
+Use this only when reproducing the full table or benchmarking all released models. For normal use, evaluate a single checkpoint with `scripts/eval_single.sh`.
+
+The full sweep covers the same benchmarks:
 
 - ImageNet zero-shot classification
 - Urban1k retrieval
@@ -190,22 +181,11 @@ python eval/eval_sugarcrepe_pp.py --help
 python eval/eval_RCLIP.py --help
 ```
 
-### Placeholder Result Table
-
-`TODO: replace with your final numbers.`
-
-| Model | ImageNet | Urban1k | Flickr30k | WinoGAViL | SugarCrepe++ | RCLIP |
-| --- | --- | --- | --- | --- | --- | --- |
-| Baseline CLIP | TODO | TODO | TODO | TODO | TODO | TODO |
-| ReasonCLIP | TODO | TODO | TODO | TODO | TODO | TODO |
-| ReasonCLIP + variant | TODO | TODO | TODO | TODO | TODO | TODO |
-
-
 
 
 ---
 
-## LLaVA-NeXT Integration and Evaluation
+## Integration
 
 The repository also includes a `llava_next/` directory for downstream multimodal work.
 
@@ -218,23 +198,12 @@ The repository also includes a `llava_next/` directory for downstream multimodal
 
 If you do not want to expose this yet, keep this section short and say it is an experimental downstream workspace.
 
+All evaluations were conducted using [lmms_eval](https://github.com/EvolvingLMMs-Lab/lmms-eval).
 
 ---
 
 ## 📝 Citation
 
-`TODO: replace with your actual BibTeX.`
-
-```bibtex
-@article{reasonclip_todo_2026,
-  title={ReasonCLIP: TODO},
-  author={TODO},
-  journal={arXiv preprint arXiv:TODO},
-  year={2026}
-}
-```
-
-If this repo includes multiple papers or technical reports, you can add them all here.
 
 ---
 
