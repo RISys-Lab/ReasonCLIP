@@ -30,9 +30,9 @@ TL,DR: ✅ marks the most important parts, scroll down to find them.
 - [Quick Start](#-quick-start)
 - [Training](#-training)
 - [Evaluation](#-evaluation)
+- [Citation & License](#-citation--license)
 <!-- - [Integration](#integration) -->
-- [Citation](#-citation)
-- [License](#-license)
+
 
 ---
 ## 🔍 Introduction
