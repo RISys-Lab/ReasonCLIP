@@ -13,7 +13,7 @@
 ## News
 
 - `[TODO date]` Release ReasonCLIP Datasets, Benchmark and Models.
-
+- `[TODO date]` Release LLaVA-NeXT Model integrated with ReasonCLIP.
 
 <!-- <details>
 <summary>More</summary>
@@ -30,14 +30,14 @@ TL,DR: ✅ marks the most important parts, scroll down to find them.
 - [Quick Start](#-quick-start)
 - [Training](#-training)
 - [Evaluation](#-evaluation)
-- [Integration](#integration)
+<!-- - [Integration](#integration) -->
 - [Citation](#-citation)
 - [License](#-license)
 
 ---
 ## 🔍 Introduction
 
-ReasonCLIP is a CLIP-style training framework for improving visual representation learning with reasoning-aware supervision. This repository currently contains staged training recipes, evaluation pipelines, and a bundled llava_next workspace for downstream multimodal experiments.
+ReasonCLIP is a CLIP-style training framework for improving visual representation learning with reasoning-aware supervision. This repository currently contains staged training recipes, evaluation pipelines, and integration examples for downstream multimodal experiments.
 
 ## ⚡ Quick Start
 ### Quick Inference ✅
@@ -81,37 +81,94 @@ bash scripts/eval_all.sh
 ---
 
 ## 🚀 Training
-### Before Training
-#### Dataset Preparation ✅
-All the training data are available at Huggingface. Detailed Dataset Card.
-<details>
-<summary>Click to expand data download code</summary>
-</details>
-
-#### Environment Preparation
+### Environment Preparation
+> [!NOTE]
+> We do not distribute CC12M images. To reproduce training, download the images from [`pixparse/cc12m-wds`](https://huggingface.co/datasets/pixparse/cc12m-wds) separately.
 
 ### Stage 1
+<details>
+<summary>Click to expand data download code</summary>
 
-> [!NOTE]
-> **To reproduce these results, use the `llava_next` folder contents.**
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="RISys-Lab/CLIPReasonLite-42M",
+    repo_type="dataset",
+    local_dir="path/to/s1",
+    allow_patterns="*.parquet",
+)
+```
+
+</details>
 
 ```bash
 bash scripts/train_s1.sh
 ```
 
 ### Stage 2
+<details>
+<summary>Click to expand data download code</summary>
+
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="RISys-Lab/CLIPReasonPro-16M",
+    repo_type="dataset",
+    local_dir="path/to/s2",
+    allow_patterns="*.parquet",
+)
+```
+
+</details>
+
 ```bash
 bash scripts/train_s2.sh
 ```
 
 ### Direct Training (S0-Rea & S0-Des)
+<details>
+<summary>Click to expand data download code</summary>
 
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="RISys-Lab/CC12M-Refined",
+    repo_type="dataset",
+    local_dir="path/to/s0-des",
+    allow_patterns="*.parquet",
+)
+```
+
+</details>
 Descriptive supervision:
 
 ```bash
 bash scripts/train_des_direct.sh
 ```
+<details>
+<summary>Click to expand data download code</summary>
 
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="RISys-Lab/CLIPReasonLite-42M",
+    repo_type="dataset",
+    local_dir="path/to/s0-rea/s1",
+    allow_patterns="*.parquet",
+)
+snapshot_download(
+    repo_id="RISys-Lab/CLIPReasonPro-16M",
+    repo_type="dataset",
+    local_dir="path/to/s0-rea/s2",
+    allow_patterns="*.parquet",
+)
+```
+
+</details>
 Reasoning supervision:
 
 ```bash
@@ -129,6 +186,7 @@ bash scripts/eval_single.sh fesvhtr/RC-B32-S1
 ```
 
 Replace the argument with any checkpoint from the model table. Released checkpoints include their processor files, so no processor argument is required. To override the processor manually, pass it as the second argument.
+Urban1k retrieval is loaded directly from `fesvhtr/Urban1k` on Hugging Face.
 
 This runs the standard evaluation suite for one checkpoint:
 
@@ -163,8 +221,10 @@ The full sweep covers the same benchmarks:
 ### RCLIP Evaluation ✅
 
 ```bash
-bash scripts/eval_rclip.sh
+bash scripts/eval_RCLIP.sh
 ```
+
+RCLIP-Bench is loaded directly from `RISys-Lab/RCLIP-Bench` on Hugging Face by default. The Python entrypoints still accept a local JSONL path via `--data` for compatibility.
 
 This script covers:
 
@@ -185,30 +245,17 @@ python eval/eval_RCLIP.py --help
 
 ---
 
-## Integration
+<!-- ## Integration
 
-The repository also includes a `llava_next/` directory for downstream multimodal work.
-
-`TODO: explain whether this is used for:`
-
-- probing the learned encoder
-- multimodal fine-tuning
-- instruction tuning
-- transfer evaluation
-
-If you do not want to expose this yet, keep this section short and say it is an experimental downstream workspace.
+The repository also includes a `llava_next/` directory for downstream multimodal work. -->
 
 All evaluations were conducted using [lmms_eval](https://github.com/EvolvingLMMs-Lab/lmms-eval).
 
 ---
 
-## 📝 Citation
-
-
----
-
-## 📖 License
-
-`TODO: add the repository license here.`
-
-If you use external datasets, pretrained checkpoints, or bundled third-party code, also mention that users must comply with their original licenses.
+## 📝 Citation & License
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/80x15.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+Please cite this paper by:
+```
+TBD
+```

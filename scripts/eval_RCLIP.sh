@@ -47,8 +47,6 @@ MODEL_TYPE="auto"
 # v3: Visually Grounded Reasoning
 # all: all three versions
 
-# TODO: Update to parquet format
-
 RCLIP_DEVICE="cuda"
 RCLIP_RESULTS_DIR="./eval/results/rclip"
 mkdir -p "$RCLIP_RESULTS_DIR"
@@ -69,17 +67,15 @@ python eval/eval_RCLIP.py \
   --results-dir "$RCLIP_RESULTS_DIR"
 
 # RCLIP retrieval
-# TODO: Update to parquet format
-RCLIP_DATA="./data/rclip_5k_v3_gpt_new.jsonl"
 RCLIP_DEVICE="cuda"
 RCLIP_RETRIEVAL_RESULTS_DIR="./eval/results/rclip/v3_retrieval"
 mkdir -p "$RCLIP_RETRIEVAL_RESULTS_DIR"
 
 python eval/eval_RCLIP_retrieval.py \
-  --data "$RCLIP_DATA" \
   --model "$MODEL_PATH" \
   "${PROCESSOR_ARGS[@]}" \
   --model-type "$MODEL_TYPE" \
+  --data-version v3 \
   --device "$RCLIP_DEVICE" \
   --batch-size 256 \
   --text-batch-size 2048 \

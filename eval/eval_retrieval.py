@@ -1,13 +1,8 @@
 import torch
 import numpy as np
-from datasets import load_dataset
 from PIL import Image
 import io
 from tqdm import tqdm
-import open_clip
-from transformers import CLIPModel, CLIPProcessor, SiglipModel, SiglipProcessor
-from transformers import AutoModel, AutoProcessor, AutoConfig
-from transformers.utils.hub import cached_file
 from torch.utils.data import DataLoader
 import json
 from contextlib import nullcontext
@@ -18,6 +13,12 @@ import argparse
 from collections import defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_dataset(*args, **kwargs):
+    from datasets import load_dataset
+
+    return load_dataset(*args, **kwargs)
 
 
 def _infer_model_type(name: str | None) -> str:
@@ -321,23 +322,6 @@ def load_coco_captions_val2017(captions_json_path: str):
     return samples
 
 
-def load_urban1k_json(json_path):
-    import json
-
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        raise ValueError("urban1k json must be a list of records")
-    samples = []
-    for row in data:
-        image_name = row.get("image_name")
-        caption = row.get("caption")
-        if image_name is None or caption is None:
-            raise ValueError("urban1k record missing 'image_name' or 'caption'")
-        samples.append({"image_name": image_name, "caption": caption})
-    return samples
-
-
 def compute_retrieval_metrics_karpathy(image_features, text_features, dataset, device=None):
     """
     Compute Karpathy-style retrieval metrics with 5 captions per image
@@ -448,7 +432,6 @@ def run_retrieval_evaluation(
     device=None,
     local_image_dir=None,  # ✅ 本地图片目录
     coco_captions_json=None,  # ✅ official COCO captions json, e.g. annotations/captions_val2017.json
-    urban1k_json=None,  # ✅ urban1k json with image_name/caption
     results_dir=None,  # 结果保存目录
     use_bf16=True,
     skip_if_exists=False
@@ -509,14 +492,20 @@ def run_retrieval_evaluation(
     
     torch_dtype = torch.bfloat16 if use_bf16 and device != "cpu" else None
     if effective_model_type in ("clip", "metaclip"):
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     elif effective_model_type == "siglip":
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_id, torch_dtype=torch_dtype)
         proc_id = processor_path or model_id
         processor = AutoProcessor.from_pretrained(proc_id)
     elif effective_model_type == "open_clip":
+        import open_clip
+
         model_name, pretrained = model_id.split("::")
         model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
         processor = {
@@ -561,27 +550,26 @@ def run_retrieval_evaluation(
     elif dataset_name.lower() == "wds_mscoco":
         # clip-benchmark/wds_mscoco_captions: jpg 列是图片，txt 列是5条caption（分行）
         print("📥 Loading clip-benchmark/wds_mscoco_captions from HuggingFace...")
-        ds = load_dataset("clip-benchmark/wds_mscoco_captions", split=split)
+        ds = _load_dataset("clip-benchmark/wds_mscoco_captions", split=split)
         print(f"✅ Loaded wds_mscoco_captions {split} split: {len(ds)} samples")
         # 打印数据集字段信息
         if len(ds) > 0:
             print(f"📊 Dataset columns: {ds.column_names}")
     elif dataset_name.lower() == "flickr30k":
-        ds = load_dataset("nlphuji/flickr30k", split="test")
+        ds = _load_dataset("nlphuji/flickr30k", split="test")
         print(f"📊 Flickr30K test split loaded: {len(ds)} samples")
         # 检查是否有其他splits可用
         try:
-            all_splits = load_dataset("nlphuji/flickr30k")
+            all_splits = _load_dataset("nlphuji/flickr30k")
             print(f"📊 Available splits: {list(all_splits.keys())}")
             for split_name in all_splits.keys():
                 print(f"   - {split_name}: {len(all_splits[split_name])} samples")
         except:
             pass
     elif dataset_name.lower() == "urban1k":
-        if not local_image_dir or not urban1k_json:
-            raise ValueError("urban1k requires --urban1k_json and --local_image_dir")
-        ds = load_urban1k_json(urban1k_json)
-        print(f"✅ Loaded urban1k: {len(ds)} samples (from {urban1k_json})")
+        print("Loading fesvhtr/Urban1k from HuggingFace...")
+        ds = _load_dataset("fesvhtr/Urban1k", split=split)
+        print(f"Loaded Urban1k {split} split: {len(ds)} samples")
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     
@@ -811,12 +799,6 @@ def parse_args():
              "If provided with --dataset_name mscoco, we will load captions locally instead of HF Karpathy split. "
              "Requires --local_image_dir pointing to val2017/.",
     )
-    parser.add_argument(
-        "--urban1k_json",
-        type=str,
-        default=None,
-        help="Urban1k json path with fields: image_name, caption. Use with --dataset_name urban1k.",
-    )
     
     parser.add_argument(
         "--results_dir",
@@ -869,7 +851,6 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         local_image_dir=args.local_image_dir,
         coco_captions_json=args.coco_captions_json,
-        urban1k_json=args.urban1k_json,
         results_dir=args.results_dir,
         use_bf16=not args.no_bf16,
         skip_if_exists=args.skip_if_exists

@@ -10,8 +10,6 @@ MODEL_PATH="${1:-${MODEL_PATH:-fesvhtr/RC-B32-S1}}"
 PROCESSOR_PATH="${2:-${PROCESSOR_PATH:-}}"
 MODEL_NAME="${MODEL_NAME:-auto}"
 
-URBAN1K_JSON="${URBAN1K_JSON:-./data/Urban1k/data.json}"
-URBAN1K_IMAGE_DIR="${URBAN1K_IMAGE_DIR:-./data/Urban1k/image}"
 SUGARCREPE_IMAGE_DIR="${SUGARCREPE_IMAGE_DIR:-./data/val2017}"
 
 COMMON_DEVICE="${COMMON_DEVICE:-cuda:0}"
@@ -64,8 +62,6 @@ python eval/eval_retrieval.py \
   --model_path "$MODEL_PATH" \
   "${PROCESSOR_PATH_ARGS[@]}" \
   --model_name "$MODEL_NAME" \
-  --urban1k_json "$URBAN1K_JSON" \
-  --local_image_dir "$URBAN1K_IMAGE_DIR" \
   --dataset_name urban1k \
   --split test \
   --batch_size 512 \

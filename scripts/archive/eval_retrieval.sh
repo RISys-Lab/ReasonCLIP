@@ -9,8 +9,6 @@ for i in "${!models[@]}"; do
     --model_path "${models[$i]}" \
     --processor_path "${processors[$i]}" \
     --model_name auto \
-    --urban1k_json "$WORK/fmohamma/CLIP-R/data/Urban1k/data.json" \
-    --local_image_dir "$WORK/fmohamma/CLIP-R/data/Urban1k/image" \
     --dataset_name urban1k \
     --split test \
     --batch_size 512 \

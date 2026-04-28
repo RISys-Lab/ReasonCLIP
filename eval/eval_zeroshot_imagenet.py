@@ -8,14 +8,18 @@ import os
 import argparse
 import sys
 from contextlib import nullcontext
-from datasets import load_dataset
 from PIL import Image
 import io
 from tqdm import tqdm
-from transformers import AutoModel, AutoProcessor
 from torch.utils.data import DataLoader
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_dataset(*args, **kwargs):
+    from datasets import load_dataset
+
+    return load_dataset(*args, **kwargs)
 
 
 def _infer_model_type(name: str | None) -> str:
@@ -246,6 +250,8 @@ def run_zeroshot_evaluation(
             "tokenizer": longclip.tokenize,
         }
     else:
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
         processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
@@ -272,7 +278,7 @@ def run_zeroshot_evaluation(
     
     # Load dataset
     print(f"\n📥 Loading dataset...")
-    hf_dataset = load_dataset(hf_id, split=split, streaming=False)
+    hf_dataset = _load_dataset(hf_id, split=split, streaming=False)
     dataset = ZeroShotDataset(hf_dataset, processor, dataset_name, max_samples)
     dataloader = DataLoader(
         dataset,
@@ -407,6 +413,8 @@ def run_all_evaluations(
             "tokenizer": longclip.tokenize,
         }
     else:
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
         processor = AutoProcessor.from_pretrained(processor_path)
     model.to(device).eval()
@@ -439,7 +447,7 @@ def run_all_evaluations(
             text_features = create_text_features(classnames, templates, processor, model, device, is_siglip, lowercase=use_lowercase)
         
         # Load dataset
-        hf_dataset = load_dataset(hf_id, split=split)
+        hf_dataset = _load_dataset(hf_id, split=split)
         dataset = ZeroShotDataset(hf_dataset, processor, dataset_name, max_samples)
         dataloader = DataLoader(
             dataset,

@@ -7,7 +7,6 @@ if [ "${#models[@]}" -ne "${#processors[@]}" ]; then
   exit 1
 fi
 
-DATA="/home/localadmin/bz/RCLIP/rclip_5k_v3_gpt_new.jsonl"
 GPU="${GPU:-3}"
 RESULTS_DIR="/home/localadmin/bz/CLIP-R/eval/results/rclip/v3_retrieval"
 SCRIPT="/home/localadmin/bz/CLIP-R/eval/eval_RCLIP_retrieval.py"
@@ -15,10 +14,10 @@ SCRIPT="/home/localadmin/bz/CLIP-R/eval/eval_RCLIP_retrieval.py"
 for i in "${!models[@]}"; do
   echo "==== Running retrieval: ${models[$i]} ===="
   CUDA_VISIBLE_DEVICES="${GPU}" python "${SCRIPT}" \
-    --data "${DATA}" \
     --model "${models[$i]}" \
     --processor "${processors[$i]}" \
     --model-type auto \
+    --data-version v3 \
     --device cuda \
     --batch-size 256 \
     --text-batch-size 2048 \

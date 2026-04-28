@@ -11,12 +11,18 @@ import sys
 from collections.abc import Mapping
 from typing import Any, Dict, Iterable, List, Tuple, Optional
 
-import open_clip
 import torch
 from PIL import Image
 from tqdm import tqdm
-from transformers import AutoModel, AutoProcessor
 from torch.utils.data import Dataset, DataLoader
+
+DEFAULT_HF_DATASET = "RISys-Lab/RCLIP-Bench"
+
+
+def _load_dataset(*args, **kwargs):
+    from datasets import load_dataset
+
+    return load_dataset(*args, **kwargs)
 
 
 # -----------------------------
@@ -66,6 +72,18 @@ def extract_sets(sample: Dict[str, Any]) -> Tuple[str, str, List[Dict[str, Any]]
     if not isinstance(sets, list) or len(sets) == 0:
         raise ValueError("missing sets")
     return sid, img_path, sets
+
+
+def extract_hf_sample(sample: Dict[str, Any]) -> Tuple[str, str, Image.Image, List[Dict[str, Any]]]:
+    sid = str(sample.get("id", ""))
+    image_name = str(sample.get("image_name", ""))
+    image = sample.get("image")
+    sets = sample.get("sets", [])
+    if image is None:
+        raise ValueError("missing image")
+    if not isinstance(sets, list) or len(sets) == 0:
+        raise ValueError("missing sets")
+    return sid, image_name, image, sets
 
 
 def validate_set_item(it: Dict[str, Any]) -> Tuple[str, str, List[str]]:
@@ -153,10 +171,14 @@ def load_model_and_processor(
 
     torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
     if effective_model_type in ("clip", "metaclip", "siglip"):
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype)
         proc_id = processor_path or model_path
         processor = AutoProcessor.from_pretrained(proc_id)
     elif effective_model_type == "open_clip":
+        import open_clip
+
         if "::" not in model_path:
             raise ValueError(
                 "open_clip model_path must be in format 'model_name::pretrained_tag', "
@@ -345,11 +367,36 @@ class ImageLevelDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         row = self.rows[idx]
+        image = row.get("image")
+        if image is None:
+            image = open_image_rgb(row["image_path"])
+        else:
+            image = image.convert("RGB")
         return {
             "id": row["id"],
             "image_path": row["image_path"],
             "sets": row["sets"],  # List[Tuple[tag, gt, negs]]
-            "image": open_image_rgb(row["image_path"]),
+            "image": image,
+        }
+
+
+class HFImageLevelDataset(Dataset):
+    """Image-level dataset backed by a Hugging Face Dataset split."""
+
+    def __init__(self, dataset):
+        self.dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        sample = self.dataset[idx]
+        sid, image_name, image, sets = extract_hf_sample(sample)
+        return {
+            "id": sid,
+            "image_path": image_name,
+            "sets": _normalize_sets(sets),
+            "image": image.convert("RGB"),
         }
 
 
@@ -370,6 +417,36 @@ def build_image_rows(data_path: str, max_samples: int = 0) -> List[Dict[str, Any
             "sets": valid_sets,
         })
     return rows
+
+
+def _normalize_sets(sets: List[Dict[str, Any]]) -> List[Tuple[str, str, List[str]]]:
+    valid_sets: List[Tuple[str, str, List[str]]] = []
+    for it in sets:
+        tag, gt, negs = validate_set_item(it)
+        valid_sets.append((tag, gt, negs))
+    return valid_sets
+
+
+def build_hf_image_rows(dataset) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    metadata = dataset.remove_columns("image")
+    for sample in tqdm(metadata, desc="indexing-hf"):
+        sid = str(sample.get("id", ""))
+        image_name = str(sample.get("image_name", ""))
+        sets = sample.get("sets", [])
+        rows.append({
+            "id": sid,
+            "image_path": image_name,
+            "sets": _normalize_sets(sets),
+        })
+    return rows
+
+
+def load_hf_split(dataset_id: str, split: str, max_samples: int = 0):
+    ds = _load_dataset(dataset_id, split=split)
+    if max_samples:
+        ds = ds.select(range(min(max_samples, len(ds))))
+    return ds
 
 
 def collate_image_batch(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -467,7 +544,17 @@ def main():
     ap = argparse.ArgumentParser(
         description="Retrieval eval on RCLIP: GT-only text pool (5000x5) for both I2T and T2I."
     )
-    ap.add_argument("--data", required=True, help="JSONL dataset path (each line has image_path and sets).")
+    ap.add_argument(
+        "--data",
+        default="",
+        help=f"Optional JSONL dataset path. If omitted, load {DEFAULT_HF_DATASET} from Hugging Face.",
+    )
+    ap.add_argument(
+        "--data-version",
+        default="v3",
+        choices=["v1", "v2", "v3"],
+        help="RCLIP-Bench split to use when --data is omitted.",
+    )
     ap.add_argument("--model", required=True, help="Model repo/path (HF or custom, depending on --model-type).")
     ap.add_argument(
         "--processor",
@@ -521,7 +608,7 @@ def main():
         name_model_type = _infer_model_type(args.model_type)
 
     model_name = str(args.model).replace("/", "_").replace(":", "_")
-    data_name = os.path.splitext(os.path.basename(args.data))[0]
+    data_name = os.path.splitext(os.path.basename(args.data))[0] if args.data else f"hf_{args.data_version}"
     txt_path = os.path.join(results_dir, f"rclip_results_{name_model_type}_{model_name}_{data_name}.txt")
     if os.path.exists(txt_path):
         print(f"[SKIP] Results already exist: {txt_path}")
@@ -553,8 +640,15 @@ def main():
     model.eval()
 
     # build image-level rows and dataloader
-    image_rows = build_image_rows(args.data, max_samples=args.max_samples)
-    dataset = ImageLevelDataset(image_rows)
+    if args.data:
+        image_rows = build_image_rows(args.data, max_samples=args.max_samples)
+        dataset = ImageLevelDataset(image_rows)
+        data_label = args.data
+    else:
+        hf_dataset = load_hf_split(DEFAULT_HF_DATASET, args.data_version, max_samples=args.max_samples)
+        image_rows = build_hf_image_rows(hf_dataset)
+        dataset = HFImageLevelDataset(hf_dataset)
+        data_label = f"{DEFAULT_HF_DATASET}:{args.data_version}"
     dataloader = DataLoader(
         dataset,
         batch_size=max(1, args.batch_size),
@@ -690,14 +784,14 @@ def main():
 
     # Save txt report (default behavior)
     model_name = str(args.model).replace("/", "_").replace(":", "_")
-    data_name = os.path.splitext(os.path.basename(args.data))[0]
+    data_name = os.path.splitext(os.path.basename(args.data))[0] if args.data else f"hf_{args.data_version}"
     txt_path = os.path.join(results_dir, f"rclip_results_{model_type}_{model_name}_{data_name}.txt")
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write("=== Retrieval Results ===\n")
         f.write(f"Model: {args.model}\n")
         f.write(f"Model Type: {model_type} (effective: {effective_model_type})\n")
         f.write(f"Processor: {args.processor or args.model}\n")
-        f.write(f"Data: {args.data}\n")
+        f.write(f"Data: {data_label}\n")
         f.write(f"Device: {device}\n")
         f.write(f"Image Batch Size: {args.batch_size}\n")
         f.write(f"Text Batch Size: {args.text_batch_size}\n")

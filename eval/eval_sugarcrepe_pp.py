@@ -6,14 +6,23 @@ import ast
 
 import torch
 import numpy as np
-from datasets import load_dataset, get_dataset_config_names
 from PIL import Image
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-import open_clip
-from transformers import AutoModel, AutoProcessor, SiglipModel, SiglipProcessor
 import sys
+
+
+def _load_dataset(*args, **kwargs):
+    from datasets import load_dataset
+
+    return load_dataset(*args, **kwargs)
+
+
+def _get_dataset_config_names(*args, **kwargs):
+    from datasets import get_dataset_config_names
+
+    return get_dataset_config_names(*args, **kwargs)
 
 
 def _infer_model_type(name: str | None) -> str:
@@ -87,6 +96,8 @@ def _load_model_and_processor(
     effective_model_type = "siglip" if model_type.lower() == "siglip2" else model_type.lower()
 
     if effective_model_type == "open_clip":
+        import open_clip
+
         model_name, pretrained = model_id.split("::")
         model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
         resolved_processor_name = "open_clip"
@@ -120,6 +131,8 @@ def _load_model_and_processor(
         }
         print(f"Loaded PE model: {model_id}")
     elif effective_model_type == "clip":
+        from transformers import AutoModel, AutoProcessor
+
         model = AutoModel.from_pretrained(model_id)
         if processor_name is None:
             resolved_processor_name = model_id
@@ -128,6 +141,8 @@ def _load_model_and_processor(
         processor = AutoProcessor.from_pretrained(resolved_processor_name)
         print(f"Loaded CLIP model: {model_id} and processor: {resolved_processor_name}")
     elif effective_model_type == "siglip":
+        from transformers import SiglipModel, SiglipProcessor
+
         model = SiglipModel.from_pretrained(model_id)
         if processor_name is None:
             resolved_processor_name = model_id
@@ -239,7 +254,7 @@ def _load_hf_dataset(dataset_name: str, split: str, config_name: str | None = No
     if config_name is not None:
         # In HF datasets, config name is passed as the second positional argument
         try:
-            return load_dataset(dataset_name, config_name, split=split)
+            return _load_dataset(dataset_name, config_name, split=split)
         except ValueError as e:
             # Sometimes config_name is "default" even though the cached dataset only has
             # real configs like replace_attribute/swap_object (offline mode).
@@ -251,12 +266,12 @@ def _load_hf_dataset(dataset_name: str, split: str, config_name: str | None = No
                     f"Falling back to cached config '{fallback_cfg}'. "
                     f"Pass --subset to choose explicitly."
                 )
-                return load_dataset(dataset_name, fallback_cfg, split=split)
+                return _load_dataset(dataset_name, fallback_cfg, split=split)
             raise
 
     # If user didn't specify config, try "default" behavior first.
     try:
-        return load_dataset(dataset_name, split=split)
+        return _load_dataset(dataset_name, split=split)
     except ValueError as e:
         # Common when dataset has multiple configs but no 'default', especially in offline mode.
         configs = _parse_available_configs_from_err(str(e))
@@ -267,7 +282,7 @@ def _load_hf_dataset(dataset_name: str, split: str, config_name: str | None = No
                 f"Falling back to config '{fallback_cfg}'. "
                 f"Pass --subset to choose explicitly."
             )
-            return load_dataset(dataset_name, fallback_cfg, split=split)
+            return _load_dataset(dataset_name, fallback_cfg, split=split)
         raise
 
 
@@ -486,7 +501,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
     Evaluate ITT/TOT on each dataset subset (config) and write a single summary txt.
     """
     try:
-        subsets = get_dataset_config_names(dataset_name)
+        subsets = _get_dataset_config_names(dataset_name)
     except Exception:
         subsets = []
     # Offline/cached edge case: get_dataset_config_names may return ["default"] even when
@@ -495,7 +510,7 @@ def run_sugarcrepe_pp_eval_by_subsets(
         cached_configs: list[str] = []
         try:
             # Force a cache lookup that triggers the helpful "Available configs in the cache" message.
-            load_dataset(dataset_name, "default", split=split)
+            _load_dataset(dataset_name, "default", split=split)
         except ValueError as e:
             cached_configs = _parse_available_configs_from_err(str(e))
         except Exception:

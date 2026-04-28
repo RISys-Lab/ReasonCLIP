@@ -7,13 +7,16 @@ import torch
 import os
 import sys
 import argparse
-from datasets import load_dataset
 from tqdm import tqdm
-from transformers import AutoModel, AutoProcessor
 from contextlib import nullcontext
-import open_clip
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_dataset(*args, **kwargs):
+    from datasets import load_dataset
+
+    return load_dataset(*args, **kwargs)
 
 def _infer_model_type(name: str | None) -> str:
     """
@@ -120,6 +123,8 @@ def run_winogavil_evaluation(
     print(f"Loading model ({torch_dtype})...")
     try:
         if is_open_clip:
+            import open_clip
+
             model_name, pretrained = model_path.split("::")
             model, _, image_preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained)
             processor = {
@@ -147,6 +152,8 @@ def run_winogavil_evaluation(
                 "tokenizer": transforms.get_text_tokenizer(model.context_length),
             }
         else:
+            from transformers import AutoModel, AutoProcessor
+
             model = AutoModel.from_pretrained(model_path, torch_dtype=torch_dtype, trust_remote_code=True)
             processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
     except Exception as e:
@@ -158,7 +165,7 @@ def run_winogavil_evaluation(
     # --- 3. Load Dataset ---
     print(f"Loading dataset {dataset_name}...")
     try:
-        dataset = load_dataset(dataset_name, split=split)
+        dataset = _load_dataset(dataset_name, split=split)
     except Exception as e:
         print(f"❌ Failed to load dataset: {e}")
         return
