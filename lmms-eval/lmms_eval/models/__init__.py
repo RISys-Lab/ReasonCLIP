@@ -50,6 +50,7 @@ AVAILABLE_SIMPLE_MODELS = {
     "llama4_scout": "Llama4Scout",
     "llava_hf": "LlavaHf",
     "llava_clipr": "LlavaClipR",
+    "llava_clipr_unfreezed": "lmms_eval.models.simple.llava_clipr.LlavaClipRUnfreezed",
     "llava_onevision": "Llava_OneVision",
     "llava_onevision1_5": "Llava_OneVision1_5",
     "llava_onevision_moviechat": "Llava_OneVision_MovieChat",

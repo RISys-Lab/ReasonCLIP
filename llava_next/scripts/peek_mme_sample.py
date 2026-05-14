@@ -48,11 +48,11 @@ def main() -> None:
     model_name = "qwen3"
     if args.model_preset == "clip":
         # 对齐 inference_clip.py
-        pretrained = "/home/localadmin/bz/CLIP-R/llava_next/checkpoints/merged/clip_qwen3_sft"
+        pretrained = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clip_qwen3_sft"
         vision_tower_name = "openai/clip-vit-large-patch14-336"
     else:
         # 对齐 inference_clipr.py
-        pretrained = "/home/localadmin/bz/CLIP-R/llava_next/checkpoints/merged/clipr_qwen3_sft"
+        pretrained = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clipr_qwen3_sft"
         vision_tower_name = "fesvhtr/clip-r-336-s1-run1215-1280"
     device = "cuda"
 

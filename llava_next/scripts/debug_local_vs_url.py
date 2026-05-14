@@ -11,7 +11,7 @@ import torch
 
 # 同一张图：先通过 URL 下载，再分别用两种方式加载
 RADAR_URL = "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
-LOCAL_COCO = "/home/localadmin/bz/CLIP-R/data/llava-sft-data/images/coco/train2017/000000000009.jpg"
+LOCAL_COCO = "/home/localadmin/bz/ReasonCLIP/data/llava-sft-data/images/coco/train2017/000000000009.jpg"
 TEMP_RADAR = "/tmp/llava_radar_debug.jpg"
 
 
@@ -59,7 +59,7 @@ def main():
     from transformers import CLIPVisionModel, CLIPImageProcessor
     import copy
 
-    pretrained = "/home/localadmin/bz/CLIP-R/llava_next/checkpoints/merged/clipr_qwen3_sft"
+    pretrained = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clipr_qwen3_sft"
     vision_tower_name = "fesvhtr/clip-r-336-s1-run1215-1280"
     device = "cuda" if torch.cuda.is_available() else "cpu"
 

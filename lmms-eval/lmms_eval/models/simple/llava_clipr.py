@@ -14,7 +14,7 @@ from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
 
 # Ensure local llava_next is importable in lmms-eval runtime.
-LLAVA_NEXT_ROOT = os.environ.get("LLAVA_NEXT_ROOT", "/home/localadmin/bz/CLIP-R/llava_next")
+LLAVA_NEXT_ROOT = os.environ.get("LLAVA_NEXT_ROOT", "/home/localadmin/bz/ReasonCLIP/llava_next")
 if LLAVA_NEXT_ROOT not in sys.path:
     sys.path.insert(0, LLAVA_NEXT_ROOT)
 
@@ -36,7 +36,7 @@ class LlavaClipR(lmms):
 
     def __init__(
         self,
-        pretrained: str = "/home/localadmin/bz/CLIP-R/llava_next/checkpoints/merged/clipr_qwen3_sft",
+        pretrained: str = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clipr_qwen3_sft",
         model_name: str = "qwen3",
         vision_tower_name: str = "fesvhtr/clip-r-336-s1-run1215-1280",
         conv_template: str = "qwen_1_5",
@@ -47,6 +47,7 @@ class LlavaClipR(lmms):
         attn_implementation: str = "sdpa",
         tie_weights: bool = True,
         use_cache: bool = True,
+        reload_vision_tower: bool = True,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -78,12 +79,20 @@ class LlavaClipR(lmms):
         if tie_weights:
             self._model.tie_weights()
 
-        # Keep same hotfix as inference_clipr.py: overwrite vision tower.
         vt = self._model.get_vision_tower()
-        vt_model = CLIPVisionModel.from_pretrained(vision_tower_name, torch_dtype=torch.float32).to(vt.device)
-        vt.vision_tower = vt_model
-        vt.image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
-        self._image_processor = vt.image_processor
+        if reload_vision_tower:
+            # Keep same legacy hotfix as inference_clipr.py: overwrite vision tower.
+            vt_model = CLIPVisionModel.from_pretrained(vision_tower_name, torch_dtype=torch.float32).to(vt.device)
+            vt.vision_tower = vt_model
+            vt.image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
+            self._image_processor = vt.image_processor
+        else:
+            # Unfreezed checkpoints already contain the trained vision tower.
+            eval_logger.info("Using vision tower weights from checkpoint; not reloading CLIPVisionModel.")
+            self._image_processor = getattr(vt, "image_processor", None) or image_processor
+            if self._image_processor is None:
+                self._image_processor = CLIPImageProcessor.from_pretrained(vision_tower_name)
+                vt.image_processor = self._image_processor
 
         self._config = self._model.config
         self.batch_size_per_gpu = int(batch_size)
@@ -282,3 +291,42 @@ class LlavaClipR(lmms):
     def generate_until_multi_round(self, requests: List[Instance]) -> List[str]:
         raise NotImplementedError("llava_clipr does not support multi-round generation yet.")
 
+
+@register_model("llava_clipr_unfreezed")
+class LlavaClipRUnfreezed(LlavaClipR):
+    """
+    LLaVA CLIP-R/Qwen3 wrapper for the S1-unfreezed merged checkpoint.
+    This intentionally keeps the vision tower loaded from the checkpoint instead
+    of reloading a remote CLIP-R encoder.
+    """
+
+    def __init__(
+        self,
+        pretrained: str = "/home/localadmin/bz/ReasonCLIP/llava_next/checkpoints/merged/clipr_qwen3_s1_unfreeze_sft",
+        model_name: str = "qwen3",
+        vision_tower_name: str = "fesvhtr/clip-r-336-s1-run1215-1280",
+        conv_template: str = "qwen_1_5",
+        device: str = "cuda:0",
+        device_map: str = "auto",
+        batch_size: Optional[Union[int, str]] = 1,
+        torch_dtype: str = "bfloat16",
+        attn_implementation: str = "sdpa",
+        tie_weights: bool = True,
+        use_cache: bool = True,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            pretrained=pretrained,
+            model_name=model_name,
+            vision_tower_name=vision_tower_name,
+            conv_template=conv_template,
+            device=device,
+            device_map=device_map,
+            batch_size=batch_size,
+            torch_dtype=torch_dtype,
+            attn_implementation=attn_implementation,
+            tie_weights=tie_weights,
+            use_cache=use_cache,
+            reload_vision_tower=False,
+            **kwargs,
+        )
