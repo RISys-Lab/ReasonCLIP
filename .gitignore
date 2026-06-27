@@ -190,3 +190,6 @@ eval/Long-CLIP/checkpoints/*.pt
 llava_next/checkpoints/*
 
 model/local_models.sh
+
+# Local standalone repository
+ReasonCLIP-paper/
