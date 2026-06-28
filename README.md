@@ -1,7 +1,7 @@
 <div align="center">
   <img src="asset/reasonclip_wordmark_compact.svg" alt="ReasonCLIP" width="100%">
 
-  📄 **[Paper](https://img.shields.io/badge/Paper-TODO-gray)** | 
+  📄 **[Paper](https://arxiv.org/abs/2606.26794)** | 
   🤗 **[Models](https://huggingface.co/collections/RISys-Lab/reasonclip-models)** | 
   🤗 **[Dataset](https://huggingface.co/collections/RISys-Lab/reasonclip-data)** | 
   🤗 **[BenchMark](https://huggingface.co/datasets/RISys-Lab/RCLIP-Bench)** | 
