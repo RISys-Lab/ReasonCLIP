@@ -85,7 +85,7 @@ def add_processor(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Add processors to released HF repos.")
     parser.add_argument("--model-list", type=Path, default=Path("model/models_pre_release.sh"))
-    parser.add_argument("--namespace", default="fesvhtr", help="Target Hugging Face namespace.")
+    parser.add_argument("--namespace", default="RISys-Lab", help="Target Hugging Face namespace.")
     parser.add_argument(
         "--token",
         default=os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"),

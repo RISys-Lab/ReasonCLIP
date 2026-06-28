@@ -12,8 +12,8 @@
 
 ## News
 
-- `[TODO date]` Release ReasonCLIP Datasets, Benchmark and Models.
-- `[TODO date]` Release LLaVA-NeXT Model integrated with ReasonCLIP.
+- `[2026-06-28]` Release ReasonCLIP Datasets, Benchmark and Models.
+<!-- - `[TODO date]` Release LLaVA-NeXT Model integrated with ReasonCLIP. -->
 
 <!-- <details>
 <summary>More</summary>
@@ -50,7 +50,7 @@ from PIL import Image
 import requests
 from transformers import AutoModel, AutoProcessor
 
-model_id = "fesvhtr/RC-B32-S1"
+model_id = "RISys-Lab/ReasonCLIP-B32-S1"
 model = AutoModel.from_pretrained(model_id)
 processor = AutoProcessor.from_pretrained(model_id)
 
@@ -69,7 +69,7 @@ probs = logits_per_image.softmax(dim=1)
 Evaluate one checkpoint with the standard benchmark suite:
 
 ```bash
-bash scripts/eval_single.sh fesvhtr/RC-B32-S1
+bash scripts/eval_single.sh RISys-Lab/ReasonCLIP-B32-S1
 ```
 
 To reproduce the full released-model table, run the full sweep:
@@ -182,7 +182,7 @@ bash scripts/train_rea_direct.sh
 ### Evaluate a Single Model
 
 ```bash
-bash scripts/eval_single.sh fesvhtr/RC-B32-S1
+bash scripts/eval_single.sh RISys-Lab/ReasonCLIP-B32-S1
 ```
 
 Replace the argument with any checkpoint from the model table. Released checkpoints include their processor files, so no processor argument is required. To override the processor manually, pass it as the second argument.
