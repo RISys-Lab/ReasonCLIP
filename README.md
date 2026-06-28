@@ -256,6 +256,12 @@ The repository also includes a `llava_next/` directory for downstream multimodal
 ## 📝 Citation & License
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/80x15.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
 Please cite this paper by:
-```
-TBD
+```bibtex
+@inproceedings{zhang2026reasonclip58m,
+  title     = {ReasonCLIP-58M: Visually Grounded Commonsense Reasoning Supervision for CLIP},
+  author    = {Zhang, Sicheng and Naseer, Muzammal and Xie, Binzhu and Suryanto, Naufal and Qiu, Shi and Bentahar, Jamal and Akhtar, Naveed and Shah, Mubarak},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2026},
+  url       = {https://arxiv.org/abs/2606.26794}
+}
 ```
