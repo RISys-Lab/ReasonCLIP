@@ -16,40 +16,40 @@ This page provides checkpoint links for all released models. Models marked with 
 | model | stage | scale | link | Recommended Tasks |
 | --- | --- | --- | --- | --- |
 | CLIP | base | ViT-B/32 | [🤗 HF / OpenAI](https://huggingface.co/openai/clip-vit-base-patch32) | - |
-| ReasonCLIP | Stage 1 | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S1](https://huggingface.co/fesvhtr/ReasonCLIP-B32-S1) | ✅ For Comprehensive Tasks |
-| ReasonCLIP | Stage 2 | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S2](https://huggingface.co/fesvhtr/ReasonCLIP-B32-S2) | - |
-| ReasonCLIP | [READ Training](https://github.com/JiH00nKw0n/READ-CLIP) | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-READ](https://huggingface.co/fesvhtr/ReasonCLIP-B32-READ) | 📖 For Compostitional Reasoning Tasks |
-| ReasonCLIP | Stage 0 - Reasoning | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S0-Rea](https://huggingface.co/fesvhtr/ReasonCLIP-B32-S0-Rea) | - |
-| ReasonCLIP | Stage 0 - Descriptive | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S0-Des](https://huggingface.co/fesvhtr/ReasonCLIP-B32-S0-Des) | - |
+| ReasonCLIP | Stage 1 | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S1](https://huggingface.co/RISys-Lab/ReasonCLIP-B32-S1) | ✅ For Comprehensive Tasks |
+| ReasonCLIP | Stage 2 | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S2](https://huggingface.co/RISys-Lab/ReasonCLIP-B32-S2) | - |
+| ReasonCLIP | [READ Training](https://github.com/JiH00nKw0n/READ-CLIP) | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-READ](https://huggingface.co/RISys-Lab/ReasonCLIP-B32-READ) | 📖 For Compostitional Reasoning Tasks |
+| ReasonCLIP | Stage 0 - Reasoning | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S0-Rea](https://huggingface.co/RISys-Lab/ReasonCLIP-B32-S0-Rea) | - |
+| ReasonCLIP | Stage 0 - Descriptive | ViT-B/32 | [🤗 HF / ReasonCLIP-B32-S0-Des](https://huggingface.co/RISys-Lab/ReasonCLIP-B32-S0-Des) | - |
 | CLIP | base | ViT-L/14-224| [🤗 HF / OpenAI](https://huggingface.co/openai/clip-vit-large-patch14) | - |
-| ReasonCLIP | Stage 1 | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S1](https://huggingface.co/fesvhtr/ReasonCLIP-L14-224-S1) | ✅ For Comprehensive Tasks  |
-| ReasonCLIP | Stage 2 | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S2](https://huggingface.co/fesvhtr/ReasonCLIP-L14-224-S2) | - |
-| ReasonCLIP | Stage 0 - Reasoning | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S0-Rea](https://huggingface.co/fesvhtr/ReasonCLIP-L14-224-S0-Rea) | - |
-| ReasonCLIP | Stage 0 - Descriptive | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S0-Des](https://huggingface.co/fesvhtr/ReasonCLIP-L14-224-S0-Des) | - |
+| ReasonCLIP | Stage 1 | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S1](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-224-S1) | ✅ For Comprehensive Tasks  |
+| ReasonCLIP | Stage 2 | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S2](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-224-S2) | - |
+| ReasonCLIP | Stage 0 - Reasoning | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S0-Rea](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-224-S0-Rea) | - |
+| ReasonCLIP | Stage 0 - Descriptive | ViT-L/14-224 | [🤗 HF / ReasonCLIP-L14-224-S0-Des](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-224-S0-Des) | - |
 | CLIP | base | ViT-L/14-336| [🤗 HF / OpenAI](https://huggingface.co/openai/clip-vit-large-patch14-336) | - |
-| ReasonCLIP | Stage 1 | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S1](https://huggingface.co/fesvhtr/ReasonCLIP-L14-336-S1) | ✅ For Comprehensive Tasks  |
-| ReasonCLIP | Stage 2 | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S2](https://huggingface.co/fesvhtr/ReasonCLIP-L14-336-S2) | - |
-| ReasonCLIP | Stage 0 - Reasoning | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S0-Rea](https://huggingface.co/fesvhtr/ReasonCLIP-L14-336-S0-Rea) | - |
-| ReasonCLIP | Stage 0 - Descriptive | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S0-Des](https://huggingface.co/fesvhtr/ReasonCLIP-L14-336-S0-Des) | - |
+| ReasonCLIP | Stage 1 | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S1](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-336-S1) | ✅ For Comprehensive Tasks  |
+| ReasonCLIP | Stage 2 | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S2](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-336-S2) | - |
+| ReasonCLIP | Stage 0 - Reasoning | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S0-Rea](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-336-S0-Rea) | - |
+| ReasonCLIP | Stage 0 - Descriptive | ViT-L/14-336 | [🤗 HF / ReasonCLIP-L14-336-S0-Des](https://huggingface.co/RISys-Lab/ReasonCLIP-L14-336-S0-Des) | - |
 
 ### ReasonSigLIP Series
 | model | stage | scale | link | Recommended Tasks |
 | --- | --- | --- | --- | --- |
 | SigLIP | base | ViT-So400M/14 | [🤗 HF / Google](https://huggingface.co/google/siglip-so400m-patch14-384)| - |
-| ReasonSigLIP | Stage 1 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S1](https://huggingface.co/fesvhtr/ReasonSigLIP-So14-384-S1) | 📖 For Compostitional Reasoning Tasks |
-| ReasonSigLIP | Stage 2 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S2](https://huggingface.co/fesvhtr/ReasonSigLIP-So14-384-S2)| ✅ For Comprehensive Tasks |
-| ReasonSigLIP | Stage 0 - Reasoning | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S0-Rea](https://huggingface.co/fesvhtr/ReasonSigLIP-So14-384-S0-Rea)| - |
-| ReasonSigLIP | Stage 0 - Descriptive | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S0-Des](https://huggingface.co/fesvhtr/ReasonSigLIP-So14-384-S0-Des) | - |
+| ReasonSigLIP | Stage 1 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S1](https://huggingface.co/RISys-Lab/ReasonSigLIP-So14-384-S1) | 📖 For Compostitional Reasoning Tasks |
+| ReasonSigLIP | Stage 2 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S2](https://huggingface.co/RISys-Lab/ReasonSigLIP-So14-384-S2)| ✅ For Comprehensive Tasks |
+| ReasonSigLIP | Stage 0 - Reasoning | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S0-Rea](https://huggingface.co/RISys-Lab/ReasonSigLIP-So14-384-S0-Rea)| - |
+| ReasonSigLIP | Stage 0 - Descriptive | ViT-So400M/14 | [🤗 HF / ReasonSigLIP-So14-384-S0-Des](https://huggingface.co/RISys-Lab/ReasonSigLIP-So14-384-S0-Des) | - |
 | SigLIP2 | base | ViT-So400M/14 | [🤗 HF / Google](https://huggingface.co/google/siglip2-so400m-patch14-384) | - |
-| ReasonSigLIP2 | Stage 1 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S1](https://huggingface.co/fesvhtr/ReasonSigLIP2-So14-384-S1) | 📖 For Compostitional Reasoning Tasks|
-| ReasonSigLIP2 | Stage 2 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S2](https://huggingface.co/fesvhtr/ReasonSigLIP2-So14-384-S2) | ✅ For Comprehensive Tasks |
-| ReasonSigLIP2 | Stage 0 - Reasoning | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S0-Rea](https://huggingface.co/fesvhtr/ReasonSigLIP2-So14-384-S0-Rea) | - |
-| ReasonSigLIP2 | Stage 0 - Descriptive | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S0-Des](https://huggingface.co/fesvhtr/ReasonSigLIP2-So14-384-S0-Des) | - |
+| ReasonSigLIP2 | Stage 1 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S1](https://huggingface.co/RISys-Lab/ReasonSigLIP2-So14-384-S1) | 📖 For Compostitional Reasoning Tasks|
+| ReasonSigLIP2 | Stage 2 | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S2](https://huggingface.co/RISys-Lab/ReasonSigLIP2-So14-384-S2) | ✅ For Comprehensive Tasks |
+| ReasonSigLIP2 | Stage 0 - Reasoning | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S0-Rea](https://huggingface.co/RISys-Lab/ReasonSigLIP2-So14-384-S0-Rea) | - |
+| ReasonSigLIP2 | Stage 0 - Descriptive | ViT-So400M/14 | [🤗 HF / ReasonSigLIP2-So14-384-S0-Des](https://huggingface.co/RISys-Lab/ReasonSigLIP2-So14-384-S0-Des) | - |
 | SigLIP2 | base | ViT-Giant-Opt/16 | [🤗 HF / Google](https://huggingface.co/google/siglip2-giant-opt-patch16-384) | - |
-| ReasonSigLIP2 | Stage 1 | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S1](https://huggingface.co/fesvhtr/ReasonSigLIP2-go16-384-S1) | 📖 For Compostitional Reasoning Tasks|
-| ReasonSigLIP2 | Stage 2 | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S2](https://huggingface.co/fesvhtr/ReasonSigLIP2-go16-384-S2) | ✅ For Comprehensive Tasks |
-| ReasonSigLIP2 | Stage 0 - Reasoning | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S0-Rea](https://huggingface.co/fesvhtr/ReasonSigLIP2-go16-384-S0-Rea) | - |
-| ReasonSigLIP2 | Stage 0 - Descriptive | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S0-Des](https://huggingface.co/fesvhtr/ReasonSigLIP2-go16-384-S0-Des) | - |
+| ReasonSigLIP2 | Stage 1 | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S1](https://huggingface.co/RISys-Lab/ReasonSigLIP2-go16-384-S1) | 📖 For Compostitional Reasoning Tasks|
+| ReasonSigLIP2 | Stage 2 | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S2](https://huggingface.co/RISys-Lab/ReasonSigLIP2-go16-384-S2) | ✅ For Comprehensive Tasks |
+| ReasonSigLIP2 | Stage 0 - Reasoning | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S0-Rea](https://huggingface.co/RISys-Lab/ReasonSigLIP2-go16-384-S0-Rea) | - |
+| ReasonSigLIP2 | Stage 0 - Descriptive | ViT-Giant-Opt/16 | [🤗 HF / ReasonSigLIP2-go16-384-S0-Des](https://huggingface.co/RISys-Lab/ReasonSigLIP2-go16-384-S0-Des) | - |
 
 ### Detailed Results
 #### Zero-shot retrieval and Zero-shot classification
