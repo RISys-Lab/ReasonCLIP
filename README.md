@@ -12,6 +12,7 @@
 
 ## News
 
+- `[2026-06-18]` ReasonCLIP-58M was accepted to ECCV 2026.
 - `[2026-06-28]` Release ReasonCLIP Datasets, Benchmark and Models.
 <!-- - `[TODO date]` Release LLaVA-NeXT Model integrated with ReasonCLIP. -->
 
@@ -81,6 +82,11 @@ bash scripts/eval_all.sh
 ---
 
 ## 🚀 Training
+
+<p align="center">
+  <img src="docs/method.png" alt="ReasonCLIP training framework" width="100%">
+</p>
+
 ### Environment Preparation
 > [!NOTE]
 > We do not distribute CC12M images. To reproduce training, download the images from [`pixparse/cc12m-wds`](https://huggingface.co/datasets/pixparse/cc12m-wds) separately.
