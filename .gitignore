@@ -183,6 +183,11 @@ outputs/
 eval/results/
 eval/results_clip/
 eval/results_reasonpro/
+ReasonCLIP-paper/
+reasoning_geometry/work/
+reasoning_geometry/artifacts/
+reasoning_geometry/explorer/data/
+reasoning_geometry/explorer/index.html
 *.err
 *.out
 
@@ -281,3 +286,4 @@ lmms-eval/.ignored/
 lmms-eval/.worktrees/
 
 rebuttal/
+reasoning_geometry/explorer_v3/

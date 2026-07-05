@@ -1,0 +1,79 @@
+{
+  "prompts": [
+    {
+      "id": "could_hurt_if_touched",
+      "display_label": "could hurt if touched",
+      "retrieval_prompt": "things that could hurt someone if touched"
+    },
+    {
+      "id": "may_roll_away",
+      "display_label": "may roll away",
+      "retrieval_prompt": "things that may roll away"
+    },
+    {
+      "id": "may_fall_soon",
+      "display_label": "may fall soon",
+      "retrieval_prompt": "things that may fall soon"
+    },
+    {
+      "id": "may_spill_or_leak",
+      "display_label": "may spill or leak",
+      "retrieval_prompt": "things that may spill or leak"
+    },
+    {
+      "id": "likely_exposed_to_heat",
+      "display_label": "likely exposed to heat",
+      "retrieval_prompt": "things that are likely exposed to heat"
+    },
+    {
+      "id": "may_be_slippery",
+      "display_label": "may be slippery",
+      "retrieval_prompt": "things that may be slippery"
+    },
+    {
+      "id": "protects_from_danger",
+      "display_label": "protects from danger",
+      "retrieval_prompt": "things that may protect someone from danger"
+    },
+    {
+      "id": "may_no_longer_work",
+      "display_label": "may no longer work",
+      "retrieval_prompt": "things that may no longer work properly"
+    },
+    {
+      "id": "may_break_under_pressure",
+      "display_label": "may break under pressure",
+      "retrieval_prompt": "things that may break under pressure"
+    },
+    {
+      "id": "hard_to_balance",
+      "display_label": "hard to balance",
+      "retrieval_prompt": "things that are hard to keep balanced"
+    },
+    {
+      "id": "could_cause_loss_of_balance",
+      "display_label": "could cause loss of balance",
+      "retrieval_prompt": "things that could make someone lose balance"
+    },
+    {
+      "id": "unsafe_for_a_child",
+      "display_label": "unsafe for a child",
+      "retrieval_prompt": "things that may be unsafe for a child"
+    },
+    {
+      "id": "prevents_damage",
+      "display_label": "prevents damage",
+      "retrieval_prompt": "things that are likely being used to prevent damage"
+    },
+    {
+      "id": "changed_shape_by_force",
+      "display_label": "changed shape by force",
+      "retrieval_prompt": "things that may have changed shape because of force"
+    },
+    {
+      "id": "needs_cleanup",
+      "display_label": "needs cleanup",
+      "retrieval_prompt": "things that may need to be cleaned up"
+    }
+  ]
+}
