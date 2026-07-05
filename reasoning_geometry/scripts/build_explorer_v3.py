@@ -150,7 +150,10 @@ HTML = r"""<!doctype html>
       </section>
     </div>
   </main>
-  <script src="data/explorer_data.js"></script>
+  <script src="data/explorer_core.js"></script>
+  <script src="data/explorer_records.js"></script>
+  <script src="data/explorer_geometry.js"></script>
+  <script src="data/explorer_neighbor_changes.js"></script>
   <script>
     const data = window.EXPLORER_DATA;
     const records = data.records || [];
@@ -665,8 +668,14 @@ def main() -> None:
         "neighbors": neighbors,
         "neighbor_changes": neighbor_changes,
     }
-    json_text = minified_json(data)
-    (out_dir / "data" / "explorer_data.js").write_text("window.EXPLORER_DATA=" + json_text + ";\n", encoding="utf-8")
+    data_dir = out_dir / "data"
+    core = {k: data[k] for k in ["schema_version", "generated_at", "models", "families", "concepts"]}
+    geometry = {k: data[k] for k in ["retrievals", "coords", "neighbors"]}
+    changes = {"neighbor_changes": data["neighbor_changes"]}
+    (data_dir / "explorer_core.js").write_text("window.EXPLORER_DATA=" + minified_json(core) + ";\n", encoding="utf-8")
+    (data_dir / "explorer_records.js").write_text("window.EXPLORER_DATA.records=" + minified_json(data["records"]) + ";\n", encoding="utf-8")
+    (data_dir / "explorer_geometry.js").write_text("Object.assign(window.EXPLORER_DATA," + minified_json(geometry) + ");\n", encoding="utf-8")
+    (data_dir / "explorer_neighbor_changes.js").write_text("Object.assign(window.EXPLORER_DATA," + minified_json(changes) + ");\n", encoding="utf-8")
     (out_dir / "index.html").write_text(HTML, encoding="utf-8")
     print(f"wrote explorer v3 to {out_dir}")
 
