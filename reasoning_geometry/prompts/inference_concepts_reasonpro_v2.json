@@ -1,0 +1,446 @@
+{
+  "categories": [
+    {
+      "id": "S",
+      "label": "Spatial / Geometric"
+    },
+    {
+      "id": "A",
+      "label": "Attribute / State"
+    },
+    {
+      "id": "C",
+      "label": "Creature / Action"
+    },
+    {
+      "id": "T",
+      "label": "Temporal / Phase"
+    },
+    {
+      "id": "P",
+      "label": "Intuitive Physics"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "s_partly_hidden",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "partly hidden",
+      "retrieval_prompt": "something is partly hidden behind another object"
+    },
+    {
+      "id": "s_hard_to_reach",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "hard to reach",
+      "retrieval_prompt": "something is hard to reach because of its position"
+    },
+    {
+      "id": "s_blocked_path",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "blocked path",
+      "retrieval_prompt": "a path or opening is blocked by visible objects"
+    },
+    {
+      "id": "s_inside_a_container",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "inside a container",
+      "retrieval_prompt": "something is contained inside another object or enclosed space"
+    },
+    {
+      "id": "s_narrow_gap",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "narrow gap",
+      "retrieval_prompt": "a narrow gap makes movement or access difficult"
+    },
+    {
+      "id": "s_overhead_hazard",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "overhead hazard",
+      "retrieval_prompt": "something positioned overhead could affect the area below"
+    },
+    {
+      "id": "s_crowded_arrangement",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "crowded arrangement",
+      "retrieval_prompt": "objects are crowded together so there is little free space"
+    },
+    {
+      "id": "s_partly_outside",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "partly outside",
+      "retrieval_prompt": "something is partly outside the place that should contain it"
+    },
+    {
+      "id": "s_line_of_sight_blocked",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "line of sight blocked",
+      "retrieval_prompt": "visibility is blocked by an object in front"
+    },
+    {
+      "id": "s_near_the_edge",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "near the edge",
+      "retrieval_prompt": "something is close to an edge or boundary"
+    },
+    {
+      "id": "s_needs_clearance",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "needs clearance",
+      "retrieval_prompt": "something needs more surrounding space to be used safely"
+    },
+    {
+      "id": "s_separated_by_barrier",
+      "category": "S",
+      "category_label": "Spatial / Geometric",
+      "display_label": "separated by barrier",
+      "retrieval_prompt": "a barrier separates people or objects from each other"
+    },
+    {
+      "id": "a_could_cut_skin",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "could cut skin",
+      "retrieval_prompt": "something broken or sharp could cut skin"
+    },
+    {
+      "id": "a_may_be_slippery",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "may be slippery",
+      "retrieval_prompt": "a wet or smooth surface may be slippery"
+    },
+    {
+      "id": "a_exposed_to_heat",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "exposed to heat",
+      "retrieval_prompt": "something appears exposed to heat or strong sunlight"
+    },
+    {
+      "id": "a_no_longer_works",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "no longer works",
+      "retrieval_prompt": "something damaged may no longer work properly"
+    },
+    {
+      "id": "a_needs_cleaning",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "needs cleaning",
+      "retrieval_prompt": "something dirty or spilled on may need cleaning"
+    },
+    {
+      "id": "a_needs_drying",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "needs drying",
+      "retrieval_prompt": "something wet may need drying before use"
+    },
+    {
+      "id": "a_safe_to_hold",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "safe to hold",
+      "retrieval_prompt": "something appears safe to hold because it has a handle or cover"
+    },
+    {
+      "id": "a_not_ready_to_use",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "not ready to use",
+      "retrieval_prompt": "something appears not ready to use in its current state"
+    },
+    {
+      "id": "a_likely_fragile",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "likely fragile",
+      "retrieval_prompt": "something thin or delicate may be fragile"
+    },
+    {
+      "id": "a_poor_visibility",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "poor visibility",
+      "retrieval_prompt": "something is hard to see because it is dark or obscured"
+    },
+    {
+      "id": "a_open_to_spilling",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "open to spilling",
+      "retrieval_prompt": "an open container could spill its contents"
+    },
+    {
+      "id": "a_changed_by_force",
+      "category": "A",
+      "category_label": "Attribute / State",
+      "display_label": "changed by force",
+      "retrieval_prompt": "something appears bent dented or deformed by force"
+    },
+    {
+      "id": "c_about_to_grab",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "about to grab",
+      "retrieval_prompt": "a person or animal appears about to grab or reach for something"
+    },
+    {
+      "id": "c_about_to_throw",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "about to throw",
+      "retrieval_prompt": "a person appears about to throw or release an object"
+    },
+    {
+      "id": "c_trying_to_balance",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "trying to balance",
+      "retrieval_prompt": "a person or animal is trying to keep balance"
+    },
+    {
+      "id": "c_carrying_heavy_load",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "carrying heavy load",
+      "retrieval_prompt": "someone is carrying something that may be heavy or awkward"
+    },
+    {
+      "id": "c_protecting_body",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "protecting body",
+      "retrieval_prompt": "someone is protecting their body from a visible risk"
+    },
+    {
+      "id": "c_preparing_to_eat",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "preparing to eat",
+      "retrieval_prompt": "a person or animal appears about to eat or drink"
+    },
+    {
+      "id": "c_preparing_to_cook",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "preparing to cook",
+      "retrieval_prompt": "someone appears to be preparing food or cooking"
+    },
+    {
+      "id": "c_actively_using_tool",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "actively using tool",
+      "retrieval_prompt": "someone is using a tool to affect another object"
+    },
+    {
+      "id": "c_watching_carefully",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "watching carefully",
+      "retrieval_prompt": "someone appears to be watching or monitoring an activity"
+    },
+    {
+      "id": "c_moving_fast",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "moving fast",
+      "retrieval_prompt": "a person or animal appears to be moving fast"
+    },
+    {
+      "id": "c_needs_supervision",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "needs supervision",
+      "retrieval_prompt": "a child or animal may need supervision in the scene"
+    },
+    {
+      "id": "c_interacting_together",
+      "category": "C",
+      "category_label": "Creature / Action",
+      "display_label": "interacting together",
+      "retrieval_prompt": "people or animals are interacting with each other"
+    },
+    {
+      "id": "t_just_broke",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "just broke",
+      "retrieval_prompt": "something appears to have just broken or fallen apart"
+    },
+    {
+      "id": "t_about_to_fall",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "about to fall",
+      "retrieval_prompt": "something appears about to fall soon"
+    },
+    {
+      "id": "t_still_pouring",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "still pouring",
+      "retrieval_prompt": "liquid or loose material is still pouring or flowing"
+    },
+    {
+      "id": "t_recently_spilled",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "recently spilled",
+      "retrieval_prompt": "something appears recently spilled and not yet cleaned"
+    },
+    {
+      "id": "t_melting_now",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "melting now",
+      "retrieval_prompt": "ice snow or frozen food appears to be melting"
+    },
+    {
+      "id": "t_burned_down",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "burned down",
+      "retrieval_prompt": "a fire or hot material appears to have burned down"
+    },
+    {
+      "id": "t_work_in_progress",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "work in progress",
+      "retrieval_prompt": "construction repair or preparation appears to be in progress"
+    },
+    {
+      "id": "t_partly_eaten",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "partly eaten",
+      "retrieval_prompt": "food appears partly eaten or already consumed"
+    },
+    {
+      "id": "t_about_to_start",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "about to start",
+      "retrieval_prompt": "an activity appears about to start"
+    },
+    {
+      "id": "t_recent_rain",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "recent rain",
+      "retrieval_prompt": "the ground or objects suggest rain happened recently"
+    },
+    {
+      "id": "t_still_drying",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "still drying",
+      "retrieval_prompt": "something appears to be drying after being wet"
+    },
+    {
+      "id": "t_cleanup_pending",
+      "category": "T",
+      "category_label": "Temporal / Phase",
+      "display_label": "cleanup pending",
+      "retrieval_prompt": "the scene suggests cleanup still needs to happen"
+    },
+    {
+      "id": "p_may_roll_away",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "may roll away",
+      "retrieval_prompt": "a round object may roll away"
+    },
+    {
+      "id": "p_hard_to_balance",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "hard to balance",
+      "retrieval_prompt": "something is hard to keep balanced"
+    },
+    {
+      "id": "p_support_may_fail",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "support may fail",
+      "retrieval_prompt": "a support may fail under weight or pressure"
+    },
+    {
+      "id": "p_could_topple",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "could topple",
+      "retrieval_prompt": "stacked or leaning objects could topple"
+    },
+    {
+      "id": "p_held_by_tension",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "held by tension",
+      "retrieval_prompt": "something hanging appears held by tension"
+    },
+    {
+      "id": "p_sliding_risk",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "sliding risk",
+      "retrieval_prompt": "something on a slope or smooth surface could slide"
+    },
+    {
+      "id": "p_pressure_may_break_it",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "pressure may break it",
+      "retrieval_prompt": "something may break under pressure"
+    },
+    {
+      "id": "p_liquid_flows_downward",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "liquid flows downward",
+      "retrieval_prompt": "liquid will flow downward from its current position"
+    },
+    {
+      "id": "p_floating_or_supported",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "floating or supported",
+      "retrieval_prompt": "something appears floating or supported by another medium"
+    },
+    {
+      "id": "p_contact_stops_motion",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "contact stops motion",
+      "retrieval_prompt": "contact with another object prevents movement or falling"
+    },
+    {
+      "id": "p_wind_could_move_it",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "wind could move it",
+      "retrieval_prompt": "a light loose object could move in wind"
+    },
+    {
+      "id": "p_impact_caused_damage",
+      "category": "P",
+      "category_label": "Intuitive Physics",
+      "display_label": "impact caused damage",
+      "retrieval_prompt": "visible damage suggests an impact or force occurred"
+    }
+  ]
+}

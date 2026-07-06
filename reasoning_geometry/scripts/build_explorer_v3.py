@@ -57,7 +57,9 @@ HTML = r"""<!doctype html>
     .tab-buttons button { height: 28px; padding: 0 8px; font-size: 12px; }
     .tab-panel.hidden { display: none; }
     .hidden-inline { display: none !important; }
-    .stage-control select { height: 28px; }
+    .stage-control select { height: 28px; max-width: 260px; }
+    .query-strip { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 10px 10px 0; font-size: 12px; color: var(--muted); }
+    .query-strip strong { color: var(--ink); font-size: 13px; }
     .stack { display: grid; grid-template-columns: 1fr; gap: 12px; }
     .left-stack { position: sticky; top: 96px; align-self: start; max-height: calc(100vh - 108px); overflow: auto; scrollbar-gutter: stable; }
     canvas { width: 100%; height: 480px; display: block; background: #fbfcfe; }
@@ -139,7 +141,8 @@ HTML = r"""<!doctype html>
             <button id="tabRetrieval" class="active">Retrieval</button>
             <button id="tabNeighbors">Neighbors</button>
             <button id="tabChanged">Changed</button>
-            <label id="conceptControl" class="stage-control">concept <select id="conceptSelect"></select></label>
+            <label id="categoryControl" class="stage-control">category <select id="categorySelect"></select></label>
+            <label id="conceptControl" class="stage-control">query <select id="conceptSelect"></select></label>
             <span class="sub hidden-inline" id="anchorTitle"></span>
             <label id="changeStageControl" class="stage-control hidden-inline">compare <select id="changeStageSelect"><option value="s1">S1 vs baseline</option><option value="s2">S2 vs baseline</option></select></label>
           </div>
@@ -160,12 +163,14 @@ HTML = r"""<!doctype html>
     const models = data.models || {};
     const families = data.families || {};
     const concepts = data.concepts || [];
+    const categories = data.categories || inferCategories(concepts);
     const coords = data.coords || {};
     const neighbors = data.neighbors || {};
     const retrievals = data.retrievals || {models:{}};
     const changes = data.neighbor_changes || {};
     let selectedFamily = Object.keys(families)[0];
-    let selectedConcept = concepts[0] ? concepts[0].id : '';
+    let selectedCategory = categories[0] ? categories[0].id : ((concepts[0] && concepts[0].category) || 'uncategorized');
+    let selectedConcept = (firstConceptForCategory(selectedCategory) || concepts[0] || {id:''}).id;
     let selectedIndex = 0;
     let scatterStage = 'baseline';
     let scatterModel = '';
@@ -184,7 +189,21 @@ HTML = r"""<!doctype html>
     function stageLabel(key) { return (models[key] && (models[key].stage || key)) || key; }
     function stageClass(key) { return (models[key] && (models[key].stage || 'model')) || 'model'; }
     function modelTitle(key) { return (models[key] && (models[key].label || key)) || key; }
-    function currentConcept() { return concepts.find(c => c.id === selectedConcept) || concepts[0] || {id:'', display_label:'concept'}; }
+    function inferCategories(items) {
+      const out = [];
+      const seen = new Set();
+      items.forEach(c => {
+        const id = c.category || 'uncategorized';
+        if (seen.has(id)) return;
+        seen.add(id);
+        out.push({id, label: c.category_label || id});
+      });
+      return out.length ? out : [{id:'uncategorized', label:'Uncategorized'}];
+    }
+    function currentCategory() { return categories.find(c => c.id === selectedCategory) || categories[0] || {id:'uncategorized', label:'Uncategorized'}; }
+    function conceptsForCategory() { return concepts.filter(c => (c.category || 'uncategorized') === selectedCategory); }
+    function firstConceptForCategory(category) { return concepts.find(c => (c.category || 'uncategorized') === category); }
+    function currentConcept() { return concepts.find(c => c.id === selectedConcept) || firstConceptForCategory(selectedCategory) || concepts[0] || {id:'', display_label:'query'}; }
     function imgTag(idx) { return `<img src="${esc(records[idx].image_path)}" loading="lazy" alt="">`; }
     function snippet(idx) { return esc(records[idx].caption_snippet || records[idx].descriptive_caption || records[idx].source_caption || ''); }
 
@@ -192,10 +211,20 @@ HTML = r"""<!doctype html>
       byId('summary').textContent = `${records.length} images | ${Object.keys(models).length} visual encoders | inference-only model-centric view`;
       renderEncoderButtons();
 
+      const categorySelect = byId('categorySelect');
+      categories.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.label || c.id; categorySelect.appendChild(o); });
+      categorySelect.value = selectedCategory;
+      categorySelect.onchange = () => {
+        selectedCategory = categorySelect.value;
+        const first = firstConceptForCategory(selectedCategory);
+        selectedConcept = first ? first.id : '';
+        syncConceptSelect();
+        renderRetrieval();
+      };
+
       const cs = byId('conceptSelect');
-      concepts.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.display_label; cs.appendChild(o); });
-      cs.value = selectedConcept;
       cs.onchange = () => { selectedConcept = cs.value; renderRetrieval(); };
+      syncConceptSelect();
 
       syncScatterStageSelect();
       byId('scatterStageSelect').onchange = () => { scatterStage = byId('scatterStageSelect').value; syncScatterModelFromStage(); renderScatter(); };
@@ -264,6 +293,20 @@ HTML = r"""<!doctype html>
       scatterModel = modelKeyForStage(scatterStage);
     }
 
+    function syncConceptSelect() {
+      const cs = byId('conceptSelect');
+      const list = conceptsForCategory();
+      if (!list.some(c => c.id === selectedConcept)) selectedConcept = list[0] ? list[0].id : '';
+      cs.innerHTML = '';
+      list.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.display_label;
+        cs.appendChild(o);
+      });
+      cs.value = selectedConcept;
+    }
+
     function setActivePanel(panel) {
       activePanel = panel;
       renderActivePanel();
@@ -280,6 +323,7 @@ HTML = r"""<!doctype html>
         byId(item[2]).classList.toggle('hidden', activePanel !== key);
       });
       byId('rightPanelTitle').textContent = cfg[activePanel][0];
+      byId('categoryControl').classList.toggle('hidden-inline', activePanel !== 'retrieval');
       byId('conceptControl').classList.toggle('hidden-inline', activePanel !== 'retrieval');
       byId('anchorTitle').classList.toggle('hidden-inline', activePanel !== 'neighbors');
       byId('changeStageControl').classList.toggle('hidden-inline', activePanel !== 'changed');
@@ -370,9 +414,10 @@ HTML = r"""<!doctype html>
 
     function renderRetrieval() {
       const concept = currentConcept();
+      const category = currentCategory();
       const keys = familyKeys();
-      byId('retrievalPanel').innerHTML = `<div class="columns">${keys.map(key => {
-        const hits = (((retrievals.models || {})[key] || {})[concept.id] || []).slice(0, 12);
+      byId('retrievalPanel').innerHTML = `<div class="query-strip"><span>${esc(category.label || category.id)}</span><strong>${esc(concept.display_label)}</strong></div><div class="columns">${keys.map(key => {
+        const hits = (((retrievals.models || {})[key] || {})[concept.id] || []).slice(0, 18);
         const cards = hits.map(h => {
           const status = h.status_vs_baseline === 'new' ? 'new' : (h.status_vs_baseline === 'shared' ? 'shared' : 'baseline');
           const cls = status === 'new' ? 'new' : (status === 'shared' ? 'shared' : '');
@@ -621,6 +666,18 @@ def minified_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
 
+def concept_categories(concepts: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    seen = set()
+    for concept in concepts:
+        cid = str(concept.get("category") or "uncategorized")
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append({"id": cid, "label": str(concept.get("category_label") or cid)})
+    return out or [{"id": "uncategorized", "label": "Uncategorized"}]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the model-centric ReasonCLIP explorer v3.")
     parser.add_argument("--annotations", required=True)
@@ -656,6 +713,7 @@ def main() -> None:
     records = build_records(rows, out_dir, args.thumb_size, args.thumb_quality, make_thumbs=not args.no_thumbs)
     coords, neighbors, neighbor_changes = compute_neighbors_and_changes(emb_dir, model_keys, args.neighbor_k, args.change_pool, args.change_k, args.compare_k)
     retrievals = read_json(args.retrievals)
+    categories = concept_categories(retrievals.get("concepts", []))
     data = {
         "schema_version": "v3",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -663,13 +721,14 @@ def main() -> None:
         "models": read_model_meta(emb_dir, model_keys),
         "families": family_map(model_keys),
         "concepts": retrievals.get("concepts", []),
+        "categories": categories,
         "retrievals": retrievals,
         "coords": coords,
         "neighbors": neighbors,
         "neighbor_changes": neighbor_changes,
     }
     data_dir = out_dir / "data"
-    core = {k: data[k] for k in ["schema_version", "generated_at", "models", "families", "concepts"]}
+    core = {k: data[k] for k in ["schema_version", "generated_at", "models", "families", "concepts", "categories"]}
     geometry = {k: data[k] for k in ["retrievals", "coords", "neighbors"]}
     changes = {"neighbor_changes": data["neighbor_changes"]}
     (data_dir / "explorer_core.js").write_text("window.EXPLORER_DATA=" + minified_json(core) + ";\n", encoding="utf-8")

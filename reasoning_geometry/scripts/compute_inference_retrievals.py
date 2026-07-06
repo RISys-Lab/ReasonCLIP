@@ -27,7 +27,11 @@ def load_concepts(path: str | None) -> List[Dict[str, str]]:
         cid = item.get("id")
         if not cid or not prompt:
             raise ValueError(f"Invalid concept entry: {item}")
-        out.append({"id": str(cid), "display_label": str(label), "retrieval_prompt": str(prompt)})
+        concept = {"id": str(cid), "display_label": str(label), "retrieval_prompt": str(prompt)}
+        for key in ["category", "category_label"]:
+            if item.get(key):
+                concept[key] = str(item[key])
+        out.append(concept)
     return out
 
 
