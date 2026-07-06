@@ -5,7 +5,8 @@
   🤗 **[Models](https://huggingface.co/collections/RISys-Lab/reasonclip-models)** | 
   🤗 **[Dataset](https://huggingface.co/collections/RISys-Lab/reasonclip-data)** | 
   🤗 **[BenchMark](https://huggingface.co/datasets/RISys-Lab/RCLIP-Bench)** | 
-  📊 **[Model Card](doc/model_card.md)**
+  📊 **[Model Card](doc/model_card.md)** | 
+  🌐 **[Playground](https://www.sczhang.com/reasonclip/)**
 </div>
 
 
