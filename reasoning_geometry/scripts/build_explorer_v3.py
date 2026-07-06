@@ -60,6 +60,7 @@ HTML = r"""<!doctype html>
     .stage-control select { height: 28px; max-width: 260px; }
     .query-strip { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 10px 10px 0; font-size: 12px; color: var(--muted); }
     .query-strip strong { color: var(--ink); font-size: 13px; }
+    .anchor-hint { color: var(--amber); font-size: 12px; font-weight: 700; }
     .stack { display: grid; grid-template-columns: 1fr; gap: 12px; }
     .left-stack { position: sticky; top: 96px; align-self: start; max-height: calc(100vh - 108px); overflow: auto; scrollbar-gutter: stable; }
     canvas { width: 100%; height: 480px; display: block; background: #fbfcfe; }
@@ -144,6 +145,7 @@ HTML = r"""<!doctype html>
             <label id="categoryControl" class="stage-control">category <select id="categorySelect"></select></label>
             <label id="conceptControl" class="stage-control">query <select id="conceptSelect"></select></label>
             <span class="sub hidden-inline" id="anchorTitle"></span>
+            <span class="anchor-hint hidden-inline" id="anchorHint">click left image or scatter point to change anchor</span>
             <label id="changeStageControl" class="stage-control hidden-inline">compare <select id="changeStageSelect"><option value="s1">S1 vs baseline</option><option value="s2">S2 vs baseline</option></select></label>
           </div>
         </div>
@@ -325,7 +327,9 @@ HTML = r"""<!doctype html>
       byId('rightPanelTitle').textContent = cfg[activePanel][0];
       byId('categoryControl').classList.toggle('hidden-inline', activePanel !== 'retrieval');
       byId('conceptControl').classList.toggle('hidden-inline', activePanel !== 'retrieval');
-      byId('anchorTitle').classList.toggle('hidden-inline', activePanel !== 'neighbors');
+      const anchorPanel = activePanel === 'neighbors' || activePanel === 'changed';
+      byId('anchorTitle').classList.toggle('hidden-inline', !anchorPanel);
+      byId('anchorHint').classList.toggle('hidden-inline', !anchorPanel);
       byId('changeStageControl').classList.toggle('hidden-inline', activePanel !== 'changed');
     }
 
@@ -398,7 +402,7 @@ HTML = r"""<!doctype html>
     function renderSelected() {
       const r = records[selectedIndex] || {};
       byId('selectedPanel').innerHTML = `${imgTag(selectedIndex)}<div><h3>${esc(r.image_id)}</h3><p class="caption">${esc(r.source_caption || r.descriptive_caption || '')}</p></div>`;
-      byId('anchorTitle').textContent = r.image_id || '';
+      byId('anchorTitle').textContent = r.image_id ? 'anchor: ' + r.image_id : '';
     }
 
     function hitCard(idx, opts) {
