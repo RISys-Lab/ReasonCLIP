@@ -110,6 +110,8 @@ def create_text_features(classnames, templates, processor, model, device, is_sig
                     truncation=True,
                     max_length=64,
                 )
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                text_features = model.get_text_features(**inputs)
             else:
                 inputs = processor(
                     text=class_prompts,
