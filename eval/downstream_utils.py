@@ -7,6 +7,7 @@ import json
 import math
 import random
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -124,16 +125,25 @@ def patch_grid(model) -> tuple[int, int, int, int]:
     return image_size, patch_size, grid, hidden
 
 
+def _size_mapping(size: Any) -> dict[str, Any] | None:
+    if is_dataclass(size):
+        return asdict(size)
+    if isinstance(size, Mapping):
+        return dict(size)
+    return None
+
+
 def _size_hw(size: Any) -> tuple[int, int] | None:
     if size is None:
         return None
     if isinstance(size, int):
         return size, size
-    if isinstance(size, dict):
-        if "height" in size and "width" in size:
-            return int(size["height"]), int(size["width"])
-        if "shortest_edge" in size:
-            edge = int(size["shortest_edge"])
+    size_mapping = _size_mapping(size)
+    if size_mapping is not None:
+        if size_mapping.get("height") is not None and size_mapping.get("width") is not None:
+            return int(size_mapping["height"]), int(size_mapping["width"])
+        if size_mapping.get("shortest_edge") is not None:
+            edge = int(size_mapping["shortest_edge"])
             return edge, edge
     return None
 
@@ -151,8 +161,10 @@ def resize_like_processor(image: Image.Image, processor, resample) -> Image.Imag
     size = getattr(processor, "size", None)
     if getattr(processor, "do_resize", False) and size is not None:
         width, height = out.size
-        if isinstance(size, dict) and "shortest_edge" in size:
-            shortest = int(size["shortest_edge"])
+        size_mapping = _size_mapping(size)
+        shortest_edge = None if size_mapping is None else size_mapping.get("shortest_edge")
+        if shortest_edge is not None:
+            shortest = int(shortest_edge)
             scale = shortest / min(width, height)
             new_w = int(round(width * scale))
             new_h = int(round(height * scale))
@@ -176,22 +188,38 @@ def resize_like_processor(image: Image.Image, processor, resample) -> Image.Imag
     return out
 
 
+def resize_to_patch_grid(image: Image.Image, processor, grid: int, resample) -> Image.Image:
+    """Align dense targets with valid, non-overlapping patch-embedding coverage.
+
+    SigLIP 384/14 yields a 27x27 grid and leaves six trailing pixels
+    unencoded, so those pixels must not be folded into the target grid.
+    """
+
+    target = resize_like_processor(image, processor, resample)
+    patch_h = target.height // grid
+    patch_w = target.width // grid
+    if patch_h <= 0 or patch_w <= 0:
+        raise ValueError(f"Target {target.size} is smaller than patch grid {grid}x{grid}")
+    covered_h = patch_h * grid
+    covered_w = patch_w * grid
+    if (covered_w, covered_h) != target.size:
+        target = target.crop((0, 0, covered_w, covered_h))
+    return target.resize((grid, grid), resample)
+
+
 def transform_mask_to_grid(mask: Image.Image, processor, grid: int) -> torch.Tensor:
-    label = resize_like_processor(mask, processor, Image.Resampling.NEAREST)
-    label = label.resize((grid, grid), Image.Resampling.NEAREST)
+    label = resize_to_patch_grid(mask, processor, grid, Image.Resampling.NEAREST)
     return torch.from_numpy(np.array(label, dtype=np.int64))
 
 
 def transform_scalar_to_grid(image: Image.Image, processor, grid: int, scale: float = 1.0) -> torch.Tensor:
-    target = resize_like_processor(image, processor, Image.Resampling.BILINEAR)
-    target = target.resize((grid, grid), Image.Resampling.BILINEAR)
+    target = resize_to_patch_grid(image, processor, grid, Image.Resampling.BILINEAR)
     arr = np.array(target, dtype=np.float32) / float(scale)
     return torch.from_numpy(arr).unsqueeze(0)
 
 
 def transform_rgb_vector_to_grid(image: Image.Image, processor, grid: int) -> torch.Tensor:
-    target = resize_like_processor(image.convert("RGB"), processor, Image.Resampling.BILINEAR)
-    target = target.resize((grid, grid), Image.Resampling.BILINEAR)
+    target = resize_to_patch_grid(image.convert("RGB"), processor, grid, Image.Resampling.BILINEAR)
     arr = np.array(target, dtype=np.float32) / 255.0
     arr = arr * 2.0 - 1.0
     tensor = torch.from_numpy(arr).permute(2, 0, 1)
@@ -199,12 +227,14 @@ def transform_rgb_vector_to_grid(image: Image.Image, processor, grid: int) -> to
 
 
 def processor_geometry_summary(processor) -> dict[str, Any]:
+    size = getattr(processor, "size", None)
+    crop_size = getattr(processor, "crop_size", None)
     return {
         "processor_class": processor.__class__.__name__,
         "do_resize": getattr(processor, "do_resize", None),
-        "size": getattr(processor, "size", None),
+        "size": _size_mapping(size) or size,
         "do_center_crop": getattr(processor, "do_center_crop", None),
-        "crop_size": getattr(processor, "crop_size", None),
+        "crop_size": _size_mapping(crop_size) or crop_size,
         "resample": getattr(processor, "resample", None),
     }
 

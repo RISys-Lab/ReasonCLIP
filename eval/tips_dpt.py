@@ -1,0 +1,563 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+"""DPT decoder heads for dense prediction tasks.
+
+This module provides a shared DPT backbone (ReassembleBlocks + fusion) and
+task-specific decoder subclasses for segmentation, depth, and surface normals.
+
+Typical usage:
+  decoder = SegmentationDecoder(num_classes=150, input_embed_dim=1024)
+  load_decoder_weights(decoder, "path/to/checkpoint.npz")
+  logits = decoder(intermediate_features, image_size=(480, 640))
+"""
+
+from typing import List, Optional, Tuple
+
+import numpy as np
+import torch
+from torch import nn
+import torch.nn.functional as F
+
+
+# ---------------------------------------------------------------------------
+# Building blocks
+# ---------------------------------------------------------------------------
+
+
+class PreActResidualConvUnit(nn.Module):
+  """Pre-activation residual convolution unit."""
+
+  def __init__(self, features: int) -> None:
+    super().__init__()
+    self.conv1 = nn.Conv2d(features, features, 3, padding=1, bias=False)
+    self.conv2 = nn.Conv2d(features, features, 3, padding=1, bias=False)
+
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    residual = x
+    x = F.relu(x)
+    x = self.conv1(x)
+    x = F.relu(x)
+    x = self.conv2(x)
+    return x + residual
+
+
+class FeatureFusionBlock(nn.Module):
+  """Fuses features with optional residual input, then upsamples 2x."""
+
+  def __init__(
+      self,
+      features: int,
+      has_residual: bool = False,
+      expand: bool = False,
+  ) -> None:
+    super().__init__()
+    self.has_residual = has_residual
+    if has_residual:
+      self.residual_unit = PreActResidualConvUnit(features)
+    self.main_unit = PreActResidualConvUnit(features)
+    out_features = features // 2 if expand else features
+    self.out_conv = nn.Conv2d(features, out_features, 1, bias=True)
+
+  def forward(
+      self,
+      x: torch.Tensor,
+      residual: Optional[torch.Tensor] = None,
+  ) -> torch.Tensor:
+    if self.has_residual and residual is not None:
+      if residual.shape != x.shape:
+        residual = F.interpolate(
+            residual,
+            size=x.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+      residual = self.residual_unit(residual)
+      x = x + residual
+    x = self.main_unit(x)
+    # Upsample 2x with align_corners=True
+    x = F.interpolate(
+        x, scale_factor=2, mode="bilinear", align_corners=True
+    )
+    x = self.out_conv(x)
+    return x
+
+
+class ReassembleBlocks(nn.Module):
+  """Projects and resizes intermediate ViT features to different scales."""
+
+  def __init__(
+      self,
+      input_embed_dim: int = 1024,
+      out_channels: Tuple[int, ...] = (128, 256, 512, 1024),
+      readout_type: str = "project",
+  ) -> None:
+    super().__init__()
+    self.readout_type = readout_type
+    self.out_projections = nn.ModuleList(
+        [nn.Conv2d(input_embed_dim, ch, 1) for ch in out_channels]
+    )
+    self.resize_layers = nn.ModuleList([
+        nn.ConvTranspose2d(
+            out_channels[0], out_channels[0], kernel_size=4, stride=4, padding=0
+        ),
+        nn.ConvTranspose2d(
+            out_channels[1], out_channels[1], kernel_size=2, stride=2, padding=0
+        ),
+        nn.Identity(),
+        nn.Conv2d(out_channels[3], out_channels[3], 3, stride=2, padding=1),
+    ])
+    if readout_type == "project":
+      self.readout_projects = nn.ModuleList([
+          nn.Linear(2 * input_embed_dim, input_embed_dim)
+          for _ in out_channels
+      ])
+
+  def forward(
+      self,
+      features: List[Tuple[torch.Tensor, torch.Tensor]],
+  ) -> List[torch.Tensor]:
+    out = []
+    for i, (cls_token, x) in enumerate(features):
+      b, d, h, w = x.shape
+      if self.readout_type == "project":
+        x_flat = x.flatten(2).transpose(1, 2)
+        readout = cls_token.unsqueeze(1).expand(-1, x_flat.shape[1], -1)
+        x_cat = torch.cat([x_flat, readout], dim=-1)
+        # JAX GELU uses tanh approximation by default.
+        x_proj = F.gelu(self.readout_projects[i](x_cat), approximate='tanh')
+        x = x_proj.transpose(1, 2).reshape(b, d, h, w)
+      x = self.out_projections[i](x)
+      x = self.resize_layers[i](x)
+      out.append(x)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Shared DPT head
+# ---------------------------------------------------------------------------
+
+
+class DPTHead(nn.Module):
+  """Shared DPT head that produces dense feature maps from ViT intermediates.
+
+  This module performs the common operations for all decoder types:
+  1. Reassembles intermediate ViT features at multiple scales.
+  2. Projects them to a common channel dimension.
+  3. Fuses them bottom-up through residual fusion blocks.
+  """
+
+  def __init__(
+      self,
+      input_embed_dim: int = 1024,
+      channels: int = 256,
+      post_process_channels: Tuple[int, ...] = (128, 256, 512, 1024),
+      readout_type: str = "project",
+      output_activation: bool = False,
+  ) -> None:
+    super().__init__()
+    self.output_activation = output_activation
+    self.reassemble = ReassembleBlocks(
+        input_embed_dim=input_embed_dim,
+        out_channels=post_process_channels,
+        readout_type=readout_type,
+    )
+    self.convs = nn.ModuleList([
+        nn.Conv2d(ch, channels, 3, padding=1, bias=False)
+        for ch in post_process_channels
+    ])
+    self.fusion_blocks = nn.ModuleList([
+        FeatureFusionBlock(channels, has_residual=False),
+        FeatureFusionBlock(channels, has_residual=True),
+        FeatureFusionBlock(channels, has_residual=True),
+        FeatureFusionBlock(channels, has_residual=True),
+    ])
+    self.project = nn.Conv2d(channels, channels, 3, padding=1, bias=True)
+
+  def forward(
+      self,
+      intermediate_features: List[Tuple[torch.Tensor, torch.Tensor]],
+  ) -> torch.Tensor:
+    """Produces dense features of shape (B, channels, H', W')."""
+    x = self.reassemble(intermediate_features)
+    x = [self.convs[i](feat) for i, feat in enumerate(x)]
+
+    out = self.fusion_blocks[0](x[-1])
+    for i in range(1, 4):
+      out = self.fusion_blocks[i](out, residual=x[-(i + 1)])
+
+    out = self.project(out)
+    # NOTE: By default, the reference implementation does not apply output activation,
+    # so NO ReLU is applied after the project layer by default.
+    if self.output_activation:
+      out = F.relu(out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Base decoder
+# ---------------------------------------------------------------------------
+
+
+class Decoder(nn.Module):
+  """Base decoder class for dense prediction tasks.
+
+  Wraps a DPTHead and provides a task-specific output head.
+  """
+
+  def __init__(
+      self,
+      out_channels: int,
+      input_embed_dim: int = 1024,
+      channels: int = 256,
+      post_process_channels: Tuple[int, ...] = (128, 256, 512, 1024),
+      readout_type: str = "project",
+      output_activation: bool = False,
+  ) -> None:
+    super().__init__()
+    self.channels = channels
+    self.out_channels = out_channels
+    self.dpt = DPTHead(
+        input_embed_dim=input_embed_dim,
+        channels=channels,
+        post_process_channels=post_process_channels,
+        readout_type=readout_type,
+        output_activation=output_activation,
+    )
+    # Common head for all dense prediction tasks
+    self.head = nn.Linear(self.channels, self.out_channels)
+
+  def forward(
+      self,
+      intermediate_features: List[Tuple[torch.Tensor, torch.Tensor]],
+      image_size: Optional[Tuple[int, int]] = None,
+  ) -> torch.Tensor:
+    """Produces task-specific predictions (B, out_channels, H, W)."""
+    # 1. Get dense features from DPT (B, C, H', W')
+    x = self.dpt(intermediate_features)
+
+    # 2. Apply task head (Requires channel-last format for nn.Linear)
+    x = x.permute(0, 2, 3, 1)            # (B, H', W', C)
+    x = self.head(x)                     # (B, H', W', out_channels)
+    x = x.permute(0, 3, 1, 2)            # (B, out_channels, H', W')
+
+    # 3. Upsample to target resolution
+    if image_size is not None:
+      x = F.interpolate(
+          x, size=image_size, mode="bilinear", align_corners=False
+      )
+    return x
+
+
+# ---------------------------------------------------------------------------
+# Task-specific decoders (Refactored as Thin Wrappers)
+# ---------------------------------------------------------------------------
+
+
+class SegmentationDecoder(Decoder):
+  """Decoder for semantic segmentation."""
+  def __init__(self, num_classes: int = 150, **kwargs) -> None:
+    super().__init__(out_channels=num_classes, **kwargs)
+
+
+class DepthDecoder(Decoder):
+  """Decoder for monocular depth prediction using classification bins.
+
+  Predicts depth by classifying each pixel into uniformly-spaced depth bins
+  and computing the expected depth value.
+  """
+
+  def __init__(
+      self,
+      num_depth_bins: int = 256,
+      min_depth: float = 0.001,
+      max_depth: float = 10.0,
+      **kwargs,
+  ) -> None:
+    super().__init__(out_channels=num_depth_bins, **kwargs)
+    self.min_depth = min_depth
+    self.max_depth = max_depth
+    self.num_depth_bins = num_depth_bins
+    self.register_buffer(
+        "bin_centers",
+        torch.linspace(min_depth, max_depth, num_depth_bins),
+    )
+
+  def forward(
+      self,
+      intermediate_features: List[Tuple[torch.Tensor, torch.Tensor]],
+      image_size: Optional[Tuple[int, int]] = None,
+  ) -> torch.Tensor:
+    # 1. Get DPT features + task head (nn.Linear) via parent class.
+    #    Output shape: (B, num_depth_bins, H', W')
+    logits = super().forward(intermediate_features)
+
+    # 2. Classification-based depth prediction:
+    #    relu + shift -> linear normalisation -> expectation over bins.
+    logits = torch.relu(logits) + self.min_depth
+    probs = logits / torch.sum(logits, dim=1, keepdim=True)
+    depth_map = torch.einsum("bchw,c->bhw", probs, self.bin_centers.to(logits.device))
+
+    # 3. Upsample to target resolution.
+    if image_size is not None:
+      depth_map = F.interpolate(
+          depth_map.unsqueeze(1),
+          size=image_size,
+          mode="bilinear",
+          align_corners=False,
+      ).squeeze(1)
+    return depth_map.unsqueeze(1)
+
+
+class NormalsDecoder(Decoder):
+  """Decoder for surface normals prediction."""
+  def __init__(self, **kwargs) -> None:
+    super().__init__(out_channels=3, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Weight loading utilities
+# ---------------------------------------------------------------------------
+
+# Mapping from legacy flat checkpoint keys to the new hierarchical names.
+_LEGACY_KEY_PREFIXES = {
+    "reassemble.": "dpt.reassemble.",
+    "convs.": "dpt.convs.",
+    "fusion_blocks.": "dpt.fusion_blocks.",
+    "project.": "dpt.project.",
+    # Task-specific head keys (Scenic Dense -> PyTorch head.*)
+    "segmentation_head.": "head.",
+    "pixel_segmentation.": "head.",
+    "pixel_depth_classif.": "head.",
+    "pixel_depth_regress.": "head.",
+    "pixel_normals.": "head.",
+}
+
+# Scenic/Flax head param names -> PyTorch head.*
+_SCENIC_HEAD_NAMES = {
+    "pixel_segmentation",
+    "pixel_depth_classif",
+    "pixel_depth_regress",
+    "pixel_normals",
+    "segmentation_head",
+}
+
+# ConvTranspose keys that need spatial flipping.
+_CONV_TRANSPOSE_KEYS = {
+    'dpt.reassemble.resize_layers.0.weight',
+    'dpt.reassemble.resize_layers.1.weight',
+}
+
+
+def _is_scenic_format(keys):
+  """Check if checkpoint keys use Scenic/Flax naming (``/`` separators)."""
+  return any('/' in k for k in keys)
+
+
+def _convert_scenic_checkpoint(weights):
+  """Convert Flax parameter tree checkpoint to PyTorch state_dict.
+
+  These checkpoints use Flax parameter tree naming:
+    decoder/dpt/reassemble_blocks/out_projection_0/kernel
+  which maps to PyTorch:
+    dpt.reassemble.out_projections.0.weight
+
+  Weight conversions:
+    - Conv kernels: (H, W, Cin, Cout) -> (Cout, Cin, H, W)
+    - ConvTranspose kernels: same + 180-degree spatial flip
+    - Dense/Linear kernels: (in, out) -> (out, in)
+    - Biases: direct copy
+  """
+  sd = {}
+
+  # Build a nested dict from flat Scenic keys
+  tree = {}
+  for key, value in weights.items():
+    # Strip "decoder/" prefix if present.
+    k = key[len("decoder/"):] if key.startswith("decoder/") else key
+    parts = k.split("/")
+    d = tree
+    for p in parts[:-1]:
+      d = d.setdefault(p, {})
+    d[parts[-1]] = np.array(value)
+
+  dpt_params = tree.get("dpt", tree)
+
+  # --- ReassembleBlocks ---
+  rb = dpt_params.get("reassemble_blocks", {})
+  for i in range(4):
+    # out_projections (Conv2d 1x1)
+    op = rb.get(f"out_projection_{i}", {})
+    if "kernel" in op:
+      sd[f"dpt.reassemble.out_projections.{i}.weight"] = torch.from_numpy(
+          op["kernel"].transpose(3, 2, 0, 1).copy()
+      )
+    if "bias" in op:
+      sd[f"dpt.reassemble.out_projections.{i}.bias"] = torch.from_numpy(
+          op["bias"].copy()
+      )
+    # readout_projects (Linear)
+    rp = rb.get(f"readout_projects_{i}", {})
+    if "kernel" in rp:
+      sd[f"dpt.reassemble.readout_projects.{i}.weight"] = torch.from_numpy(
+          rp["kernel"].T.copy()
+      )
+    if "bias" in rp:
+      sd[f"dpt.reassemble.readout_projects.{i}.bias"] = torch.from_numpy(
+          rp["bias"].copy()
+      )
+
+  # resize_layers: 0=ConvTranspose, 1=ConvTranspose, 2=Identity, 3=Conv
+  for idx in [0, 1]:
+    rl = rb.get(f"resize_layers_{idx}", {})
+    if "kernel" in rl:
+      w = rl["kernel"][::-1, ::-1, :, :].copy()  # 180-degree spatial flip
+      sd[f"dpt.reassemble.resize_layers.{idx}.weight"] = torch.from_numpy(
+          w.transpose(2, 3, 0, 1).copy()
+      )
+    if "bias" in rl:
+      sd[f"dpt.reassemble.resize_layers.{idx}.bias"] = torch.from_numpy(
+          rl["bias"].copy()
+      )
+  # resize_layers_2 = Identity (no weights)
+  rl3 = rb.get("resize_layers_3", {})
+  if "kernel" in rl3:
+    sd["dpt.reassemble.resize_layers.3.weight"] = torch.from_numpy(
+        rl3["kernel"].transpose(3, 2, 0, 1).copy()
+    )
+  if "bias" in rl3:
+    sd["dpt.reassemble.resize_layers.3.bias"] = torch.from_numpy(
+        rl3["bias"].copy()
+    )
+
+  # --- Convs (3x3, no bias) ---
+  for i in range(4):
+    c = dpt_params.get(f"convs_{i}", {})
+    if "kernel" in c:
+      sd[f"dpt.convs.{i}.weight"] = torch.from_numpy(
+          c["kernel"].transpose(3, 2, 0, 1).copy()
+      )
+
+  # --- Fusion blocks ---
+  for i in range(4):
+    fb = dpt_params.get(f"fusion_blocks_{i}", {})
+    if i == 0:
+      # No residual unit, only 1 PreActResidualConvUnit -> main_unit
+      pacu = fb.get("PreActResidualConvUnit_0", {})
+      for cname in ["conv1", "conv2"]:
+        if cname in pacu and "kernel" in pacu[cname]:
+          sd[f"dpt.fusion_blocks.{i}.main_unit.{cname}.weight"] = (
+              torch.from_numpy(
+                  pacu[cname]["kernel"].transpose(3, 2, 0, 1).copy()
+              )
+          )
+    else:
+      # Residual unit (index 0) + main unit (index 1)
+      pacu0 = fb.get("PreActResidualConvUnit_0", {})
+      pacu1 = fb.get("PreActResidualConvUnit_1", {})
+      for cname in ["conv1", "conv2"]:
+        if cname in pacu0 and "kernel" in pacu0[cname]:
+          sd[f"dpt.fusion_blocks.{i}.residual_unit.{cname}.weight"] = (
+              torch.from_numpy(
+                  pacu0[cname]["kernel"].transpose(3, 2, 0, 1).copy()
+              )
+          )
+        if cname in pacu1 and "kernel" in pacu1[cname]:
+          sd[f"dpt.fusion_blocks.{i}.main_unit.{cname}.weight"] = (
+              torch.from_numpy(
+                  pacu1[cname]["kernel"].transpose(3, 2, 0, 1).copy()
+              )
+          )
+    # out_conv (Conv2d 1x1) -- Scenic names it Conv_0
+    oc = fb.get("Conv_0", fb.get("out_conv", {}))
+    if "kernel" in oc:
+      sd[f"dpt.fusion_blocks.{i}.out_conv.weight"] = torch.from_numpy(
+          oc["kernel"].transpose(3, 2, 0, 1).copy()
+      )
+    if "bias" in oc:
+      sd[f"dpt.fusion_blocks.{i}.out_conv.bias"] = torch.from_numpy(
+          oc["bias"].copy()
+      )
+
+  # --- Project ---
+  proj = dpt_params.get("project", {})
+  if "kernel" in proj:
+    sd["dpt.project.weight"] = torch.from_numpy(
+        proj["kernel"].transpose(3, 2, 0, 1).copy()
+    )
+  if "bias" in proj:
+    sd["dpt.project.bias"] = torch.from_numpy(proj["bias"].copy())
+
+  # --- Task head (Dense/Linear) ---
+  for head_name in _SCENIC_HEAD_NAMES:
+    if head_name in tree:
+      h = tree[head_name]
+      if "kernel" in h:
+        sd["head.weight"] = torch.from_numpy(h["kernel"].T.copy())
+      if "bias" in h:
+        sd["head.bias"] = torch.from_numpy(h["bias"].copy())
+      break
+
+  return sd
+
+
+def load_decoder_weights(
+    model: Decoder,
+    checkpoint_path: str,
+) -> Decoder:
+  """Load weights into a Decoder from a checkpoint file.
+
+  Supports three checkpoint formats:
+    1. Flax format: keys with ``/`` separators and ``kernel``/``bias``
+       naming (e.g. ``decoder/dpt/reassemble_blocks/out_projection_0/kernel``).
+       Weights are automatically transposed from Flax layout to PyTorch layout.
+    2. Legacy flat format: keys like ``reassemble.…`` that get remapped to
+       ``dpt.reassemble.…``.
+    3. PyTorch hierarchical format: keys already match the model state_dict.
+
+  Args:
+    model: A Decoder instance (SegmentationDecoder, DepthDecoder, etc.).
+    checkpoint_path: Path to a ``.npz`` checkpoint file.
+
+  Returns:
+    The model with loaded weights.
+  """
+  weights = dict(np.load(checkpoint_path, allow_pickle=False))
+
+  if _is_scenic_format(weights):
+    sd = _convert_scenic_checkpoint(weights)
+  else:
+    # Legacy flat or PyTorch hierarchical format.
+    sd = {}
+    for key, value in weights.items():
+      new_key = key
+      for old_prefix, new_prefix in _LEGACY_KEY_PREFIXES.items():
+        if key.startswith(old_prefix):
+          new_key = new_prefix + key[len(old_prefix):]
+          break
+      t = torch.from_numpy(value)
+      # Flip ConvTranspose kernels spatially for Flax->PyTorch parity.
+      if new_key in _CONV_TRANSPOSE_KEYS and t.ndim == 4:
+        t = t.flip([2, 3])
+      sd[new_key] = t
+
+  # Add registered buffers not in checkpoint (e.g. bin_centers).
+  for name, buf in model.named_buffers():
+    if name not in sd:
+      sd[name] = buf
+
+  model.load_state_dict(sd, strict=True)
+  print(f"Loaded decoder weights from {checkpoint_path} ({len(sd)} tensors)")
+  return model
