@@ -36,13 +36,25 @@ NYU_GEONET_ARCHIVE_SAMPLES = 30_916
 NYU_GEONET_USABLE_SAMPLES = 30_914
 
 
+class NumpyCompatUnpickler(pickle.Unpickler):
+    """Read NumPy 2 pickles in the NumPy 1.x evaluation environment."""
+
+    def find_class(self, module: str, name: str):
+        numpy_major = int(np.__version__.split(".", maxsplit=1)[0])
+        if numpy_major < 2 and (
+            module == "numpy._core" or module.startswith("numpy._core.")
+        ):
+            module = "numpy.core" + module[len("numpy._core") :]
+        return super().find_class(module, name)
+
+
 def clean_nyu_geonet_instances(instances: list[str]) -> tuple[list[str], bool]:
     precleaned = len(instances) == NYU_GEONET_USABLE_SAMPLES
     if len(instances) == NYU_GEONET_ARCHIVE_SAMPLES:
         observed_bad = tuple(instances[index] for index in NYU_GEONET_BAD_SORTED_INDICES)
         if observed_bad != NYU_GEONET_BAD_FILES:
             raise RuntimeError(
-                f"Unexpected GeoNet bad samples at official indices: {observed_bad}"
+                f"Unexpected bad samples at the expected GeoNet indices: {observed_bad}"
             )
         instances = instances.copy()
         for index in reversed(NYU_GEONET_BAD_SORTED_INDICES):
@@ -111,13 +123,13 @@ def nyu_depth_train_transform(
     depth: np.ndarray,
     augment: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Apply the released DINOv2 NYUv2 train pipeline before normalization."""
+    """Apply TIPS-resolution NYUv2 augmentation before normalization."""
 
-    image = np.array(image[45:472, 43:608], copy=True)
-    depth = np.array(depth[45:472, 43:608], dtype=np.float32, copy=True)
-    if image.shape != (427, 565, 3) or depth.shape != (427, 565):
+    image = np.array(image, copy=True)
+    depth = np.array(depth, dtype=np.float32, copy=True)
+    if image.shape != (480, 640, 3) or depth.shape != (480, 640):
         raise ValueError(
-            f"NYUv2 source must be 480x640; cropped shapes are {image.shape}, {depth.shape}"
+            f"NYUv2 source must be 480x640; got {image.shape}, {depth.shape}"
         )
 
     if augment:
@@ -147,18 +159,6 @@ def nyu_depth_train_transform(
             image = np.flip(image, axis=1)
             depth = np.flip(depth, axis=1)
 
-    crop_height, crop_width = 416, 544
-    margin_height = image.shape[0] - crop_height
-    margin_width = image.shape[1] - crop_width
-    if augment:
-        top = int(np.random.randint(0, margin_height + 1))
-        left = int(np.random.randint(0, margin_width + 1))
-    else:
-        top = margin_height // 2
-        left = margin_width // 2
-    image = image[top : top + crop_height, left : left + crop_width]
-    depth = depth[top : top + crop_height, left : left + crop_width]
-
     if augment and np.random.rand() < 0.5:
         gamma = np.random.uniform(0.9, 1.1)
         brightness = np.random.uniform(0.75, 1.25)
@@ -172,7 +172,7 @@ def nyu_depth_train_transform(
 
 
 class NYUDepthDataset(Dataset):
-    """BTS synchronized NYUv2 split used by the released DINOv2 depth probe."""
+    """BTS synchronized NYUv2 split evaluated with the TIPS resolution."""
 
     expected_samples = {"train": 24_231, "test": 654}
     max_depth = 10.0
@@ -338,7 +338,7 @@ class NYUTestDataset(Dataset):
 
     def __init__(self, pickle_path: Path, max_samples: int | None = None) -> None:
         with pickle_path.open("rb") as handle:
-            self.data = pickle.load(handle)
+            self.data = NumpyCompatUnpickler(handle).load()
         required = {"test_indices", "depths", "images", "snorms"}
         missing = required.difference(self.data)
         if missing:
@@ -383,6 +383,21 @@ def read_navi_depth(path: Path, scale_factor: float = 10.0) -> torch.Tensor:
     disparity[disparity == 0] = np.inf
     depth = 1.0 / disparity
     return torch.from_numpy(depth).unsqueeze(0).div_(1000.0)
+
+
+def normalize_navi_relative_depth(
+    depth: torch.Tensor,
+    min_depth: torch.Tensor,
+) -> torch.Tensor:
+    """Apply Probe3D's per-image NAVI relative-depth normalization."""
+
+    valid = depth > 0
+    if not valid.any():
+        raise RuntimeError("NAVI crop contains no valid depth pixels")
+    denominator = (depth.max() - min_depth).clamp_min(0.01)
+    normalized = (depth - min_depth) / denominator
+    normalized = normalized * 0.99 + 0.01
+    return normalized.masked_fill(~valid, 0)
 
 
 def resize_short_and_center_crop(tensor: torch.Tensor, size: int = 512) -> torch.Tensor:
@@ -464,6 +479,7 @@ class NAVIProbeDataset(Dataset):
         root: Path,
         split: str,
         augment: bool = True,
+        relative_depth: bool = True,
         max_samples: int | None = None,
     ) -> None:
         if split not in {"trainval", "test"}:
@@ -471,9 +487,13 @@ class NAVIProbeDataset(Dataset):
         self.root = root
         self.split = split
         self.augment = augment and split == "trainval"
+        self.relative_depth = relative_depth
         self.data = self._parse_dataset()
         self.instances = self._build_instances()
+        self.raw_samples = len(self.instances)
+        self.eligible_objects = sorted({instance[0] for instance in self.instances})
         self.instances = self.instances[::4]
+        self.total_samples = len(self.instances)
         if max_samples is not None:
             self.instances = self.instances[:max_samples]
 
@@ -551,6 +571,8 @@ class NAVIProbeDataset(Dataset):
         depth = F.interpolate(depth.unsqueeze(0), (512, 512), mode="nearest").squeeze(0)
         normals = F.interpolate(normals.unsqueeze(0), (512, 512), mode="nearest").squeeze(0)
         depth[depth < min_depth] = 0
+        if self.relative_depth:
+            depth = normalize_navi_relative_depth(depth, min_depth)
         return {
             "image": image,
             "depth": depth,
@@ -561,21 +583,20 @@ class NAVIProbeDataset(Dataset):
 
 def dataset_protocol(dataset: Dataset) -> dict[str, Any]:
     if isinstance(dataset, NYUDepthDataset):
-        tensor_resolution = [416, 544] if dataset.split == "train" else [480, 640]
         return {
             "name": "NYUv2-BTS-sync",
             "split": dataset.split,
             "samples": len(dataset),
             "full_samples": dataset.total_samples,
             "source_resolution": [480, 640],
-            "resolution": tensor_resolution,
+            "resolution": [480, 640],
             "augment": dataset.augment,
             "split_file": dataset.split_path.name,
             "split_sha256": dataset.split_sha256,
             "depth_scale": 1000,
             "pipeline": (
-                "NYUCrop[45:472,43:608] -> RandomRotate(2.5,p=0.5) -> "
-                "RandomFlip(p=0.5) -> RandomCrop(416,544) -> ColorAug(p=0.5)"
+                "full-resolution 480x640 -> RandomRotate(2.5,p=0.5) -> "
+                "RandomFlip(p=0.5) -> ColorAug(p=0.5)"
                 if dataset.split == "train"
                 else "full-resolution 480x640"
             ),
@@ -583,11 +604,22 @@ def dataset_protocol(dataset: Dataset) -> dict[str, Any]:
     if isinstance(dataset, NYUGeoNetDataset):
         return {
             "name": "NYU-GeoNet",
+            "task": dataset.task,
             "split": "trainval",
             "samples": len(dataset),
             "full_samples": dataset.total_samples,
+            "source_resolution": [480, 640],
             "resolution": [480, 480] if dataset.center_crop else [480, 640],
+            "center_crop": dataset.center_crop,
             "augment": dataset.augment,
+            "augmentation": (
+                "ColorJitter(p=0.8) + RandomResizedCrop(scale=0.5-1.0,p=0.5); "
+                "no rotation or horizontal flip"
+                if dataset.augment
+                else None
+            ),
+            "normal_source": "GeoNet extracted NYUv2 surface normals",
+            "valid_mask": "metric depth > 0 after removing depth > 10m",
             "archive_samples": NYU_GEONET_ARCHIVE_SAMPLES,
             "precleaned_root": dataset.precleaned,
             "removed_sorted_indices": list(NYU_GEONET_BAD_SORTED_INDICES),
@@ -596,18 +628,29 @@ def dataset_protocol(dataset: Dataset) -> dict[str, Any]:
     if isinstance(dataset, NYUTestDataset):
         return {
             "name": "NYUv2-labeled",
+            "task": "normals",
             "split": "test",
             "samples": len(dataset),
             "resolution": [480, 640],
+            "normal_source": "Ladicky surface-normal metadata",
+            "valid_mask": "metric depth > 0 after removing depth > 10m",
         }
     if isinstance(dataset, NAVIProbeDataset):
         return {
             "name": "NAVI",
             "split": dataset.split,
             "samples": len(dataset),
+            "full_samples": dataset.total_samples,
+            "samples_before_stride": dataset.raw_samples,
+            "eligible_objects": len(dataset.eligible_objects),
             "resolution": [512, 512],
             "stride": 4,
+            "relative_depth": dataset.relative_depth,
+            "relative_depth_valid_range": [0.01, 1.0] if dataset.relative_depth else None,
             "augment": dataset.augment,
             "collection_pattern": "multiview_*" if dataset.split == "trainval" else "wild_set",
+            "normal_source": "Probe3D depth-to-normal construction",
+            "normal_coordinate_frame": "+x right, +y down, +z into camera",
+            "normal_valid_mask": "metric depth > 0",
         }
     raise TypeError(type(dataset))

@@ -22,11 +22,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from downstream_utils import (  # noqa: E402
-    from_pretrained_with_local_fallback,
-    parse_torch_dtype,
-    resolve_device,
-)
+from downstream_utils import parse_torch_dtype  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -167,12 +163,14 @@ def _three_floats(value: Sequence[float], name: str) -> tuple[float, float, floa
 
 
 def _model_family(model: nn.Module) -> str:
+    """Resolve the feature path from architecture, never from checkpoint name."""
+
     model_type = str(getattr(model.config, "model_type", "")).lower()
     if "siglip" in model_type:
         return "siglip"
     if "clip" in model_type:
         return "clip"
-    raise ValueError(f"Unsupported model type for official probes: {model_type}")
+    raise ValueError(f"Unsupported model type for probes: {model_type}")
 
 
 class FrozenVisionTower(nn.Module):
@@ -191,17 +189,15 @@ class FrozenVisionTower(nn.Module):
         local_files_only: bool = False,
     ) -> None:
         super().__init__()
-        self.device_name = resolve_device(device)
+        self.device_name = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.processor_id = processor_id or model_id
         dtype = parse_torch_dtype(torch_dtype)
 
-        self.processor = from_pretrained_with_local_fallback(
-            AutoImageProcessor,
+        self.processor = AutoImageProcessor.from_pretrained(
             self.processor_id,
             local_files_only=local_files_only,
         )
-        full_model = from_pretrained_with_local_fallback(
-            AutoModel,
+        full_model = AutoModel.from_pretrained(
             model_id,
             local_files_only=local_files_only,
             dtype=dtype,
@@ -289,9 +285,14 @@ class FrozenVisionTower(nn.Module):
         grid_w: int,
     ) -> torch.Tensor:
         expected = grid_h * grid_w
-        if tokens.shape[1] == expected + 1:
+        if self.metadata.family == "clip":
+            if tokens.shape[1] != expected + 1:
+                raise RuntimeError(
+                    f"Expected CLS plus {expected} patch tokens for {grid_h}x{grid_w}, "
+                    f"got {tokens.shape[1]}"
+                )
             tokens = tokens[:, 1:]
-        if tokens.shape[1] != expected:
+        elif tokens.shape[1] != expected:
             raise RuntimeError(
                 f"Expected {expected} patch tokens for {grid_h}x{grid_w}, "
                 f"got {tokens.shape[1]}"

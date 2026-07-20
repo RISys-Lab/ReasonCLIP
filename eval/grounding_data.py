@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from PIL import Image, ImageOps
 from torch.utils.data import Dataset
 
-from official_grounding import (
+from grounding import (
     C4Tokenizer,
     TASK_PREFIX,
     box_string,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paper-protocol frozen SigLIP/CLIP semantic-segmentation probe.
+"""Paper-protocol frozen CLIP/SigLIP 1/SigLIP 2 segmentation probe.
 
 The implementation mirrors the TIPS appendix and the released DINOv2
 VOC/ADE20K linear-head configs: 512 crops, effective batch 16, 40k updates,
@@ -33,15 +33,45 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from downstream_utils import safe_model_name, seed_everything, write_json  # noqa: E402
-from official_probe_utils import (  # noqa: E402
+from probe_utils import (  # noqa: E402
     DeterministicAugmentDataset,
     DeterministicBatchSampler,
     FrozenVisionTower,
 )
 
-DEFAULT_DATA_ROOT = REPO_ROOT / "rebuttal" / "downstream_data"
-DEFAULT_OUT_DIR = SCRIPT_DIR / "results" / "official_downstream"
+DEFAULT_DATA_ROOT = REPO_ROOT / "data" / "downstream_data"
+DEFAULT_OUT_DIR = SCRIPT_DIR / "results" / "downstream"
+DEFAULT_TORCH_DTYPE = "bf16"
+DEFAULT_SEED = 42
+RESUME_PROTOCOL = "absolute-step-v1"
 IGNORE_LABEL = 255
+
+PAPER_REFERENCES = {
+    ("openai/clip-vit-large-patch14", "voc"): (
+        74.5,
+        "SigLIP 2 Table 2, CLIP L/14@224 row / TIPS v1 dense protocol",
+    ),
+    ("openai/clip-vit-large-patch14", "ade20k"): (
+        39.0,
+        "SigLIP 2 Table 2, CLIP L/14@224 row / TIPS v1 dense protocol",
+    ),
+    ("google/siglip-so400m-patch14-384", "voc"): (
+        73.8,
+        "SigLIP 2 Table 2, SigLIP 1 So/14@384 row / TIPS v1 dense protocol",
+    ),
+    ("google/siglip-so400m-patch14-384", "ade20k"): (
+        40.8,
+        "SigLIP 2 Table 2, SigLIP 1 So/14@384 row / TIPS v1 dense protocol",
+    ),
+    ("google/siglip2-so400m-patch14-384", "voc"): (
+        78.1,
+        "SigLIP 2 Table 2, SigLIP 2 So/14@384 row / TIPS v1 dense protocol",
+    ),
+    ("google/siglip2-so400m-patch14-384", "ade20k"): (
+        45.4,
+        "SigLIP 2 Table 2, SigLIP 2 So/14@384 row / TIPS v1 dense protocol",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -83,12 +113,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=["voc", "ade20k"], required=True)
     parser.add_argument("--model-id", required=True)
-    parser.add_argument("--processor-id")
     parser.add_argument("--model-name")
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--torch-dtype", default="bf16")
+    parser.add_argument("--torch-dtype", default=DEFAULT_TORCH_DTYPE)
     parser.add_argument("--local-files-only", action="store_true")
     parser.add_argument("--steps", type=int, default=40_000)
     parser.add_argument("--effective-batch-size", type=int, default=16)
@@ -102,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-interval", type=int, default=10_000)
     parser.add_argument("--save-interval", type=int, default=1000)
     parser.add_argument("--log-interval", type=int, default=50)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--max-train", type=int)
     parser.add_argument("--max-val", type=int)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
@@ -128,7 +157,7 @@ def build_voc_records(data_root: Path) -> tuple[list[SegmentationRecord], list[S
     aug_mask_root = voc_root / "SegmentationClassAug"
     if len(train_ids) != 1464 or len(aug_ids) != 9118 or len(val_ids) != 1449:
         raise RuntimeError(
-            "VOC official split mismatch: expected train=1464, aug=9118, val=1449; "
+            "VOC split mismatch: expected train=1464, aug=9118, val=1449; "
             f"got {len(train_ids)}, {len(aug_ids)}, {len(val_ids)}"
         )
 
@@ -179,7 +208,7 @@ def build_ade_records(data_root: Path) -> tuple[list[SegmentationRecord], list[S
     val_records = records("validation")
     if len(train_records) != 20_210 or len(val_records) != 2000:
         raise RuntimeError(
-            "ADE20K official split mismatch: expected train=20210, val=2000; "
+            "ADE20K split mismatch: expected train=20210, val=2000; "
             f"got {len(train_records)}, {len(val_records)}"
         )
     return train_records, val_records
@@ -290,7 +319,7 @@ def load_rgb_mask(record: SegmentationRecord, reduce_zero_label: bool) -> tuple[
     return image, mask
 
 
-class OfficialSegmentationTrainDataset(Dataset):
+class SegmentationTrainDataset(Dataset):
     def __init__(
         self,
         records: list[SegmentationRecord],
@@ -504,8 +533,7 @@ def checkpoint_payload(
     return {
         "dataset": args.dataset,
         "model_id": args.model_id,
-        "processor_id": args.processor_id or args.model_id,
-        "resume_protocol": "absolute-step-v1",
+        "resume_protocol": RESUME_PROTOCOL,
         "step": step,
         "head": head.state_dict(),
         "optimizer": optimizer.state_dict(),
@@ -531,22 +559,16 @@ def restore_checkpoint(
     optimizer: torch.optim.Optimizer,
 ) -> tuple[int, float, list[dict]]:
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    expected = (args.dataset, args.model_id, args.processor_id or args.model_id)
-    actual = (checkpoint["dataset"], checkpoint["model_id"], checkpoint["processor_id"])
+    expected = (args.dataset, args.model_id)
+    actual = (checkpoint["dataset"], checkpoint["model_id"])
     if actual != expected:
         raise RuntimeError(f"Checkpoint spec mismatch: expected {expected}, got {actual}")
     checkpoint_step = int(checkpoint["step"])
     resume_protocol = checkpoint.get("resume_protocol")
-    if resume_protocol != "absolute-step-v1":
-        if not args.evaluate_only and checkpoint_step < args.steps:
-            raise RuntimeError(
-                "Cannot deterministically continue this legacy segmentation checkpoint; "
-                "restart with --no-resume or use --evaluate-only"
-            )
-        print(
-            "[resume] accepting legacy checkpoint for evaluation/completed run; "
-            "its incomplete training stream is not resumable",
-            flush=True,
+    if resume_protocol != RESUME_PROTOCOL:
+        raise RuntimeError(
+            "Incompatible segmentation checkpoint resume protocol: "
+            f"expected {RESUME_PROTOCOL!r}, got {resume_protocol!r}"
         )
     head.load_state_dict(checkpoint["head"])
     optimizer.load_state_dict(checkpoint["optimizer"])
@@ -555,8 +577,8 @@ def restore_checkpoint(
     torch.set_rng_state(checkpoint["torch_rng_state"])
     return (
         checkpoint_step,
-        float(checkpoint.get("best_miou", -1.0)),
-        list(checkpoint.get("history", [])),
+        float(checkpoint["best_miou"]),
+        list(checkpoint["history"]),
     )
 
 
@@ -576,7 +598,6 @@ def main() -> None:
 
     tower = FrozenVisionTower(
         args.model_id,
-        processor_id=args.processor_id,
         device=args.device,
         torch_dtype=args.torch_dtype,
         local_files_only=args.local_files_only,
@@ -586,13 +607,15 @@ def main() -> None:
         num_classes = 21
         max_long_edge = 2048
         reduce_zero_label = False
-        paper_reference = 73.8 if tower.metadata.model_id == "google/siglip-so400m-patch14-384" else None
     else:
         train_records, val_records = build_ade_records(args.data_root)
         num_classes = 150
         max_long_edge = 99_999_999
         reduce_zero_label = True
-        paper_reference = 40.8 if tower.metadata.model_id == "google/siglip-so400m-patch14-384" else None
+    paper_reference, paper_reference_source = PAPER_REFERENCES.get(
+        (tower.metadata.model_id, args.dataset),
+        (None, None),
+    )
     verify_records(train_records, "train")
     verify_records(val_records, "validation")
     if args.max_train is not None:
@@ -614,7 +637,8 @@ def main() -> None:
         uses_voc_sbd_aug=args.dataset == "voc",
         reduce_zero_label=reduce_zero_label,
     )
-    print(json.dumps({"model": tower.protocol_summary(), "dataset": asdict(dataset_protocol)}, indent=2))
+    model_protocol = tower.protocol_summary()
+    print(json.dumps({"model": model_protocol, "dataset": asdict(dataset_protocol)}, indent=2))
 
     model_name = args.model_name or safe_model_name(args.model_id)
     result_path = args.out_dir / "segmentation" / f"{args.dataset}_{model_name}.json"
@@ -640,7 +664,7 @@ def main() -> None:
             raise RuntimeError("--evaluate-only requires an existing checkpoint")
         metrics = evaluate(args, tower, head, val_records, num_classes, reduce_zero_label)
     else:
-        train_dataset = OfficialSegmentationTrainDataset(
+        train_dataset = SegmentationTrainDataset(
             train_records,
             tower,
             max_long_edge,
@@ -722,9 +746,9 @@ def main() -> None:
             metrics = evaluate(args, tower, head, val_records, num_classes, reduce_zero_label)
 
     result = {
-        "benchmark": "official_frozen_backbone_segmentation",
+        "benchmark": "frozen_backbone_segmentation",
         "dataset": asdict(dataset_protocol),
-        "model": tower.protocol_summary(),
+        "model": model_protocol,
         "model_name": model_name,
         "training": {
             "steps": args.steps,
@@ -737,9 +761,21 @@ def main() -> None:
             "warmup_ratio": args.warmup_ratio,
             "lr_policy": "linear_warmup_then_poly_power_1",
             "seed": args.seed,
+            "backbone_dtype": args.torch_dtype,
+            "head_dtype": "fp32",
             "frozen_backbone": True,
             "head": "BatchNorm2d + Conv2d(1x1)",
-            "resume_protocol": "absolute-step-v1",
+            "head_parameters": {
+                "input_channels": tower.output_channels,
+                "output_channels": num_classes,
+                "kernel_size": 1,
+                "dropout": 0.0,
+                "classifier_bias": True,
+                "classifier_weight_init": "normal_std_0.01",
+                "classifier_bias_init": 0.0,
+                "global_feature": model_protocol["global_feature"],
+            },
+            "resume_protocol": RESUME_PROTOCOL,
             "shuffle": "absolute batch index with epoch-specific permutations",
             "augmentation_rng": "per-sample deterministic seed",
         },
@@ -747,7 +783,7 @@ def main() -> None:
         "best_miou": best_miou,
         "history": history,
         "paper_reference_miou_percent": paper_reference,
-        "paper_reference_source": "SigLIP 2 Table 2 / TIPS dense protocol" if paper_reference else None,
+        "paper_reference_source": paper_reference_source,
         "checkpoint": str(checkpoint_path),
     }
     write_json(result_path, result)

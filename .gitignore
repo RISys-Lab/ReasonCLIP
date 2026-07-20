@@ -178,6 +178,7 @@ cython_debug/
 
 wandb/
 weights/
+# Local datasets, including downstream eval data.
 data/
 outputs/
 eval/results/

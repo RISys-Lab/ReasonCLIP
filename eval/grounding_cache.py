@@ -19,15 +19,15 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-from official_grounding import quantize_box_xywh
-from official_grounding_data import (
+from grounding import quantize_box_xywh
+from grounding_data import (
     EpochGroundingRecordSampler,
     GroundingRecord,
     IMAGE_TRANSFORM_NAME,
     image_to_tensor,
     load_grounding_records,
 )
-from official_probe_utils import FrozenVisionTower
+from probe_utils import FrozenVisionTower
 
 
 class UniqueGroundingImages(Dataset):

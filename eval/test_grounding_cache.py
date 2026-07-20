@@ -14,18 +14,18 @@ import numpy as np
 import torch
 from PIL import Image
 
-from eval.eval_official_grounding import create_cached_loader, evaluate_split
-from eval.official_grounding_cache import (
+from eval.eval_grounding import create_cached_loader, evaluate_split
+from eval.grounding_cache import (
     CachedGroundingDataset,
     CompositeGroundingFeatureCache,
     build_feature_cache,
 )
-from eval.official_grounding_data import (
+from eval.grounding_data import (
     IMAGE_TRANSFORM_NAME,
     image_to_tensor,
     load_grounding_records,
 )
-from eval.official_probe_utils import FrozenVisionTower, VisionMetadata
+from eval.probe_utils import FrozenVisionTower, VisionMetadata
 
 
 class GroundingFeatureCacheTest(unittest.TestCase):

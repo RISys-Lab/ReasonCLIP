@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused regression tests for the official LocCa grounding protocol."""
+"""Focused regression tests for the LocCa grounding protocol."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from eval.official_grounding import (
+from eval.grounding import (
     C4Tokenizer,
     LocCaDecoder,
     box_iou_xyxy,
@@ -27,14 +27,14 @@ from eval.official_grounding import (
     shift_right,
     target_string,
 )
-from eval.official_grounding_data import (
+from eval.grounding_data import (
     EpochGroundingRecordSampler,
     GroundingRecord,
     image_to_tensor,
     prompt_tokens,
     training_tokens,
 )
-from eval.eval_official_grounding import (
+from eval.eval_grounding import (
     adafactor_parameter_groups,
     cosine_learning_rate,
     file_fingerprint,
@@ -45,13 +45,13 @@ from eval.eval_official_grounding import (
     protocols_compatible_for_resume,
     resume_epoch_position,
 )
-from eval.official_probe_utils import FrozenVisionTower, VisionMetadata
+from eval.probe_utils import FrozenVisionTower, VisionMetadata
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TOKENIZER_PATH = (
     REPO_ROOT
-    / "rebuttal"
+    / "data"
     / "downstream_data"
     / "C4Tokenizer"
     / "cc_en.32000.sentencepiece.model"
@@ -65,7 +65,7 @@ class GroundingProtocolTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             grounding_training_steps(3, 4, 50)
 
-    def test_paper_baseline_requires_complete_official_baseline_run(self) -> None:
+    def test_paper_baseline_requires_complete_baseline_run(self) -> None:
         args = SimpleNamespace(
             training_mix="full",
             loss_scope="full_aref",
@@ -102,7 +102,7 @@ class GroundingProtocolTest(unittest.TestCase):
         self.assertTrue(torch.equal(actual, expected))
 
     def test_cli_defaults_match_reported_rec_table(self) -> None:
-        with patch("sys.argv", ["eval_official_grounding.py", "--model-id", "dummy"]):
+        with patch("sys.argv", ["eval_grounding.py", "--model-id", "dummy"]):
             args = parse_args()
         self.assertEqual(args.training_mix, "full")
         self.assertEqual(args.loss_scope, "full_aref")

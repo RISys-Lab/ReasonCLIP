@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Official frozen-encoder LocCa/SigLIP2 RefCOCO grounding probe.
+"""Frozen-encoder LocCa/SigLIP2 RefCOCO grounding probe.
 
 This trains a random six-layer Base autoregressive decoder on image-expression
 pairs from the standard mixed RefCOCO, RefCOCO+, and RefCOCOg train splits
@@ -32,7 +32,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from downstream_utils import safe_model_name, seed_everything, write_json  # noqa: E402
-from official_grounding import (  # noqa: E402
+from grounding import (  # noqa: E402
     C4Tokenizer,
     LocCaDecoder,
     box_iou_xyxy,
@@ -43,28 +43,28 @@ from official_grounding import (  # noqa: E402
     shift_right,
     xywh_to_xyxy,
 )
-from official_grounding_data import (  # noqa: E402
+from grounding_data import (  # noqa: E402
     IMAGE_TRANSFORM_NAME,
     RefCOCOLocCaDataset,
     collate_grounding,
     prompt_tokens,
     training_tokens,
 )
-from official_grounding_cache import (  # noqa: E402
+from grounding_cache import (  # noqa: E402
     CachedGroundingDataset,
     CompositeGroundingFeatureCache,
     GroundingFeatureCache,
     build_feature_cache,
     collate_cached,
 )
-from official_probe_utils import FrozenVisionTower  # noqa: E402
+from probe_utils import FrozenVisionTower  # noqa: E402
 
 
-DEFAULT_DATA_ROOT = REPO_ROOT / "rebuttal" / "downstream_data"
+DEFAULT_DATA_ROOT = REPO_ROOT / "data" / "downstream_data"
 DEFAULT_RECORDS_ROOT = DEFAULT_DATA_ROOT / "RefCOCOLocCa"
 DEFAULT_IMAGE_ROOT = DEFAULT_DATA_ROOT / "COCO" / "train2014"
 DEFAULT_TOKENIZER = DEFAULT_DATA_ROOT / "C4Tokenizer" / "cc_en.32000.sentencepiece.model"
-DEFAULT_OUT_DIR = SCRIPT_DIR / "results" / "official_downstream"
+DEFAULT_OUT_DIR = SCRIPT_DIR / "results" / "downstream"
 
 EVAL_SPLITS = (
     ("refcoco", "val"),
