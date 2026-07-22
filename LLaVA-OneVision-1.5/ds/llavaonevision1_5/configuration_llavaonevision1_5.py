@@ -57,6 +57,62 @@ class RiceConfig(PretrainedConfig):
         self.text_hidden_size = text_hidden_size
 
 
+class FixedVisionConfig(PretrainedConfig):
+    """Configuration for a fixed-resolution Hugging Face vision tower."""
+
+    model_type = "fixed_vision_tower"
+    base_config_key = "vision_config"
+
+    def __init__(
+        self,
+        vision_tower_type="siglip",
+        vision_model_name_or_path="google/siglip-so400m-patch14-384",
+        image_size=384,
+        patch_size=14,
+        hidden_size=1152,
+        text_hidden_size=4096,
+        vision_feature_layer=-2,
+        vision_feature_select_strategy="full",
+        num_additional_image_tokens=0,
+        backbone_config=None,
+        spatial_merge_size=1,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        if vision_tower_type not in {"clip", "siglip"}:
+            raise ValueError(
+                "vision_tower_type must be either 'clip' or 'siglip', "
+                f"got {vision_tower_type!r}"
+            )
+        if vision_feature_select_strategy not in {"default", "full"}:
+            raise ValueError(
+                "vision_feature_select_strategy must be 'default' or 'full', "
+                f"got {vision_feature_select_strategy!r}"
+            )
+
+        self.vision_tower_type = vision_tower_type
+        self.vision_model_name_or_path = vision_model_name_or_path
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.hidden_size = hidden_size
+        self.text_hidden_size = text_hidden_size
+        self.vision_feature_layer = vision_feature_layer
+        self.vision_feature_select_strategy = vision_feature_select_strategy
+        self.num_additional_image_tokens = num_additional_image_tokens
+        self.backbone_config = backbone_config or {}
+        # Kept for the shared multimodal position-id code. Fixed towers do not merge patches.
+        self.spatial_merge_size = spatial_merge_size
+
+    @property
+    def grid_size(self):
+        return self.image_size // self.patch_size
+
+    @property
+    def image_seq_length(self):
+        return self.grid_size * self.grid_size
+
+
 class LLaVAOneVision1_5_TextConfig(PretrainedConfig):
     r"""
     Args:
@@ -265,25 +321,47 @@ class Llavaonevision1_5Config(PretrainedConfig):
         vision_config=None,
         image_token_id=151655,
         video_token_id=151656,
+        vision_start_token_id=151652,
         vocab_size=152064,
         **kwargs,
     ):
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            vision_model_type = vision_config.get("model_type", RiceConfig.model_type)
+            vision_config_class = {
+                RiceConfig.model_type: RiceConfig,
+                FixedVisionConfig.model_type: FixedVisionConfig,
+            }.get(vision_model_type)
+            if vision_config_class is None:
+                raise ValueError(f"Unsupported vision config model_type: {vision_model_type}")
+            self.vision_config = vision_config_class(**vision_config)
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
+        elif isinstance(vision_config, PretrainedConfig):
+            self.vision_config = vision_config
+        else:
+            raise TypeError(f"Unsupported vision_config type: {type(vision_config)!r}")
 
         if isinstance(text_config, dict):
             self.text_config = self.sub_configs["text_config"](**text_config)
         elif text_config is None:
             # For BC use all kwargs to init `TextConfig`
             self.text_config = self.sub_configs["text_config"](**kwargs)
+        elif isinstance(text_config, PretrainedConfig):
+            self.text_config = text_config
+        else:
+            raise TypeError(f"Unsupported text_config type: {type(text_config)!r}")
 
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
+        self.vision_start_token_id = vision_start_token_id
         self.vocab_size = vocab_size
 
         super().__init__(**kwargs)
 
 
-__all__ = ["Llavaonevision1_5Config", "LLaVAOneVision1_5_TextConfig"]
+__all__ = [
+    "FixedVisionConfig",
+    "Llavaonevision1_5Config",
+    "LLaVAOneVision1_5_TextConfig",
+    "RiceConfig",
+]

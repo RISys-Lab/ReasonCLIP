@@ -1,25 +1,56 @@
-from llavaonevision1_5.configuration_llavaonevision1_5 import Llavaonevision1_5Config
+from llavaonevision1_5.configuration_llavaonevision1_5 import FixedVisionConfig, Llavaonevision1_5Config
 from llavaonevision1_5.modeling_llavaonevision1_5 import LLaVAOneVision1_5_ForConditionalGeneration
-from transformers import Qwen2Tokenizer, AutoProcessor, AutoConfig
-from transformers import MLCDVisionModel
-from transformers import CLIPImageProcessor
-from transformers import Qwen2VLImageProcessor, AutoProcessor
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoImageProcessor,
+    AutoModelForCausalLM,
+    AutoProcessor,
+    AutoTokenizer,
+    CLIPImageProcessor,
+    CLIPVisionConfig,
+    CLIPVisionModel,
+    LlavaProcessor,
+    MLCDVisionModel,
+    Qwen2Tokenizer,
+    Qwen2VLImageProcessor,
+    SiglipVisionConfig,
+    SiglipVisionModel,
+)
 import os
 import torch
 import numpy as np
-from transformers import Qwen2Tokenizer, logging
+from transformers import logging
 from safetensors.torch import load_file
 from PIL import Image, ImageDraw
 from huggingface_hub import hf_hub_download, snapshot_download
-import requests
 from io import BytesIO
+from urllib.request import urlopen
 
 import argparse
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 CUDA_DEVICE=0
+
+VISION_TOWER_SPECS = {
+    "rice": {
+        "model_name_or_path": "DeepGlint-AI/rice-vit-large-patch14-560",
+    },
+    "clip_l14_336": {
+        "model_name_or_path": "openai/clip-vit-large-patch14-336",
+        "tower_type": "clip",
+        "image_size": 336,
+        "feature_select_strategy": "default",
+        "num_additional_image_tokens": 1,
+    },
+    "siglip_so400m_384": {
+        "model_name_or_path": "google/siglip-so400m-patch14-384",
+        "tower_type": "siglip",
+        "image_size": 384,
+        "feature_select_strategy": "full",
+        "num_additional_image_tokens": 0,
+    },
+}
 
 def cosine_similarity(a, b):
     a, b = a.flatten().float(), b.flatten().float()
@@ -35,18 +66,117 @@ def create_test_image():
     draw.text((100, 100), "TEST", fill='white')
     return img
 
-def load_empty_model(llm_path):
-    print("Loading tokenizer and processor from Qwen2.5-VL and empty model...")
-    tokenizer = Qwen2Tokenizer.from_pretrained('Qwen/Qwen2.5-VL-7B-Instruct', trust_remote_code=True, device_map={"": f"cuda:{CUDA_DEVICE}"}, use_fast=True)
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=True)
-    processor.image_processor.temporal_patch_size = 1
-    processor.image_processor.max_pixels = 1600*1600
-    llava_ov_config = Llavaonevision1_5Config()
+def resolve_vision_model_path(vision_tower, vit_path=None):
+    if vision_tower not in VISION_TOWER_SPECS:
+        raise ValueError(f"Unsupported vision tower: {vision_tower}")
+    return vit_path or VISION_TOWER_SPECS[vision_tower]["model_name_or_path"]
+
+
+def _get_single_token_id(tokenizer, token):
+    token_ids = tokenizer.encode(token, add_special_tokens=False)
+    if len(token_ids) != 1:
+        raise ValueError(f"Expected {token!r} to map to one tokenizer id, got {token_ids}")
+    return token_ids[0]
+
+
+def _build_fixed_vision_config(vision_tower, vit_path, text_hidden_size, vision_feature_layer):
+    spec = VISION_TOWER_SPECS[vision_tower]
+    config_class = CLIPVisionConfig if spec["tower_type"] == "clip" else SiglipVisionConfig
+    backbone_config = config_class.from_pretrained(vit_path)
+    backbone_config.image_size = spec["image_size"]
+
+    return FixedVisionConfig(
+        vision_tower_type=spec["tower_type"],
+        vision_model_name_or_path=vit_path,
+        image_size=spec["image_size"],
+        patch_size=backbone_config.patch_size,
+        hidden_size=backbone_config.hidden_size,
+        text_hidden_size=text_hidden_size,
+        vision_feature_layer=vision_feature_layer,
+        vision_feature_select_strategy=spec["feature_select_strategy"],
+        num_additional_image_tokens=spec["num_additional_image_tokens"],
+        backbone_config=backbone_config.to_dict(),
+    )
+
+
+def _build_fixed_processor(tokenizer, vit_path, vision_config):
+    image_processor = AutoImageProcessor.from_pretrained(vit_path)
+    image_processor.do_resize = True
+    if vision_config.vision_tower_type == "clip":
+        image_processor.size = {"shortest_edge": vision_config.image_size}
+        image_processor.crop_size = {
+            "height": vision_config.image_size,
+            "width": vision_config.image_size,
+        }
+        image_processor.do_center_crop = True
+    else:
+        image_processor.size = {
+            "height": vision_config.image_size,
+            "width": vision_config.image_size,
+        }
+        image_processor.do_center_crop = False
+        if hasattr(image_processor, "crop_size"):
+            image_processor.crop_size = {
+                "height": vision_config.image_size,
+                "width": vision_config.image_size,
+            }
+
+    processor = LlavaProcessor(
+        image_processor=image_processor,
+        tokenizer=tokenizer,
+        patch_size=vision_config.patch_size,
+        vision_feature_select_strategy=vision_config.vision_feature_select_strategy,
+        image_token="<|image_pad|>",
+        num_additional_image_tokens=vision_config.num_additional_image_tokens,
+        chat_template=getattr(tokenizer, "chat_template", None),
+    )
+    processor.fixed_vision = True
+    return processor
+
+
+def load_empty_model(llm_path, vision_tower="rice", vit_path=None, vision_feature_layer=-2):
+    vit_path = resolve_vision_model_path(vision_tower, vit_path)
     llm_config = AutoConfig.from_pretrained(llm_path, trust_remote_code=True, use_fast=True)
+    llava_ov_config = Llavaonevision1_5Config()
     llava_ov_config.text_config.update(llm_config.to_dict())
-    llava_ov_config.vision_config.text_hidden_size = llava_ov_config.text_config.hidden_size
+
+    if vision_tower == "rice":
+        print("Loading the existing Rice processor and empty model...")
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "Qwen/Qwen2.5-VL-7B-Instruct", trust_remote_code=True, use_fast=True
+        )
+        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=True)
+        processor.image_processor.temporal_patch_size = 1
+        processor.image_processor.max_pixels = 1600 * 1600
+        llava_ov_config.vision_config.text_hidden_size = llava_ov_config.text_config.hidden_size
+    else:
+        print(f"Loading fixed {vision_tower} processor and empty model...")
+        tokenizer = AutoTokenizer.from_pretrained(llm_path, trust_remote_code=True, use_fast=True)
+        llava_ov_config.vision_config = _build_fixed_vision_config(
+            vision_tower=vision_tower,
+            vit_path=vit_path,
+            text_hidden_size=llava_ov_config.text_config.hidden_size,
+            vision_feature_layer=vision_feature_layer,
+        )
+        llava_ov_config.image_token_id = _get_single_token_id(tokenizer, "<|image_pad|>")
+        llava_ov_config.video_token_id = _get_single_token_id(tokenizer, "<|video_pad|>")
+        llava_ov_config.vision_start_token_id = _get_single_token_id(tokenizer, "<|vision_start|>")
+        processor = _build_fixed_processor(tokenizer, vit_path, llava_ov_config.vision_config)
+
     model = LLaVAOneVision1_5_ForConditionalGeneration(llava_ov_config)
     return model, processor, tokenizer
+
+
+def load_fixed_vit_weights(model, vit_path, vision_tower):
+    spec = VISION_TOWER_SPECS[vision_tower]
+    model_class = CLIPVisionModel if spec["tower_type"] == "clip" else SiglipVisionModel
+    print(f"Loading fixed {spec['tower_type']} weights from: {vit_path}")
+    pretrained_vision_model = model_class.from_pretrained(vit_path, torch_dtype=torch.float32)
+    loaded_keys = len(pretrained_vision_model.state_dict())
+    # Replace the randomly initialized backbone to avoid holding two full vision towers.
+    model.model.visual.vision_model = pretrained_vision_model
+    print(f"Fixed vision weights loaded successfully: {loaded_keys} tensors")
+    return loaded_keys
 
 def load_vit_weights(model, vit_path):
     """
@@ -256,8 +386,11 @@ def validate_vit_consistency(model, vit_path, img_path):
         sample_image: sample image
     """
     print("Verifying consistency of ViT component...")
-    response = requests.get(img_path)
-    sample_image = Image.open(BytesIO(response.content)).convert("RGB")
+    if img_path.startswith(("http://", "https://")):
+        with urlopen(img_path) as response:
+            sample_image = Image.open(BytesIO(response.read())).convert("RGB")
+    else:
+        sample_image = Image.open(img_path).convert("RGB")
     sample_image = sample_image.resize((560, 560))
     
     rice_model = MLCDVisionModel.from_pretrained(vit_path, device_map={"": f"cuda:{CUDA_DEVICE}"}, dtype=torch.float32)
@@ -295,6 +428,31 @@ def validate_vit_consistency(model, vit_path, img_path):
             print("✅ ViT component consistency verification passed")
         else:
             print("❌ ViT component consistency verification failed")
+
+
+def validate_fixed_vision_shape(model, processor):
+    vision_config = model.config.vision_config
+    sample_image = create_test_image().resize((vision_config.image_size, vision_config.image_size))
+    image_inputs = processor.image_processor(images=sample_image, return_tensors="pt")
+    pixel_values = image_inputs["pixel_values"].to(device=model.device, dtype=model.dtype)
+
+    with torch.no_grad():
+        patch_features = model.visual(pixel_values, is_verifying=True)
+        projected_features = model.visual(pixel_values)
+
+    expected_shape = (vision_config.image_seq_length, vision_config.hidden_size)
+    expected_projected_shape = (vision_config.image_seq_length, vision_config.text_hidden_size)
+    if tuple(patch_features.shape) != expected_shape:
+        raise ValueError(f"Unexpected fixed vision feature shape: {tuple(patch_features.shape)} != {expected_shape}")
+    if tuple(projected_features.shape) != expected_projected_shape:
+        raise ValueError(
+            f"Unexpected projected feature shape: {tuple(projected_features.shape)} != {expected_projected_shape}"
+        )
+    print(
+        f"Fixed vision validation passed: {vision_config.vision_tower_type}, "
+        f"{vision_config.image_size}px, {vision_config.image_seq_length} tokens"
+    )
+
 
 def validate_llm_consistency(model, llm_path, sample_text):
     """
@@ -352,7 +510,8 @@ def save_merged_model(model, output_path, tokenizer, image_processor):
 
 def main(args):
     # model paths
-    vit_path = args.vit_path
+    vision_tower = args.vision_tower
+    vit_path = resolve_vision_model_path(vision_tower, args.vit_path)
     adapter_path = args.adapter_path
     llm_path = args.llm_path
     output_path = args.output_path
@@ -360,13 +519,21 @@ def main(args):
     sample_text = args.sample_text
     
     # 1. load empty model
-    model, processor, tokenizer = load_empty_model(llm_path)
+    model, processor, tokenizer = load_empty_model(
+        llm_path=llm_path,
+        vision_tower=vision_tower,
+        vit_path=vit_path,
+        vision_feature_layer=args.vision_feature_layer,
+    )
     model.to(dtype=torch.float32)
     
     pretrain_weights = {}
     # 2. load ViT weights
-    vit_weights, cur_len = load_vit_weights(model, vit_path)
-    pretrain_weights.update(vit_weights)
+    if vision_tower == "rice":
+        vit_weights, cur_len = load_vit_weights(model, vit_path)
+        pretrain_weights.update(vit_weights)
+    else:
+        cur_len = load_fixed_vit_weights(model, vit_path, vision_tower)
 
     # 3. load Adapter weights
     if adapter_path:
@@ -380,8 +547,12 @@ def main(args):
     model.load_state_dict(pretrain_weights, strict=False)
 
     # 5. validate model consistency
-    validate_vit_consistency(model, vit_path, img_path)
-    validate_llm_consistency(model, llm_path, sample_text)
+    if not args.skip_validation:
+        if vision_tower == "rice":
+            validate_vit_consistency(model, vit_path, img_path)
+        else:
+            validate_fixed_vision_shape(model, processor)
+        validate_llm_consistency(model, llm_path, sample_text)
 
     # 6. save merged model
     save_merged_model(model.to(dtype=torch.bfloat16), output_path, tokenizer, processor)
@@ -389,11 +560,39 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge ViT and LLM models")
-    parser.add_argument("--vit_path", type=str, default="DeepGlint-AI/rice-vit-large-patch14-560", help="Path to the ViT model")
-    parser.add_argument("--llm_path", type=str, default="Qwen/Qwen3-4B-Instruct-2507", help="Path to the LLM model")
-    parser.add_argument("--output_path", type=str, default="./checkpoints/merged/LLaVA-OneVision-1.5-4B-stage0", help="Path to save the merged model")
+    parser.add_argument(
+        "--vision_tower",
+        type=str,
+        choices=sorted(VISION_TOWER_SPECS),
+        default="rice",
+        help="Vision architecture preset. CLIP and SigLIP presets always use fixed resolution.",
+    )
+    parser.add_argument(
+        "--vit_path",
+        type=str,
+        default=None,
+        help="Optional model path override. Use this to load a ReasonSigLIP checkpoint with the SigLIP preset.",
+    )
+    parser.add_argument(
+        "--vision_feature_layer",
+        type=int,
+        default=-2,
+        help="Vision hidden-state layer used for fixed CLIP/SigLIP towers.",
+    )
+    parser.add_argument("--llm_path", type=str, default="Qwen/Qwen3-8B", help="Path to the LLM model")
+    parser.add_argument(
+        "--output_path",
+        type=str,
+        default="./checkpoints/merged/LLaVA-OneVision-1.5-8B-stage0",
+        help="Path to save the merged model",
+    )
     parser.add_argument("--adapter_path", type=str, default="", help="Path to the Adapter model (optional)")
     parser.add_argument("--img_path", type=str, default="https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg", help="Path to the image file")
     parser.add_argument("--sample_text", type=str, default="Hello, my dog is cute", help="Sample text for LLM consistency check")
+    parser.add_argument(
+        "--skip_validation",
+        action="store_true",
+        help="Skip duplicate component forward checks after all checkpoint keys have been loaded.",
+    )
     args = parser.parse_args()
     main(args)

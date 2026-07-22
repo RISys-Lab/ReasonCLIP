@@ -42,7 +42,13 @@ from transformers.integrations import use_kernel_forward_from_hub
 from transformers.processing_utils import Unpack
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers import AutoModelForCausalLM, AutoConfig
-from llavaonevision1_5.configuration_llavaonevision1_5 import Llavaonevision1_5Config, LLaVAOneVision1_5_TextConfig, RiceConfig
+from llavaonevision1_5.configuration_llavaonevision1_5 import (
+    FixedVisionConfig,
+    Llavaonevision1_5Config,
+    LLaVAOneVision1_5_TextConfig,
+    RiceConfig,
+)
+from llavaonevision1_5.fixed_vision import FixedVisionTower
 
 
 if is_flash_attn_available():
@@ -1394,7 +1400,10 @@ class LLaVAOneVision1_5_Model(Qwen2VLPreTrainedModel):
 
     def __init__(self, config: Llavaonevision1_5Config):
         super().__init__(config)
-        self.visual = RiceTransformerPretrainedModel._from_config(config.vision_config)
+        if isinstance(config.vision_config, FixedVisionConfig):
+            self.visual = FixedVisionTower(config.vision_config)
+        else:
+            self.visual = RiceTransformerPretrainedModel._from_config(config.vision_config)
         self.language_model = LLaVAOneVision1_5_TextModel._from_config(config.text_config)
         self.rope_deltas = None  # cache rope_deltas here
 
@@ -1568,6 +1577,8 @@ class LLaVAOneVision1_5_Model(Qwen2VLPreTrainedModel):
             video_grid_thw (`torch.LongTensor` of shape `(num_videos, 3)`, *optional*):
                 The temporal, height and width of feature shape of each video in LLM.
         """
+        if isinstance(self.config.vision_config, FixedVisionConfig):
+            raise NotImplementedError("Fixed CLIP/SigLIP towers currently support images only")
         pixel_values_videos = pixel_values_videos.type(self.visual.dtype)
         video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
         return video_embeds
@@ -2004,10 +2015,13 @@ class LLaVAOneVision1_5_ForConditionalGeneration(Qwen2VLPreTrainedModel, Generat
 
             for key in dict_to_expand:
                 if key == "pixel_values":
-                    # split images into samples
-                    samples = torch.split(image_grid_thw, list(image_nums))
-                    # compute the sequence length of images for each sample
-                    lengths = [torch.prod(sample, dim=1).sum() for sample in samples]
+                    if image_grid_thw is None and isinstance(self.config.vision_config, FixedVisionConfig):
+                        # Fixed processors return one NCHW tensor per image instead of flattened patches.
+                        lengths = [int(count) for count in image_nums]
+                    else:
+                        # Split dynamic-resolution image patches into samples.
+                        samples = torch.split(image_grid_thw, list(image_nums))
+                        lengths = [torch.prod(sample, dim=1).sum() for sample in samples]
                     dict_to_expand[key] = _repeat_interleave_samples(
                         dict_to_expand[key], lengths=lengths, repeat_times=expand_size
                     )

@@ -1,15 +1,14 @@
 import os
 import torch
-from peft import LoraConfig, get_peft_model
 import ast
 from transformers import AutoProcessor, BitsAndBytesConfig, HfArgumentParser, Qwen2_5_VLForConditionalGeneration
-from llavaonevision1_5.modeling_llavaonevision1_5.py import LLaVAOneVision1_5_ForConditionalGeneration
+from llavaonevision1_5.configuration_llavaonevision1_5 import FixedVisionConfig
+from llavaonevision1_5.modeling_llavaonevision1_5 import LLaVAOneVision1_5_ForConditionalGeneration
 from src.trainer import QwenSFTTrainer
 from src.dataset import make_supervised_data_module
 from src.params import DataArguments, ModelArguments, TrainingArguments
 from train.train_utils import get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer
 import pathlib
-from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl
 from monkey_patch_forward import replace_qwen2_5_with_mixed_modality_forward, replace_qwen_2_with_mixed_modality_forward
 
 local_rank = None
@@ -81,6 +80,9 @@ def train():
     
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     use_liger = training_args.use_liger
+    if use_liger:
+        from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl
+
     if "Qwen2.5" in model_args.model_id:
         # It monkey patches the forward to handle mixed modality inputs.
         replace_qwen2_5_with_mixed_modality_forward(use_liger=use_liger)
@@ -228,6 +230,8 @@ def train():
         training_args.gradient_checkpointing_kwargs = {"use_reentrant": False}
 
     if training_args.lora_enable:
+        from peft import LoraConfig, get_peft_model
+
         lora_namespan_exclude = training_args.lora_namespan_exclude
         peft_config = LoraConfig(
             r=training_args.lora_rank,
@@ -260,6 +264,9 @@ def train():
                     param.requires_grad = True
 
     processor = AutoProcessor.from_pretrained(model_args.model_id)
+    if isinstance(model.config.vision_config, FixedVisionConfig):
+        # The fixed processor must resize to the checkpoint's exact CLIP/SigLIP resolution.
+        processor.fixed_vision = True
 
     # 调试信息：检查可训练参数
     trainable_params = 0
@@ -424,8 +431,12 @@ def train():
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             processor.save_pretrained(training_args.output_dir)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, "non_lora_state_dict.bin"))
-    else:
+    elif not training_args.skip_final_save:
         safe_save_model_for_hf_trainer(trainer, output_dir=training_args.output_dir)
+        if trainer.is_world_process_zero():
+            processor.save_pretrained(training_args.output_dir)
+    else:
+        rank0_print("Skipping final model save")
 
 
 

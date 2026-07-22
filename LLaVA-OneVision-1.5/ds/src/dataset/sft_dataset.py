@@ -74,6 +74,7 @@ class SupervisedDataset(Dataset):
         is_video = False
 
         processor = self.processor
+        fixed_vision = getattr(processor, "fixed_vision", False)
         if "image" in sources:
             videos = None
             grid_key = "image_grid_thw"
@@ -94,6 +95,8 @@ class SupervisedDataset(Dataset):
                 images.append(get_image_info(image_file, self.image_min_pixel, self.image_max_pixel, self.image_resized_w, self.image_resized_h))
 
         elif "video" in sources:
+            if fixed_vision:
+                raise NotImplementedError("Fixed CLIP/SigLIP towers currently support image samples only")
             is_video = True
             images=None
             grid_key = "video_grid_thw"
@@ -143,10 +146,19 @@ class SupervisedDataset(Dataset):
             gpt_response = f"{gpt_response['content']}{DEFAULT_IM_END_TOKEN}\n"
             
             if DEFAULT_IMAGE_TOKEN in user_input:
-                inputs = processor(text=[user_input], images=images, videos=videos, padding=False, do_resize=False, return_tensors='pt')
+                processor_kwargs = {
+                    "text": [user_input],
+                    "images": images,
+                    "padding": False,
+                    "return_tensors": "pt",
+                }
+                if not fixed_vision:
+                    processor_kwargs.update(videos=videos, do_resize=False)
+                inputs = processor(**processor_kwargs)
                 prompt_input_ids = inputs['input_ids']
                 all_pixel_values.append(inputs[pixel_key])
-                all_image_grid_thw.append(inputs[grid_key])
+                if grid_key in inputs:
+                    all_image_grid_thw.append(inputs[grid_key])
             
             elif DEFAULT_VIDEO_TOKEN in user_input:
                 if "Qwen2.5" in self.model_id:
@@ -196,11 +208,11 @@ class SupervisedDataset(Dataset):
             labels=labels,
         )
 
-        if pixel_key and grid_key:
+        if pixel_key and all_pixel_values:
             pixel_values = torch.cat(all_pixel_values, dim=0)
-            image_thw = torch.cat(all_image_grid_thw, dim=0)
             data_dict[pixel_key] = pixel_values
-            data_dict[grid_key] = image_thw
+            if all_image_grid_thw:
+                data_dict[grid_key] = torch.cat(all_image_grid_thw, dim=0)
 
         if len(all_second_gird) > 0:
             second_gird = all_second_gird
@@ -211,6 +223,8 @@ class SupervisedDataset(Dataset):
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         try:
             return self._get_item(i)
+        except NotImplementedError:
+            raise
         except Exception as e:
             print(e)
             print("error in :")
@@ -240,7 +254,8 @@ class DataCollatorForSupervisedDataset(object):
                 batch_video_thw.append(example["video_grid_thw"])
             elif "pixel_values" in keys:
                 batch_pixel_values.append(example["pixel_values"])
-                batch_image_thw.append(example["image_grid_thw"])
+                if "image_grid_thw" in keys:
+                    batch_image_thw.append(example["image_grid_thw"])
             
             batch_input_ids.append(example["input_ids"])
             batch_label_ids.append(example["labels"])
@@ -263,9 +278,9 @@ class DataCollatorForSupervisedDataset(object):
 
         if len(batch_pixel_values) > 0:
             pixel_values = torch.cat(batch_pixel_values, dim=0)
-            image_thw = torch.cat(batch_image_thw, dim=0)
             data_dict["pixel_values"] = pixel_values
-            data_dict["image_grid_thw"] = image_thw
+            if batch_image_thw:
+                data_dict["image_grid_thw"] = torch.cat(batch_image_thw, dim=0)
 
         if len(batch_pixel_video_values) > 0:
             pixel_video_values = torch.cat(batch_pixel_video_values, dim=0)

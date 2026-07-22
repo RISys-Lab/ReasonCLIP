@@ -2,8 +2,14 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from transformers import TrainingArguments as HFTrainingArguments
-from trl import DPOConfig as DPOConfigTRL
-from trl import GRPOConfig as GRPOConfigTRL
+
+try:
+    from trl import DPOConfig as DPOConfigTRL
+    from trl import GRPOConfig as GRPOConfigTRL
+except ImportError:
+    # Plain SFT does not require TRL; DPO/GRPO entrypoints still do.
+    DPOConfigTRL = HFTrainingArguments
+    GRPOConfigTRL = HFTrainingArguments
 
 
 @dataclass
@@ -57,6 +63,7 @@ class TrainingArguments(HFTrainingArguments):
     lora_namespan_exclude: str = field(default=None, metadata={"help": "List of namespan to exclude for LoRA"})
     num_lora_modules: int = -1
     use_liger: bool = True
+    skip_final_save: bool = False
 
 @dataclass
 class DPOArguments(DPOConfigTRL):
