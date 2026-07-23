@@ -377,7 +377,11 @@ def train():
 
     # 调试信息：检查数据集
     train_dataset = data_module['train_dataset']
-    rank0_print(f"Training dataset size: {len(train_dataset)}")
+    try:
+        dataset_size = len(train_dataset)
+    except TypeError:
+        dataset_size = "streaming"
+    rank0_print(f"Training dataset size: {dataset_size}")
     
     # # 检查第一个样本
     # if len(train_dataset) > 0:

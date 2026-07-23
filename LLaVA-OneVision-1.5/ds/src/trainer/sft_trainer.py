@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 
 from transformers import Trainer
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
@@ -33,6 +34,20 @@ class QwenSFTTrainer(Trainer):
 
     def __init__(self, *args, **kwargs):
         super(QwenSFTTrainer, self).__init__(*args, **kwargs)
+
+    def get_train_dataloader(self):
+        if not getattr(self.train_dataset, "is_rank_sharded", False):
+            return super().get_train_dataloader()
+
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self._train_batch_size,
+            collate_fn=self.data_collator,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            persistent_workers=self.args.dataloader_persistent_workers,
+            drop_last=self.args.dataloader_drop_last,
+        )
 
     def create_optimizer(self):
         """
@@ -115,6 +130,12 @@ class QwenSFTTrainer(Trainer):
                         "weight_decay": 0.0,
                     },
                 ]
+
+            # DeepSpeed removes empty groups after the scheduler has captured them,
+            # which leaves the scheduler and optimizer with different group counts.
+            optimizer_grouped_parameters = [
+                group for group in optimizer_grouped_parameters if group["params"]
+            ]
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
 
             self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)

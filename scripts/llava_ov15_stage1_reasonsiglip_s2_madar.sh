@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=ov15_siglip1_s1
+#SBATCH --job-name=ov15_rsiglip_s2_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --partition=gpu
-#SBATCH --output=ov15_siglip1_s1_%j.out
-#SBATCH --error=ov15_siglip1_s1_%j.err
+#SBATCH --output=ov15_rsiglip_s2_s1_%j.out
+#SBATCH --error=ov15_rsiglip_s2_s1_%j.err
 #SBATCH --account=kuin0164
 #SBATCH --mem=128G
 
@@ -16,18 +16,18 @@ set -euo pipefail
 REPO_ROOT="/dpc/kuin0164/zsc/ReasonCLIP"
 DS_ROOT="${REPO_ROOT}/LLaVA-OneVision-1.5/ds"
 
-ENV_DIR="${ENV_DIR:-/dpc/kuin0164/zsc/venv/llava}"
-STAGE0_MODEL_PATH="${STAGE0_MODEL_PATH:-${REPO_ROOT}/outputs/llava_ov15/siglip1/qwen3_8b_stage0}"
-DATA_PATH="${DATA_PATH:-${REPO_ROOT}/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json}"
-IMAGE_FOLDER="${IMAGE_FOLDER:-${REPO_ROOT}/data/LLaVA-Pretrain/images}"
+ENV_DIR="/dpc/kuin0164/zsc/venv/llava"
+VISION_MODEL="RISys-Lab/ReasonSigLIP-So14-384-S2"
+STAGE0_MODEL_PATH="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip_so14_384_s2/qwen3_8b_stage0"
+DATA_PATH="${REPO_ROOT}/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json"
+IMAGE_FOLDER="${REPO_ROOT}/data/LLaVA-Pretrain/images"
+OUTPUT_DIR="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip_so14_384_s2/stage1_alignment"
 
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/llava_ov15/siglip1/stage1_alignment}"
-
-export HF_HOME="${HF_HOME:-/dpc/kuin0164/zsc/hf_home}"
-export UV_CACHE_DIR="${UV_CACHE_DIR:-/dpc/kuin0164/zsc/venv/.uv-cache}"
+export HF_HOME="/dpc/kuin0164/zsc/hf_home"
+export UV_CACHE_DIR="/dpc/kuin0164/zsc/venv/.uv-cache"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export OMP_NUM_THREADS=4
 
 module load profile/deeplrn 2>/dev/null || true
 module load cuda/13.0 2>/dev/null || true
@@ -35,8 +35,19 @@ module load cuda/13.0 2>/dev/null || true
 source "${ENV_DIR}/bin/activate"
 export PYTHONPATH="${DS_ROOT}:${DS_ROOT}/src:${PYTHONPATH:-}"
 
-mkdir -p "${OUTPUT_DIR}"
 cd "${DS_ROOT}"
+
+if [[ ! -f "${STAGE0_MODEL_PATH}/config.json" ]]; then
+    python -u merge_model.py \
+        --vision_tower siglip_so400m_384 \
+        --vit_path "${VISION_MODEL}" \
+        --vision_feature_layer -2 \
+        --llm_path Qwen/Qwen3-8B \
+        --output_path "${STAGE0_MODEL_PATH}" \
+        --skip_validation
+fi
+
+mkdir -p "${OUTPUT_DIR}"
 
 torchrun --standalone --nproc_per_node=4 src/train/train_sft.py \
     --model_id "${STAGE0_MODEL_PATH}" \

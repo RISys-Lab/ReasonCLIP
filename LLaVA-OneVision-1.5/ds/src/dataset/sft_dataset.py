@@ -1,10 +1,15 @@
 import copy
+import io
 import os
+import tarfile
+from pathlib import Path
 from typing import Dict
+
 import torch
 import transformers
 import ujson as json
-from torch.utils.data import Dataset
+from PIL import Image
+from torch.utils.data import Dataset, IterableDataset, get_worker_info
 
 from src.params import DataArguments
 from src.constants import (
@@ -13,6 +18,7 @@ from src.constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IMAGE_TOKEN,
     DEFAULT_VIDEO_TOKEN,
+    LLAVA_IMAGE_TOKEN,
     SYSTEM_MESSAGE,
 )
 
@@ -34,7 +40,7 @@ class SupervisedDataset(Dataset):
         super(SupervisedDataset, self).__init__()
         self.data_path = data_path
 
-        if data_path.endswith(".jsonl"):
+        if isinstance(data_path, str) and data_path.endswith(".jsonl"):
             list_data_dict = []
             with open(data_path, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -65,12 +71,15 @@ class SupervisedDataset(Dataset):
         return len(self.list_data_dict)
 
     def _get_item(self, i):
-        if self.data_path.endswith('.jsonl'):
+        if isinstance(self.data_path, str) and self.data_path.endswith('.jsonl'):
             line = self.list_data_dict[i]
             sources = json.loads(line.strip())
         else:
             sources = self.list_data_dict[i]
 
+        return self._process_source(sources)
+
+    def _process_source(self, sources):
         is_video = False
 
         processor = self.processor
@@ -83,15 +92,17 @@ class SupervisedDataset(Dataset):
             image_files = sources["image"]
             image_folder = self.data_args.image_folder
 
-            if isinstance(image_files, str):
+            if not isinstance(image_files, (list, tuple)):
                 image_files = [image_files]
 
             images = []
             
             for image_file in image_files:
-                if not os.path.exists(image_file):
-                    if not image_file.startswith("http"):
-                        image_file = os.path.join(image_folder, image_file)
+                if isinstance(image_file, (str, os.PathLike)):
+                    image_file = os.fspath(image_file)
+                    if not os.path.exists(image_file):
+                        if not image_file.startswith("http"):
+                            image_file = os.path.join(image_folder, image_file)
                 images.append(get_image_info(image_file, self.image_min_pixel, self.image_max_pixel, self.image_resized_w, self.image_resized_h))
 
         elif "video" in sources:
@@ -232,6 +243,121 @@ class SupervisedDataset(Dataset):
             return self._get_item(0)
 
 
+class PackedWebDataset(IterableDataset):
+    """Stream packed captioning shards as independent image-caption samples."""
+
+    def __init__(
+        self,
+        data_path: str,
+        processor: transformers.ProcessorMixin,
+        data_args: DataArguments,
+        model_id,
+    ):
+        super().__init__()
+        self.data_path = os.fspath(data_path)
+        self.shards = sorted(str(path) for path in Path(self.data_path).glob("*.tar"))
+        if not self.shards:
+            raise ValueError(f"No WebDataset tar shards found in {self.data_path}")
+        self.is_rank_sharded = True
+
+        self.sample_processor = SupervisedDataset(
+            data_path=[],
+            processor=processor,
+            data_args=data_args,
+            model_id=model_id,
+        )
+
+    @staticmethod
+    def _record_sources(parts, rng):
+        if "json" not in parts:
+            return
+
+        metadata = json.loads(parts["json"])
+        prompts = metadata["prompts"]
+        captions = metadata["captions"]
+        image_count = len(metadata["images"])
+        if len(prompts) != image_count or len(captions) != image_count:
+            raise ValueError(
+                "Packed sample has mismatched image, prompt, and caption counts: "
+                f"{image_count}, {len(prompts)}, {len(captions)}"
+            )
+
+        indices = list(range(image_count))
+        rng.shuffle(indices)
+        for index in indices:
+            image_key = f"img{index}.jpg"
+            if image_key not in parts:
+                raise ValueError(f"Packed sample is missing {image_key}")
+
+            with Image.open(io.BytesIO(parts[image_key])) as image:
+                image = image.convert("RGB").copy()
+
+            prompt = prompts[index]
+            if LLAVA_IMAGE_TOKEN not in prompt:
+                prompt = f"{LLAVA_IMAGE_TOKEN}\n{prompt}"
+
+            yield {
+                "image": image,
+                "conversations": [
+                    {"from": "human", "value": prompt},
+                    {"from": "gpt", "value": captions[index]},
+                ],
+            }
+
+    def _iter_shard(self, shard, rng):
+        current_key = None
+        parts = {}
+
+        with tarfile.open(shard, mode="r:") as archive:
+            for member in archive:
+                if not member.isfile():
+                    continue
+
+                name = Path(member.name).name
+                key, separator, suffix = name.partition(".")
+                if not separator:
+                    continue
+
+                if current_key is not None and key != current_key:
+                    yield from self._record_sources(parts, rng)
+                    parts = {}
+
+                current_key = key
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    raise ValueError(f"Could not read {member.name} from {shard}")
+                parts[suffix] = extracted.read()
+
+        if parts:
+            yield from self._record_sources(parts, rng)
+
+    def __iter__(self):
+        worker = get_worker_info()
+        worker_id = worker.id if worker is not None else 0
+        workers_per_rank = worker.num_workers if worker is not None else 1
+        rank = int(os.environ.get("RANK", "0"))
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        cycle = 0
+
+        while True:
+            rng = random.Random(42 + cycle)
+            shards = self.shards.copy()
+            rng.shuffle(shards)
+            rank_shards = shards[rank::world_size]
+            worker_shards = rank_shards[worker_id::workers_per_rank]
+            if not worker_shards:
+                raise RuntimeError(
+                    f"No WebDataset shards assigned to rank {rank}, worker {worker_id}"
+                )
+
+            for shard in worker_shards:
+                yield from (
+                    self.sample_processor._process_source(source)
+                    for source in self._iter_shard(shard, rng)
+                )
+            cycle += 1
+
+
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
 
@@ -295,9 +421,21 @@ class DataCollatorForSupervisedDataset(object):
     
 def make_supervised_data_module(model_id, processor, data_args):
     """Make dataset and collator for supervised fine-tuning."""
-    sft_dataset = SupervisedDataset(
-        data_path=data_args.data_path, processor=processor, data_args=data_args, model_id=model_id
-    )
+    data_path = data_args.data_path
+    if os.path.isdir(data_path) and any(Path(data_path).glob("*.tar")):
+        sft_dataset = PackedWebDataset(
+            data_path=data_path,
+            processor=processor,
+            data_args=data_args,
+            model_id=model_id,
+        )
+    else:
+        sft_dataset = SupervisedDataset(
+            data_path=data_path,
+            processor=processor,
+            data_args=data_args,
+            model_id=model_id,
+        )
     data_collator = DataCollatorForSupervisedDataset(pad_token_id=processor.tokenizer.pad_token_id)
 
     return dict(train_dataset=sft_dataset,
