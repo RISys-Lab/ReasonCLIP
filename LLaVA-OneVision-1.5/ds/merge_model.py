@@ -139,6 +139,7 @@ def load_empty_model(llm_path, vision_tower="rice", vit_path=None, vision_featur
     llm_config = AutoConfig.from_pretrained(llm_path, trust_remote_code=True, use_fast=True)
     llava_ov_config = Llavaonevision1_5Config()
     llava_ov_config.text_config.update(llm_config.to_dict())
+    llava_ov_config.vocab_size = llava_ov_config.text_config.vocab_size
 
     if vision_tower == "rice":
         print("Loading the existing Rice processor and empty model...")

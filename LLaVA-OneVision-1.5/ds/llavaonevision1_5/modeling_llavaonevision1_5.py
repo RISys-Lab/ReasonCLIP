@@ -1905,7 +1905,7 @@ class LLaVAOneVision1_5_ForConditionalGeneration(Qwen2VLPreTrainedModel, Generat
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size)
+            loss = self.loss_function(logits=logits, labels=labels, vocab_size=logits.shape[-1])
 
         return LLaVAOneVision1_5_CausalLMOutputWithPast(
             loss=loss,
