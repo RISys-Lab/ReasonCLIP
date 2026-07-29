@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=ov15_rsiglip_s2_s1
+#SBATCH --job-name=ov15_rsiglip_s1
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --partition=gpu
-#SBATCH --output=ov15_rsiglip_s2_s1_%j.out
-#SBATCH --error=ov15_rsiglip_s2_s1_%j.err
+#SBATCH --output=ov15_rsiglip_s1_%j.out
+#SBATCH --error=ov15_rsiglip_s1_%j.err
 #SBATCH --account=kuin0164
 #SBATCH --mem=128G
 
@@ -18,16 +18,22 @@ DS_ROOT="${REPO_ROOT}/LLaVA-OneVision-1.5/ds"
 
 ENV_DIR="/dpc/kuin0164/zsc/venv/llava"
 VISION_MODEL="RISys-Lab/ReasonSigLIP-So14-384-S2"
-STAGE0_MODEL_PATH="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip_so14_384_s2/qwen3_8b_stage0"
+STAGE0_MODEL_PATH="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip/qwen3_8b_stage0"
 DATA_PATH="${REPO_ROOT}/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json"
 IMAGE_FOLDER="${REPO_ROOT}/data/LLaVA-Pretrain/images"
-OUTPUT_DIR="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip_so14_384_s2/stage1_alignment"
+OUTPUT_DIR="${REPO_ROOT}/outputs/llava_ov15/reasonsiglip/stage1_alignment"
 
 export HF_HOME="/dpc/kuin0164/zsc/hf_home"
 export UV_CACHE_DIR="/dpc/kuin0164/zsc/venv/.uv-cache"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export DS_IGNORE_CUDA_DETECTION=1
 export OMP_NUM_THREADS=4
+
+RUNTIME_CACHE_DIR="${SLURM_TMPDIR:-/tmp}/llava-ov15-${SLURM_JOB_ID:-$$}"
+export TRITON_CACHE_DIR="${RUNTIME_CACHE_DIR}/triton"
+export TORCH_EXTENSIONS_DIR="${RUNTIME_CACHE_DIR}/torch_extensions"
+mkdir -p "${TRITON_CACHE_DIR}" "${TORCH_EXTENSIONS_DIR}"
 
 module load profile/deeplrn 2>/dev/null || true
 module load cuda/13.0 2>/dev/null || true
@@ -37,7 +43,7 @@ export PYTHONPATH="${DS_ROOT}:${DS_ROOT}/src:${PYTHONPATH:-}"
 
 cd "${DS_ROOT}"
 
-if [[ ! -f "${STAGE0_MODEL_PATH}/config.json" ]]; then
+if [[ ! -f "${STAGE0_MODEL_PATH}/model.safetensors.index.json" ]]; then
     python -u merge_model.py \
         --vision_tower siglip_so400m_384 \
         --vit_path "${VISION_MODEL}" \

@@ -81,6 +81,7 @@ class SupervisedDataset(Dataset):
 
     def _process_source(self, sources):
         is_video = False
+        sample_system = sources.get("system")
 
         processor = self.processor
         fixed_vision = getattr(processor, "fixed_vision", False)
@@ -141,8 +142,9 @@ class SupervisedDataset(Dataset):
         all_second_gird = []
 
         # Qwen2-VL uses a default system message so I've added this.
-        if len(SYSTEM_MESSAGE) > 0:
-            system_message = f"{DEFAULT_IM_START_TOKEN}system\n{SYSTEM_MESSAGE}{DEFAULT_IM_END_TOKEN}\n"
+        system_content = sample_system if sample_system is not None else SYSTEM_MESSAGE
+        if len(system_content) > 0:
+            system_message = f"{DEFAULT_IM_START_TOKEN}system\n{system_content}{DEFAULT_IM_END_TOKEN}\n"
             system_message_input_ids = processor.tokenizer(system_message, add_special_tokens=False, return_tensors='pt')['input_ids']
             system_labels = torch.full_like(system_message_input_ids, IGNORE_INDEX) 
             
@@ -244,7 +246,7 @@ class SupervisedDataset(Dataset):
 
 
 class PackedWebDataset(IterableDataset):
-    """Stream packed captioning shards as independent image-caption samples."""
+    """Stream LLaVA captioning and instruction-tuning WebDataset shards."""
 
     def __init__(
         self,
@@ -252,6 +254,7 @@ class PackedWebDataset(IterableDataset):
         processor: transformers.ProcessorMixin,
         data_args: DataArguments,
         model_id,
+        max_seq_length: int | None = None,
     ):
         super().__init__()
         self.data_path = os.fspath(data_path)
@@ -259,6 +262,7 @@ class PackedWebDataset(IterableDataset):
         if not self.shards:
             raise ValueError(f"No WebDataset tar shards found in {self.data_path}")
         self.is_rank_sharded = True
+        self.max_seq_length = max_seq_length
 
         self.sample_processor = SupervisedDataset(
             data_path=[],
@@ -268,41 +272,93 @@ class PackedWebDataset(IterableDataset):
         )
 
     @staticmethod
-    def _record_sources(parts, rng):
+    def _decode_image(parts, image_key):
+        if image_key not in parts:
+            raise ValueError(f"WebDataset sample is missing {image_key}")
+
+        with Image.open(io.BytesIO(parts[image_key])) as image:
+            return image.convert("RGB").copy()
+
+    @classmethod
+    def _record_sources(cls, parts, rng, sample_key):
         if "json" not in parts:
             return
 
         metadata = json.loads(parts["json"])
-        prompts = metadata["prompts"]
-        captions = metadata["captions"]
-        image_count = len(metadata["images"])
-        if len(prompts) != image_count or len(captions) != image_count:
-            raise ValueError(
-                "Packed sample has mismatched image, prompt, and caption counts: "
-                f"{image_count}, {len(prompts)}, {len(captions)}"
-            )
+        if {"prompts", "captions", "images"} <= metadata.keys():
+            prompts = metadata["prompts"]
+            captions = metadata["captions"]
+            image_count = len(metadata["images"])
+            if len(prompts) != image_count or len(captions) != image_count:
+                raise ValueError(
+                    "Packed sample has mismatched image, prompt, and caption counts: "
+                    f"{image_count}, {len(prompts)}, {len(captions)}"
+                )
 
-        indices = list(range(image_count))
-        rng.shuffle(indices)
-        for index in indices:
-            image_key = f"img{index}.jpg"
-            if image_key not in parts:
-                raise ValueError(f"Packed sample is missing {image_key}")
+            indices = list(range(image_count))
+            rng.shuffle(indices)
+            for index in indices:
+                prompt = prompts[index]
+                if LLAVA_IMAGE_TOKEN not in prompt:
+                    prompt = f"{LLAVA_IMAGE_TOKEN}\n{prompt}"
 
-            with Image.open(io.BytesIO(parts[image_key])) as image:
-                image = image.convert("RGB").copy()
+                yield {
+                    "_sample_key": f"{sample_key}:img{index}",
+                    "image": cls._decode_image(parts, f"img{index}.jpg"),
+                    "conversations": [
+                        {"from": "human", "value": prompt},
+                        {"from": "gpt", "value": captions[index]},
+                    ],
+                }
+            return
 
-            prompt = prompts[index]
-            if LLAVA_IMAGE_TOKEN not in prompt:
-                prompt = f"{LLAVA_IMAGE_TOKEN}\n{prompt}"
+        if {"texts", "media"} <= metadata.keys():
+            role_mapping = {"user": "human", "assistant": "gpt"}
+            conversations = []
+            system = None
+            for message in metadata["texts"]:
+                role = message["role"]
+                if role == "system":
+                    system = message["content"]
+                    continue
+                if role not in role_mapping:
+                    raise ValueError(f"Unsupported instruction role: {role}")
+                conversations.append({
+                    "from": role_mapping[role],
+                    "value": message["content"],
+                })
 
-            yield {
-                "image": image,
-                "conversations": [
-                    {"from": "human", "value": prompt},
-                    {"from": "gpt", "value": captions[index]},
-                ],
+            source = {
+                "_sample_key": sample_key,
+                "conversations": conversations,
             }
+            if system is not None:
+                source["system"] = system
+
+            media_type = metadata["media"]
+            if media_type == "image":
+                if "name" not in metadata:
+                    raise ValueError("Image sample is missing the name field")
+                media_names = metadata["name"]
+                if isinstance(media_names, str):
+                    media_names = [media_names]
+                source["image"] = [
+                    cls._decode_image(parts, media_name)
+                    for media_name in media_names
+                ]
+            elif media_type == "video":
+                raise NotImplementedError(
+                    "Video samples embedded in WebDataset shards are not supported"
+                )
+            elif media_type not in (None, "text"):
+                raise ValueError(f"Unsupported WebDataset media type: {media_type}")
+
+            yield source
+            return
+
+        raise ValueError(
+            f"Unsupported WebDataset metadata fields: {sorted(metadata.keys())}"
+        )
 
     def _iter_shard(self, shard, rng):
         current_key = None
@@ -319,7 +375,8 @@ class PackedWebDataset(IterableDataset):
                     continue
 
                 if current_key is not None and key != current_key:
-                    yield from self._record_sources(parts, rng)
+                    sample_key = f"{Path(shard).name}:{current_key}"
+                    yield from self._record_sources(parts, rng, sample_key)
                     parts = {}
 
                 current_key = key
@@ -329,7 +386,8 @@ class PackedWebDataset(IterableDataset):
                 parts[suffix] = extracted.read()
 
         if parts:
-            yield from self._record_sources(parts, rng)
+            sample_key = f"{Path(shard).name}:{current_key}"
+            yield from self._record_sources(parts, rng, sample_key)
 
     def __iter__(self):
         worker = get_worker_info()
@@ -338,6 +396,7 @@ class PackedWebDataset(IterableDataset):
         rank = int(os.environ.get("RANK", "0"))
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
         cycle = 0
+        skipped_overlength = 0
 
         while True:
             rng = random.Random(42 + cycle)
@@ -351,10 +410,25 @@ class PackedWebDataset(IterableDataset):
                 )
 
             for shard in worker_shards:
-                yield from (
-                    self.sample_processor._process_source(source)
-                    for source in self._iter_shard(shard, rng)
-                )
+                for source in self._iter_shard(shard, rng):
+                    sample = self.sample_processor._process_source(source)
+                    sequence_length = sample["input_ids"].numel()
+                    if (
+                        self.max_seq_length is not None
+                        and sequence_length > self.max_seq_length
+                    ):
+                        skipped_overlength += 1
+                        if skipped_overlength <= 3 or skipped_overlength % 100 == 0:
+                            print(
+                                "Skipping overlength WebDataset sample "
+                                f"(rank={rank}, worker={worker_id}, "
+                                f"key={source['_sample_key']}, "
+                                f"length={sequence_length}, "
+                                f"limit={self.max_seq_length})",
+                                flush=True,
+                            )
+                        continue
+                    yield sample
             cycle += 1
 
 
@@ -419,7 +493,12 @@ class DataCollatorForSupervisedDataset(object):
 
         return data_dict
     
-def make_supervised_data_module(model_id, processor, data_args):
+def make_supervised_data_module(
+    model_id,
+    processor,
+    data_args,
+    max_seq_length=None,
+):
     """Make dataset and collator for supervised fine-tuning."""
     data_path = data_args.data_path
     if os.path.isdir(data_path) and any(Path(data_path).glob("*.tar")):
@@ -428,6 +507,7 @@ def make_supervised_data_module(model_id, processor, data_args):
             processor=processor,
             data_args=data_args,
             model_id=model_id,
+            max_seq_length=max_seq_length,
         )
     else:
         sft_dataset = SupervisedDataset(

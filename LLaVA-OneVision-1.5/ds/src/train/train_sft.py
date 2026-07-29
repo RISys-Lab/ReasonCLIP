@@ -2,13 +2,13 @@ import os
 import torch
 import ast
 from transformers import AutoProcessor, BitsAndBytesConfig, HfArgumentParser, Qwen2_5_VLForConditionalGeneration
+from transformers.trainer_utils import get_last_checkpoint
 from llavaonevision1_5.configuration_llavaonevision1_5 import FixedVisionConfig
 from llavaonevision1_5.modeling_llavaonevision1_5 import LLaVAOneVision1_5_ForConditionalGeneration
 from src.trainer import QwenSFTTrainer
 from src.dataset import make_supervised_data_module
 from src.params import DataArguments, ModelArguments, TrainingArguments
 from train.train_utils import get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer
-import pathlib
 from monkey_patch_forward import replace_qwen2_5_with_mixed_modality_forward, replace_qwen_2_with_mixed_modality_forward
 
 local_rank = None
@@ -79,6 +79,11 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments))
     
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    resume_checkpoint = None
+    if os.path.isdir(training_args.output_dir):
+        resume_checkpoint = get_last_checkpoint(training_args.output_dir)
+    model_load_path = resume_checkpoint or model_args.model_id
+
     use_liger = training_args.use_liger
     if use_liger:
         from liger_kernel.transformers import apply_liger_kernel_to_qwen2_vl, apply_liger_kernel_to_qwen2_5_vl
@@ -135,7 +140,7 @@ def train():
             )
         ))
 
-    rank0_print(f"Loading model from: {model_args.model_id}")
+    rank0_print(f"Loading model from: {model_load_path}")
     rank0_print(f"Compute dtype: {compute_dtype}")
     rank0_print(f"BnB args: {bnb_model_from_pretrained_args}")
     
@@ -143,7 +148,7 @@ def train():
         if "Qwen2.5" in model_args.model_id:
             rank0_print("Loading Qwen2.5-VL model...")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                model_args.model_id,
+                model_load_path,
                 torch_dtype=compute_dtype,
                 attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
                 **bnb_model_from_pretrained_args
@@ -151,7 +156,7 @@ def train():
         else:
             rank0_print("Loading LLaVAOneVision model...")
             model = LLaVAOneVision1_5_ForConditionalGeneration.from_pretrained(
-                model_args.model_id,
+                model_load_path,
                 torch_dtype=compute_dtype,
                 attn_implementation="flash_attention_2" if not training_args.disable_flash_attn2 else "sdpa", 
                 **bnb_model_from_pretrained_args
@@ -263,7 +268,7 @@ def train():
                 if "merger" in name:
                     param.requires_grad = True
 
-    processor = AutoProcessor.from_pretrained(model_args.model_id)
+    processor = AutoProcessor.from_pretrained(model_load_path)
     if isinstance(model.config.vision_config, FixedVisionConfig):
         # The fixed processor must resize to the checkpoint's exact CLIP/SigLIP resolution.
         processor.fixed_vision = True
@@ -373,7 +378,8 @@ def train():
 
     data_module = make_supervised_data_module(model_id=model_args.model_id,
                                               processor=processor,
-                                              data_args=data_args)
+                                              data_args=data_args,
+                                              max_seq_length=training_args.max_seq_length)
 
     # 调试信息：检查数据集
     train_dataset = data_module['train_dataset']
@@ -412,8 +418,8 @@ def train():
         **data_module
     )
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+    if resume_checkpoint is not None:
+        trainer.train(resume_from_checkpoint=resume_checkpoint)
     else:
         trainer.train()
 

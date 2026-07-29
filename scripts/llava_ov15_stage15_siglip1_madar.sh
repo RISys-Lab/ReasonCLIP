@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ov15_siglip1_s15
-#SBATCH --time=4-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
@@ -60,6 +60,7 @@ torchrun --standalone --nproc_per_node=8 src/train/train_sft.py \
     --fp16 False \
     --tf32 True \
     --disable_flash_attn2 True \
+    --max_seq_length 3072 \
     --max_steps 20000 \
     --per_device_train_batch_size 20 \
     --per_device_eval_batch_size 1 \
@@ -80,6 +81,6 @@ torchrun --standalone --nproc_per_node=8 src/train/train_sft.py \
     --dataloader_num_workers 4 \
     --dataloader_persistent_workers True \
     --ddp_find_unused_parameters False \
-    --ignore_data_skip True \
+    --ignore_data_skip False \
     --report_to none \
     --seed 42

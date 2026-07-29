@@ -5,18 +5,64 @@ import torch
 from transformers import AutoProcessor
 from llavaonevision1_5.modeling_llavaonevision1_5 import LLaVAOneVision1_5_ForConditionalGeneration
 from qwen_vl_utils import process_vision_info
+from src.constants import (
+    DEFAULT_IMAGE_TOKEN,
+    DEFAULT_IM_END_TOKEN,
+    DEFAULT_IM_START_TOKEN,
+    DEFAULT_VIDEO_TOKEN,
+    SYSTEM_MESSAGE,
+    VISION_END_TOKEN,
+    VISION_START_TOKEN,
+)
 
 
+def apply_training_chat_template(messages):
+    """Format multimodal messages exactly as the SFT dataset does."""
+    system_content = SYSTEM_MESSAGE
+    turns = messages
+    if messages and messages[0]["role"] == "system":
+        system_content = messages[0]["content"]
+        turns = messages[1:]
 
-def generate_for_messages(model, processor, messages):
+    formatted = (
+        f"{DEFAULT_IM_START_TOKEN}system\n"
+        f"{system_content}{DEFAULT_IM_END_TOKEN}\n"
+    )
+    for message in turns:
+        content = message["content"]
+        if isinstance(content, str):
+            formatted_content = content
+        else:
+            parts = []
+            for item in content:
+                if item["type"] == "image":
+                    parts.append(
+                        f"{VISION_START_TOKEN}{DEFAULT_IMAGE_TOKEN}{VISION_END_TOKEN}"
+                    )
+                elif item["type"] == "video":
+                    parts.append(
+                        f"{VISION_START_TOKEN}{DEFAULT_VIDEO_TOKEN}{VISION_END_TOKEN}"
+                    )
+                elif item["type"] == "text":
+                    parts.append(item["text"])
+            formatted_content = "".join(parts)
+
+        formatted += (
+            f"{DEFAULT_IM_START_TOKEN}{message['role']}\n"
+            f"{formatted_content}{DEFAULT_IM_END_TOKEN}\n"
+        )
+
+    return f"{formatted}{DEFAULT_IM_START_TOKEN}assistant\n"
+
+
+@torch.inference_mode()
+def generate_for_messages(model, processor, messages, max_new_tokens):
     """
     A helper function to run the full generation pipeline for a given set of messages.
     """
     # --- Preparation for inference ---
-    # Apply the chat template to format the prompt
-    text = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    # The saved Qwen3 text template drops structured multimodal content.
+    text = apply_training_chat_template(messages)
     
     # Process visual information (images/videos) from the messages
     image_inputs, video_inputs = process_vision_info(messages)
@@ -31,9 +77,18 @@ def generate_for_messages(model, processor, messages):
     )
     # Move inputs to the same device as the model
     inputs = inputs.to(model.device)
+    image_token_count = (
+        inputs.input_ids == model.config.image_token_id
+    ).sum().item()
+    print(f"> Expanded image tokens: {image_token_count}")
 
     # --- Inference: Generation of the output ---
-    generated_ids = model.generate(**inputs, max_new_tokens=512, eos_token_id=151645)
+    generated_ids = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=151645,
+        do_sample=False,
+    )
     
     # Trim the generated IDs to remove the prompt portion
     generated_ids_trimmed = [
@@ -71,33 +126,40 @@ def main(args):
         trust_remote_code=False
     )
     print("✓ Model and processor loaded successfully.")
-    print(f"Using image: {args.image_path}")
+    model.eval()
 
-    # --- Test with English Prompt ---
-    print("\n--- Testing with English Prompt ---")
-    english_messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": args.image_path},
-                {"type": "text", "text": "Describe this image."},
-            ],
-        }
-    ]
-    generate_for_messages(model, processor, english_messages)
+    for image_index, image_path in enumerate(args.image_paths, start=1):
+        print(f"\n=== Image {image_index}/{len(args.image_paths)}: {image_path} ===")
 
-    # --- Test with Chinese Prompt ---
-    print("\n--- Testing with Chinese Prompt ---")
-    chinese_messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": args.image_path},
-                {"type": "text", "text": "请用中文详细描述这张图片。"},
-            ],
-        }
-    ]
-    generate_for_messages(model, processor, chinese_messages)
+        # --- Test with English Prompt ---
+        print("\n--- Testing with English Prompt ---")
+        english_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image_path},
+                    {"type": "text", "text": "Describe this image in detail."},
+                ],
+            }
+        ]
+        generate_for_messages(
+            model, processor, english_messages, args.max_new_tokens
+        )
+
+        # --- Test with Chinese Prompt ---
+        print("\n--- Testing with Chinese Prompt ---")
+        chinese_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image_path},
+                    {"type": "text", "text": "请用中文详细描述这张图片。"},
+                ],
+            }
+        ]
+        generate_for_messages(
+            model, processor, chinese_messages, args.max_new_tokens
+        )
 
 
 if __name__ == "__main__":
@@ -110,9 +172,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--image-path",
+        dest="image_paths",
         type=str,
-        default="https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
-        help="Optional: Path or URL to the image. Defaults to a demo image."
+        nargs="+",
+        default=["https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg"],
+        help="One or more local image paths or URLs.",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help="Maximum number of tokens generated for each prompt.",
     )
     
     args = parser.parse_args()

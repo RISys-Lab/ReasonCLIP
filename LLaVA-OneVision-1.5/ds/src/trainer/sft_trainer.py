@@ -131,11 +131,12 @@ class QwenSFTTrainer(Trainer):
                     },
                 ]
 
-            # DeepSpeed removes empty groups after the scheduler has captured them,
-            # which leaves the scheduler and optimizer with different group counts.
-            optimizer_grouped_parameters = [
-                group for group in optimizer_grouped_parameters if group["params"]
-            ]
+            if self.is_deepspeed_enabled:
+                # DeepSpeed removes empty groups after the scheduler has captured
+                # them, leaving the scheduler and optimizer out of sync.
+                optimizer_grouped_parameters = [
+                    group for group in optimizer_grouped_parameters if group["params"]
+                ]
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
 
             self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
