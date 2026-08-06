@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=ov15_rsiglip_s2
+#SBATCH --job-name=ov15_rs1-1_stage2
 #SBATCH --time=1-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
 #SBATCH --gres=gpu:8
 #SBATCH --partition=gpu
-#SBATCH --output=ov15_rsiglip_s2_%j.out
-#SBATCH --error=ov15_rsiglip_s2_%j.err
+#SBATCH --output=ov15_rs1-1_stage2_%j.out
+#SBATCH --error=ov15_rs1-1_stage2_%j.err
 #SBATCH --account=kuin0164
 #SBATCH --mem=256G
 
@@ -17,9 +17,9 @@ REPO_ROOT="/dpc/kuin0164/zsc/ReasonCLIP"
 DS_ROOT="${REPO_ROOT}/LLaVA-OneVision-1.5/ds"
 
 ENV_DIR="${ENV_DIR:-/dpc/kuin0164/zsc/venv/llava}"
-STAGE15_MODEL_PATH="${STAGE15_MODEL_PATH:-${REPO_ROOT}/outputs/llava_ov15/reasonsiglip/stage1_5_midtraining}"
+STAGE15_MODEL_PATH="${STAGE15_MODEL_PATH:-${REPO_ROOT}/outputs/llava_ov15/rs1-1/stage1_5_midtraining}"
 DATA_PATH="${DATA_PATH:-${REPO_ROOT}/data/LLaVA-NeXT-780k-webdataset}"
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/llava_ov15/reasonsiglip/stage2_instruct}"
+OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/llava_ov15/rs1-1/stage2_instruct}"
 DEEPSPEED_CONFIG="${REPO_ROOT}/scripts/deepspeed_zero2_madar.json"
 
 export HF_HOME="${HF_HOME:-/dpc/kuin0164/zsc/hf_home}"
@@ -29,7 +29,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export DS_IGNORE_CUDA_DETECTION=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 
-RUNTIME_CACHE_DIR="${SLURM_TMPDIR:-/tmp}/llava-ov15-${SLURM_JOB_ID:-$$}"
+RUNTIME_CACHE_DIR="${SLURM_TMPDIR:-/tmp}/llava-ov15-rs1-1-stage2-${SLURM_JOB_ID:-$$}"
 export TRITON_CACHE_DIR="${RUNTIME_CACHE_DIR}/triton"
 export TORCH_EXTENSIONS_DIR="${RUNTIME_CACHE_DIR}/torch_extensions"
 mkdir -p "${TRITON_CACHE_DIR}" "${TORCH_EXTENSIONS_DIR}"

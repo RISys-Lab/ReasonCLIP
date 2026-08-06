@@ -69,7 +69,7 @@ class Llava_OneVision1_5(LlavaOneVisionSimple):
             # Build HF messages and apply chat template
             hf_messages_list = [cm.to_hf_messages(video_kwargs=video_kwargs) for cm in chat_messages_list]
 
-            texts = [self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True) for messages in hf_messages_list]
+            texts = [self._apply_chat_template(messages) for messages in hf_messages_list]
 
             if self.rank == 0 and doc_id[0] % 100 == 0:
                 eval_logger.debug(f"Prompt for doc ID {doc_id[0]}:\n\n{texts[0]}\n")

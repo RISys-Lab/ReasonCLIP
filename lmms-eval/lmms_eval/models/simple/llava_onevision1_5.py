@@ -1,7 +1,9 @@
+import importlib
+import os
 import re
+import sys
 from typing import List, Optional, Tuple, Union
 
-import decord
 import numpy as np
 import torch
 from accelerate import Accelerator, DistributedType
@@ -19,6 +21,71 @@ from lmms_eval.imports import optional_import
 process_vision_info, _has_qwen_vl = optional_import("qwen_vl_utils", "process_vision_info")
 if not _has_qwen_vl:
     eval_logger.warning("Failed to import qwen_vl_utils; Please install it via `pip install qwen-vl-utils`")
+decord, _has_decord = optional_import("decord")
+
+IM_START_TOKEN = "<|im_start|>"
+IM_END_TOKEN = "<|im_end|>"
+VISION_START_TOKEN = "<|vision_start|>"
+VISION_END_TOKEN = "<|vision_end|>"
+IMAGE_TOKEN = "<|image_pad|>"
+VIDEO_TOKEN = "<|video_pad|>"
+
+
+def _register_local_model_code(model_code_path: str) -> str:
+    model_code_path = os.path.abspath(os.path.expanduser(model_code_path))
+    package_path = os.path.join(model_code_path, "llavaonevision1_5")
+    if not os.path.isdir(package_path):
+        raise ValueError(
+            "model_code_path must contain the llavaonevision1_5 package, "
+            f"but it was not found under {model_code_path}"
+        )
+
+    if model_code_path not in sys.path:
+        sys.path.insert(0, model_code_path)
+    importlib.import_module("llavaonevision1_5.modeling_llavaonevision1_5")
+    return model_code_path
+
+
+def _format_multimodal_content(content) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+
+    parts = []
+    for item in content:
+        item_type = item.get("type")
+        if item_type == "text":
+            parts.append(item.get("text", ""))
+        elif item_type in {"image", "image_url"}:
+            parts.append(f"{VISION_START_TOKEN}{IMAGE_TOKEN}{VISION_END_TOKEN}")
+        elif item_type in {"video", "video_url"}:
+            parts.append(f"{VISION_START_TOKEN}{VIDEO_TOKEN}{VISION_END_TOKEN}")
+        else:
+            raise ValueError(f"Unsupported message content type: {item_type!r}")
+    return "".join(parts)
+
+
+def apply_reasonclip_chat_template(messages) -> str:
+    """Render the multimodal prompt in the format used for ReasonCLIP training."""
+    system_content = "You are a helpful assistant."
+    turns = messages
+    if messages and messages[0]["role"] == "system":
+        system_content = _format_multimodal_content(messages[0]["content"])
+        turns = messages[1:]
+
+    formatted = ""
+    if system_content:
+        formatted = f"{IM_START_TOKEN}system\n{system_content}{IM_END_TOKEN}\n"
+
+    for message in turns:
+        role = message["role"]
+        if role not in {"user", "assistant"}:
+            raise ValueError(f"Unsupported message role: {role!r}")
+        content = _format_multimodal_content(message["content"])
+        formatted += f"{IM_START_TOKEN}{role}\n{content}{IM_END_TOKEN}\n"
+
+    return f"{formatted}{IM_START_TOKEN}assistant\n"
 
 
 @register_model("llava_onevision1_5")
@@ -44,6 +111,8 @@ class Llava_OneVision1_5(lmms):
         image_first: Optional[bool] = True,
         reasoning_prompt: Optional[str] = None,
         max_length: int = 2048,
+        fps: Optional[float] = None,
+        model_code_path: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -61,6 +130,8 @@ class Llava_OneVision1_5(lmms):
         valid_attn_implementations = [None, "flash_attention_2", "sdpa", "eager"]
         if attn_implementation not in valid_attn_implementations:
             raise ValueError(f"attn_implementation must be one of {valid_attn_implementations}, got {attn_implementation}")
+
+        self.model_code_path = _register_local_model_code(model_code_path) if model_code_path else None
 
         accelerator = Accelerator()
         if accelerator.num_processes > 1:
@@ -89,6 +160,7 @@ class Llava_OneVision1_5(lmms):
         self.max_pixels = max_pixels
         self.min_pixels = min_pixels
         self.max_num_frames = max_num_frames
+        self.fps = fps
         self.image_first = image_first
         if reasoning_prompt:
             self.reasoning_prompt = reasoning_prompt.replace("\\n", "\n")
@@ -139,7 +211,7 @@ class Llava_OneVision1_5(lmms):
     @property
     def model(self):
         # returns the model, unwrapping it if using Accelerate
-        if hasattr(self, "accelerator"):
+        if hasattr(self, "accelerator") and self.accelerator.num_processes > 1:
             return self.accelerator.unwrap_model(self._model)
         else:
             return self._model
@@ -177,6 +249,11 @@ class Llava_OneVision1_5(lmms):
             for j in i:
                 new_list.append(j)
         return new_list
+
+    def _apply_chat_template(self, messages) -> str:
+        if self.model_code_path:
+            return apply_reasonclip_chat_template(messages)
+        return self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     def generate_until(self, requests: List[Instance]) -> List[str]:
         res = []
@@ -235,6 +312,8 @@ class Llava_OneVision1_5(lmms):
                 processed_visuals = []
                 for visual in visual_list[i]:
                     if isinstance(visual, str) and visual.endswith((".mp4", ".avi", ".mov")):  # Video file
+                        if not _has_decord:
+                            raise ImportError("decord is required for video evaluation. Install it with `pip install decord`.")
                         vr = decord.VideoReader(visual)
                         first_frame = vr[0].asnumpy()
                         height, width = first_frame.shape[:2]
@@ -289,7 +368,7 @@ class Llava_OneVision1_5(lmms):
 
                 batched_messages.append(message)
 
-            texts = [self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True) for msg in batched_messages]
+            texts = [self._apply_chat_template(msg) for msg in batched_messages]
             image_inputs, video_inputs = process_vision_info(batched_messages)
             if video_inputs is not None:
                 total_frames = video_inputs[0].shape[0]

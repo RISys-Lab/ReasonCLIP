@@ -181,6 +181,7 @@ weights/
 # Local datasets, including downstream eval data.
 data/
 outputs/
+eval_results/
 eval/results/
 eval/results_clip/
 eval/results_reasonpro/

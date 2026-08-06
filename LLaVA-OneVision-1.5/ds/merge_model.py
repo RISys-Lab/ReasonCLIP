@@ -99,8 +99,8 @@ def _build_fixed_vision_config(vision_tower, vit_path, text_hidden_size, vision_
     )
 
 
-def _build_fixed_processor(tokenizer, vit_path, vision_config):
-    image_processor = AutoImageProcessor.from_pretrained(vit_path)
+def _build_fixed_processor(tokenizer, processor_path, vision_config):
+    image_processor = AutoImageProcessor.from_pretrained(processor_path)
     image_processor.do_resize = True
     if vision_config.vision_tower_type == "clip":
         image_processor.size = {"shortest_edge": vision_config.image_size}
@@ -134,7 +134,13 @@ def _build_fixed_processor(tokenizer, vit_path, vision_config):
     return processor
 
 
-def load_empty_model(llm_path, vision_tower="rice", vit_path=None, vision_feature_layer=-2):
+def load_empty_model(
+    llm_path,
+    vision_tower="rice",
+    vit_path=None,
+    vision_feature_layer=-2,
+    vision_processor_path=None,
+):
     vit_path = resolve_vision_model_path(vision_tower, vit_path)
     llm_config = AutoConfig.from_pretrained(llm_path, trust_remote_code=True, use_fast=True)
     llava_ov_config = Llavaonevision1_5Config()
@@ -162,7 +168,11 @@ def load_empty_model(llm_path, vision_tower="rice", vit_path=None, vision_featur
         llava_ov_config.image_token_id = _get_single_token_id(tokenizer, "<|image_pad|>")
         llava_ov_config.video_token_id = _get_single_token_id(tokenizer, "<|video_pad|>")
         llava_ov_config.vision_start_token_id = _get_single_token_id(tokenizer, "<|vision_start|>")
-        processor = _build_fixed_processor(tokenizer, vit_path, llava_ov_config.vision_config)
+        processor = _build_fixed_processor(
+            tokenizer,
+            vision_processor_path or vit_path,
+            llava_ov_config.vision_config,
+        )
 
     model = LLaVAOneVision1_5_ForConditionalGeneration(llava_ov_config)
     return model, processor, tokenizer
@@ -525,6 +535,7 @@ def main(args):
         vision_tower=vision_tower,
         vit_path=vit_path,
         vision_feature_layer=args.vision_feature_layer,
+        vision_processor_path=args.vision_processor_path,
     )
     model.to(dtype=torch.float32)
     
@@ -579,6 +590,12 @@ if __name__ == "__main__":
         type=int,
         default=-2,
         help="Vision hidden-state layer used for fixed CLIP/SigLIP towers.",
+    )
+    parser.add_argument(
+        "--vision_processor_path",
+        type=str,
+        default=None,
+        help="Optional image processor source when the vision checkpoint does not include one.",
     )
     parser.add_argument("--llm_path", type=str, default="Qwen/Qwen3-8B", help="Path to the LLM model")
     parser.add_argument(
