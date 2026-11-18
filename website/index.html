@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ReasonCLIP-58M</title>
+  <meta name="description" content="ReasonCLIP-58M: Visually Grounded Commonsense Reasoning Supervision for CLIP (ECCV 2026). Two-stage continual pretraining that teaches CLIP and SigLIP to reason, with no architecture change." />
+  <meta property="og:title" content="ReasonCLIP-58M" />
+  <meta property="og:description" content="Visually grounded commonsense reasoning supervision for CLIP. ECCV 2026." />
+  <meta property="og:image" content="assets/method.jpg" />
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
+</head>
+<body>
+  <!-- ============ Nav ============ -->
+  <nav class="navbar" id="navbar">
+    <a class="brand" href="#top" aria-label="ReasonCLIP home">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#050505"/><circle cx="25" cy="32" r="11" fill="none" stroke="#fff" stroke-width="4"/><path d="M36 32h14M44 25l7 7-7 7" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>ReasonCLIP</span>
+    </a>
+    <div class="nav-links">
+      <a class="pill" href="#method">Method</a>
+      <a class="pill" href="#bench">Benchmark</a>
+      <a class="pill" href="#results">Results</a>
+      <a class="pill pill-dark" href="https://arxiv.org/abs/2606.26794">Paper</a>
+    </div>
+  </nav>
+
+  <!-- ============ Hero ============ -->
+  <header class="hero" id="top">
+    <div class="hero-grid" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <span class="eyebrow"><span class="dot"></span>ECCV 2026</span>
+      <h1>ReasonCLIP<span class="num">-58M</span></h1>
+      <p class="subtitle">Visually Grounded Commonsense Reasoning Supervision for CLIP</p>
+
+      <div class="authors">
+        <a href="https://www.sczhang.com">Sicheng Zhang</a><sup>1</sup>,
+        Muzammal Naseer<sup>1,2,*</sup>,
+        Binzhu Xie<sup>3</sup>,
+        Naufal Suryanto<sup>1</sup>,
+        Shi Qiu<sup>3</sup>,
+        Jamal Bentahar<sup>1</sup>,
+        Naveed Akhtar<sup>4</sup>,
+        Mubarak Shah<sup>5</sup>
+      </div>
+      <div class="affils">
+        <span><sup>1</sup>Khalifa University</span>
+        <span><sup>2</sup>University of Western Australia</span>
+        <span><sup>3</sup>The Chinese University of Hong Kong</span>
+        <span><sup>4</sup>University of Melbourne</span>
+        <span><sup>5</sup>University of Central Florida</span>
+        <span class="note">* Corresponding author</span>
+      </div>
+
+      <div class="hero-actions">
+        <a class="pill pill-dark" href="https://arxiv.org/abs/2606.26794">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>
+          Paper
+        </a>
+        <a class="pill" href="https://github.com/RISys-Lab/ReasonCLIP">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+          Code
+        </a>
+        <a class="pill" href="https://huggingface.co/collections/RISys-Lab/reasonclip-models">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/></svg>
+          Models
+        </a>
+        <a class="pill" href="https://huggingface.co/collections/RISys-Lab/reasonclip-data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+          Datasets
+        </a>
+        <a class="pill" href="https://huggingface.co/datasets/RISys-Lab/RCLIP-Bench">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+          RCLIP-Bench
+        </a>
+        <a class="pill" href="https://www.sczhang.com/reasonclip/playground/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg>
+          Playground
+        </a>
+      </div>
+
+      <!-- Description -> reasoning -->
+      <div class="morph" id="morph" aria-live="polite">
+        <div class="morph-head">
+          <span>From description to reasoning</span>
+          <div class="morph-steps" id="morphSteps"></div>
+        </div>
+        <div class="morph-body">
+          <div class="morph-img"><img id="morphImg" alt="" /></div>
+          <div class="morph-text">
+            <span class="morph-label" id="morphLabel"></span>
+            <p class="morph-caption" id="morphCaption"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="page">
+    <aside class="toc" aria-label="Table of contents">
+      <div class="toc-title">Contents</div>
+      <a href="#overview">Overview</a>
+      <a href="#method">Method</a>
+      <a href="#data">Data</a>
+      <a href="#bench">RCLIP-Bench</a>
+      <a href="#results">Results</a>
+      <a href="#mllm">Drop-in for MLLMs</a>
+      <a href="#models">Models</a>
+      <a href="#citation">Citation</a>
+    </aside>
+
+    <main>
+      <!-- ============ Overview ============ -->
+      <section class="block" id="overview">
+        <div class="prose">
+          <span class="section-index">01 — Overview</span>
+          <h2>CLIP can describe a scene. Can it reason about one?</h2>
+          <div class="tldr">
+            <span class="tag">TL;DR</span>
+            We continue pretraining CLIP and SigLIP on 58M reasoning captions grounded in what the image shows. The architecture stays the same. Retrieval, commonsense reasoning, and compositional understanding all improve, and the encoder can replace the original one in LLaVA-NeXT as is.
+          </div>
+          <p>
+            CLIP-style encoders learn from captions that say <em>what</em> is in an image. Many downstream tasks need more than that: <em>why</em> objects are arranged a certain way, <em>what</em> just happened, or <em>what</em> will happen next. ReasonCLIP-58M asks whether this kind of visually grounded inference can be learned through continual pretraining alone, with no new modules, no extra inference cost, and the standard <code>transformers</code> loading path.
+          </p>
+          <p>
+            The recipe has two stages. Stage 1 mixes reasoning captions into the usual descriptive alignment, so the encoder learns to reason without losing what it already does well. Stage 2 adds category-structured reasoning supervision across five types of commonsense inference. We also release the training data and a diagnostic benchmark, RCLIP-Bench.
+          </p>
+
+          <div class="stats reveal">
+            <div class="stat">
+              <div class="value" data-count="23.8">+23.8</div>
+              <div class="label"><b>Urban-1K</b> T→I R@1<br/>CLIP L/14 + Stage 1</div>
+            </div>
+            <div class="stat">
+              <div class="value" data-count="10.7">+10.7</div>
+              <div class="label"><b>WinoGAViL</b> avg.<br/>CLIP L/14 + Stage 2</div>
+            </div>
+            <div class="stat">
+              <div class="value" data-count="6.6">+6.6</div>
+              <div class="label"><b>Compositional</b> avg.<br/>CLIP L/14 + Stage 2</div>
+            </div>
+            <div class="stat">
+              <div class="value" data-count="3.6">+3.6</div>
+              <div class="label"><b>MMVP</b> in LLaVA-NeXT<br/>vision tower swap only</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Method ============ -->
+      <section class="block" id="method">
+        <div class="prose">
+          <span class="section-index">02 — Method</span>
+          <h2>Two stages of continual pretraining</h2>
+          <p>
+            Every stage starts from a public CLIP or SigLIP checkpoint and trains for a single epoch. The encoders, projection heads and tokenizers are unchanged. The only new parameters are two small classification heads used in Stage 2, which are removed after training.
+          </p>
+        </div>
+
+        <figure class="wide reveal">
+          <img src="assets/method.jpg" alt="ReasonCLIP training framework: S0 direct baselines, S1 reasoning-aware dual alignment, S2 explicit reasoning with image and text classifiers." loading="lazy" />
+          <figcaption><b>Training framework.</b> S0: direct baselines trained on descriptive text only or on reasoning text only. S1: dual alignment with descriptive (T<sub>b</sub>) and reasoning (T<sub>rl</sub>) captions, weighted by a schedule λ(t). S2: contrastive alignment with category-specific reasoning (T<sub>rp</sub>) plus image and text classification losses.</figcaption>
+        </figure>
+
+        <div class="prose">
+          <div class="seg" role="tablist" id="stageTabs">
+            <button role="tab" data-stage="s0">S0 · Baselines</button>
+            <button role="tab" data-stage="s1" class="is-active">S1 · Reasoning-aware</button>
+            <button role="tab" data-stage="s2">S2 · Explicit reasoning</button>
+          </div>
+          <div class="stage-card" id="stageCard"></div>
+
+          <div class="chart-card reveal" id="schedCard">
+            <div class="chart-top">
+              <span class="chart-title">Stage 1 loss weight schedule λ(t)</span>
+              <div class="seg" id="schedTabs">
+                <button data-bb="clip" class="is-active">CLIP</button>
+                <button data-bb="siglip">SigLIP</button>
+              </div>
+            </div>
+            <svg class="sched" id="sched" viewBox="0 0 640 230" role="img" aria-label="Loss weight schedule over training"></svg>
+            <div class="legend">
+              <span><i></i>descriptive weight λ(t)</span>
+              <span><i class="dash"></i>reasoning weight 1 − λ(t)</span>
+            </div>
+            <div class="chart-readout" id="schedReadout">Hover or drag across the chart.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Data ============ -->
+      <section class="block" id="data">
+        <div class="prose">
+          <span class="section-index">03 — Data</span>
+          <h2>58M reasoning captions, grounded in the image</h2>
+          <p>
+            All training images come from CC12M. We first rewrite the noisy alt-text into three descriptive captions per image with Qwen2.5-VL-72B. Reasoning captions are then generated from visual evidence the descriptive captions already confirm. Prompts reject false causality, over-extension, hallucination and unsupported multi-step chains. In human spot checks of 500 samples per stage, more than 99% passed.
+          </p>
+        </div>
+
+        <div class="wide">
+          <div class="datasets reveal">
+            <div class="dataset">
+              <span class="meta">S0 · descriptive</span>
+              <span class="name">CC12M-Refined</span>
+              <span class="count">31.2M</span>
+              <p>Three regenerated descriptive captions (T<sub>b</sub>) for each of 10.4M CC12M images.</p>
+              <a class="hf" href="https://huggingface.co/datasets/RISys-Lab/CC12M-Refined">Hugging Face ↗</a>
+            </div>
+            <div class="dataset">
+              <span class="meta">S1 · open-form reasoning</span>
+              <span class="name">ReasonLite-42M</span>
+              <span class="count">42.0M</span>
+              <p>Visual evidence is split into three clusters with one reasoning caption (T<sub>rl</sub>) each. Pairing them with three descriptive captions gives 9 combinations for each of 4.67M images.</p>
+              <a class="hf" href="https://huggingface.co/datasets/RISys-Lab/ReasonCLIPLite-42M">Hugging Face ↗</a>
+            </div>
+            <div class="dataset">
+              <span class="meta">S2 · category-specific reasoning</span>
+              <span class="name">ReasonPro-16M</span>
+              <span class="count">16.6M</span>
+              <p>Qwen3-VL-32B labels each image with reasoning categories. For each of 5.5M images, three categories are sampled and each gets one caption (T<sub>rp</sub>).</p>
+              <a class="hf" href="https://huggingface.co/datasets/RISys-Lab/ReasonCLIPPro-16M">Hugging Face ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="prose">
+          <h3>Five categories of commonsense inference</h3>
+          <p class="muted small">Number of ReasonPro-16M captions per category. Each image carries a multi-hot label over the five categories, which Stage 2 uses as supervision.</p>
+          <div class="cat-bars" id="catBars"></div>
+        </div>
+      </section>
+
+      <!-- ============ Bench ============ -->
+      <section class="block" id="bench">
+        <div class="prose">
+          <span class="section-index">04 — RCLIP-Bench</span>
+          <h2>Does the model notice when the reasoning breaks?</h2>
+          <p>
+            RCLIP-Bench is built on 5,000 DOCCI images with human-written descriptions. For each image and each reasoning category, the model must rank one correct sentence above four hard negatives. The negatives come in three tiers, each harder to spot than the last.
+          </p>
+          <div class="tiers">
+            <div class="tier"><span class="t">V1</span><div><span class="n">Visual grounding</span><p>The visual facts are wrong: swapped nouns, attributes, relations, subjects or sentence structure.</p></div></div>
+            <div class="tier"><span class="t">V2</span><div><span class="n">Evidence awareness</span><p>The reasoning rests on a false premise about what is visible.</p></div></div>
+            <div class="tier"><span class="t">V3</span><div><span class="n">Visual reasoning</span><p>The facts are right but the conclusion drawn from them is not.</p></div></div>
+          </div>
+        </div>
+
+        <div class="wide">
+          <div class="bench reveal" id="benchBox">
+            <div class="bench-controls">
+              <div class="seg scroll" id="tierTabs"></div>
+              <div class="seg scroll" id="catTabs"></div>
+            </div>
+            <div class="bench-body">
+              <div class="bench-img">
+                <img id="benchImg" alt="RCLIP-Bench example image from DOCCI" />
+                <span class="counter" id="benchCounter"></span>
+                <div class="nav-arrows">
+                  <button class="icon-btn" id="benchPrev" aria-label="Previous image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+                  <button class="icon-btn" id="benchNext" aria-label="Next image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></button>
+                </div>
+              </div>
+              <div class="bench-panel">
+                <div class="bench-q" id="benchQ"></div>
+                <div class="cands" id="cands"></div>
+                <div class="bench-foot">
+                  <span id="benchStatus">Pick the sentence that matches the image.</span>
+                  <button class="text-btn" id="benchReveal">Reveal answer</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="muted small" style="margin-top:10px">Examples are taken from the public <a href="https://huggingface.co/datasets/RISys-Lab/RCLIP-Bench">RCLIP-Bench</a> release. Images are from DOCCI. The differences from the correct sentence are underlined after you answer.</p>
+        </div>
+      </section>
+
+      <!-- ============ Results ============ -->
+      <section class="block" id="results">
+        <div class="prose">
+          <span class="section-index">05 — Results</span>
+          <h2>Consistent gains across six backbones</h2>
+          <p>
+            We apply the same recipe to CLIP B/32, L/14 at 224 and 336 px, SigLIP So400m, SigLIP2 So400m and SigLIP2 Giant. Choose a backbone and a benchmark group to compare the base model with Stage 1 and Stage 2.
+          </p>
+        </div>
+
+        <div class="wide explorer">
+          <div class="explorer-controls">
+            <div class="control-row"><span class="lbl">Backbone</span><div class="seg scroll" id="bbTabs"></div></div>
+            <div class="control-row"><span class="lbl">Task</span><div class="seg scroll" id="taskTabs"></div></div>
+          </div>
+          <div class="legend" style="margin-top:14px">
+            <span><i class="sq" style="background:var(--bar-base)"></i>Base</span>
+            <span><i class="sq" style="background:var(--bar-s1)"></i>+ Stage 1</span>
+            <span><i class="sq" style="background:var(--bar-s2)"></i>+ Stage 2</span>
+          </div>
+          <div class="bars" id="bars"></div>
+          <p class="explorer-note" id="explorerNote"></p>
+        </div>
+
+        <div class="prose">
+          <h3>Where it costs</h3>
+          <p>
+            ImageNet zero-shot accuracy drops after reasoning-oriented continual pretraining: by 1–3 points after Stage 1 and 2–6 points after Stage 2 on ImageNet val, with the largest drops on ObjectNet. Our training captions are long and inferential, not category names, so we see this as a trade-off between label-style recognition and grounded reasoning. Stage 1 keeps most of the recognition ability. You can inspect every backbone under the <em>ImageNet</em> task above.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ MLLM ============ -->
+      <section class="block" id="mllm">
+        <div class="prose">
+          <span class="section-index">06 — Drop-in for MLLMs</span>
+          <h2>Swap the vision tower, keep everything else</h2>
+          <p>
+            We replace the CLIP encoder in LLaVA-NeXT (Qwen3-1.7B, frozen vision tower) with ReasonCLIP and keep the rest of the pipeline the same. Reasoning-heavy benchmarks such as MMVP and OKVQA improve, and the others stay roughly level.
+          </p>
+          <div class="table-wrap">
+            <table id="mllmTable">
+              <thead><tr><th>Benchmark</th><th>CLIP</th><th>ReasonCLIP</th><th>Δ</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Models ============ -->
+      <section class="block" id="models">
+        <div class="prose">
+          <span class="section-index">07 — Models</span>
+          <h2>Released checkpoints</h2>
+          <p>
+            ReasonCLIP keeps the original architecture, so loading is the standard Hugging Face code path. Only the model ID changes.
+          </p>
+          <div class="code">
+            <div class="code-head"><span>python</span><button class="copy-btn" data-copy="quickstart">Copy</button></div>
+<pre id="quickstart"><span class="k">from</span> PIL <span class="k">import</span> Image
+<span class="k">import</span> requests
+<span class="k">from</span> transformers <span class="k">import</span> AutoModel, AutoProcessor
+
+model_id = <span class="s">"RISys-Lab/ReasonCLIP-L14-224-S1"</span>
+model = AutoModel.from_pretrained(model_id)
+processor = AutoProcessor.from_pretrained(model_id)
+
+url = <span class="s">"http://images.cocodataset.org/val2017/000000039769.jpg"</span>
+image = Image.open(requests.get(url, stream=<span class="k">True</span>).raw)
+inputs = processor(text=[<span class="s">"a photo of a cat"</span>, <span class="s">"a photo of a dog"</span>],
+                   images=image, return_tensors=<span class="s">"pt"</span>, padding=<span class="k">True</span>)
+probs = model(**inputs).logits_per_image.softmax(dim=<span class="s">1</span>)</pre>
+          </div>
+        </div>
+        <div class="wide">
+          <div class="table-wrap zoo">
+            <table id="zooTable">
+              <thead><tr><th>Backbone</th><th>Stage 1</th><th>Stage 2</th><th>S0 · Rea</th><th>S0 · Des</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Citation ============ -->
+      <section class="block" id="citation">
+        <div class="prose">
+          <span class="section-index">08 — Citation</span>
+          <h2>BibTeX</h2>
+          <div class="code">
+            <div class="code-head"><span>bibtex</span><button class="copy-btn" data-copy="bibtex">Copy</button></div>
+<pre id="bibtex">@inproceedings{zhang2026reasonclip58m,
+  title     = {ReasonCLIP-58M: Visually Grounded Commonsense Reasoning Supervision for CLIP},
+  author    = {Zhang, Sicheng and Naseer, Muzammal and Xie, Binzhu and Suryanto, Naufal and Qiu, Shi and Bentahar, Jamal and Akhtar, Naveed and Shah, Mubarak},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2026},
+  url       = {https://arxiv.org/abs/2606.26794}
+}</pre>
+          </div>
+          <p class="muted small">Code, data and models are released under CC BY-NC-SA 4.0.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <span>ReasonCLIP-58M · ECCV 2026</span>
+      <span><a href="https://github.com/RISys-Lab/ReasonCLIP">GitHub</a> · <a href="https://huggingface.co/RISys-Lab">Hugging Face</a> · <a href="https://arxiv.org/abs/2606.26794">arXiv</a></span>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="data/results.js?v=4"></script>
+  <script src="data/bench.js?v=4"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>

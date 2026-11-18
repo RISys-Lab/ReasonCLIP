@@ -6,7 +6,8 @@
   🤗 **[Dataset](https://huggingface.co/collections/RISys-Lab/reasonclip-data)** | 
   🤗 **[BenchMark](https://huggingface.co/datasets/RISys-Lab/RCLIP-Bench)** | 
   📊 **[Model Card](doc/model_card.md)** | 
-  🌐 **[Playground](https://www.sczhang.com/reasonclip/)**
+  🌐 **[Project Page](https://www.sczhang.com/reasonclip/)** | 
+  🕹️ **[Playground](https://www.sczhang.com/reasonclip/playground/)**
 </div>
 
 
@@ -85,7 +86,7 @@ bash scripts/eval_all.sh
 ## 🚀 Training
 
 <p align="center">
-  <img src="docs/method.png" alt="ReasonCLIP training framework" width="100%">
+  <img src="doc/method.png" alt="ReasonCLIP training framework" width="100%">
 </p>
 
 ### Environment Preparation
