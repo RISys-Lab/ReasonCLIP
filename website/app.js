@@ -135,52 +135,56 @@
     show(0);
   })();
 
-  /* ---------------- Stage stepper ---------------- */
-  const STAGES = {
-    s0: {
-      kicker: "Stage 0 · direct continual pretraining",
-      title: "Baselines: description only, or reasoning only",
-      body: "Two reference models trained for one epoch with the backbone's own objective (InfoNCE for CLIP, sigmoid loss for SigLIP). <b>Description CP</b> uses only the refined descriptive captions. <b>Reasoning CP</b> mixes all reasoning captions without any staging. Together they show that adding reasoning text is not enough without the right structure.",
-      eq: "\\mathcal{L}^{(0)} = \\mathcal{L}_{\\text{align}}(x,\\, T), \\quad T \\in \\{T_b\\} \\text{ or } \\{T_{rl}, T_{rp}\\}",
-      chips: ["CC12M-Refined 31.2M", "1 epoch", "lr 1e-5 / 3e-5 (vision / text)"],
-    },
-    s1: {
-      kicker: "Stage 1 · reasoning-aware alignment",
-      title: "Learn to reason without forgetting how to describe",
-      body: "Each image is aligned with a descriptive caption T<sub>b</sub> and a reasoning caption T<sub>rl</sub> built from the same visual evidence. A schedule λ(t) shifts weight toward reasoning in the middle of training and settles at a balance at the end. An ℓ<sub>2</sub> anchor to the initial weights θ<sub>0</sub> keeps the encoder close to its pretrained solution.",
-      eq: "\\mathcal{L}^{(1)} = \\lambda(t)\\,\\mathcal{L}_{\\text{align}}(x, T_b) + \\big(1-\\lambda(t)\\big)\\,\\mathcal{L}_{\\text{align}}(x, T_{rl}) + \\beta\\,\\lVert \\theta-\\theta_0 \\rVert_2^2",
-      chips: ["ReasonLite-42M", "1 epoch", "β = 1e-5", "batch 32,768 (CLIP) · 24,576 (SigLIP)"],
-    },
-    s2: {
-      kicker: "Stage 2 · explicit reasoning supervision",
-      title: "Tell the encoder which kind of reasoning it is doing",
-      body: "Captions now target one of five reasoning categories. Two linear heads are trained alongside the contrastive loss. The image head predicts every category the image supports (multi-label BCE over y ∈ {0,1}<sup>5</sup>). The text head predicts which category a caption belongs to (cross-entropy over c). Both heads are removed after training, so inference cost is unchanged.",
-      eq: "\\mathcal{L}^{(2)} = \\mathcal{L}_{\\text{align}}(x, T_{rp}) + \\gamma\\big(\\mathcal{L}_{\\text{img-cls}}(g_v(x),\\, \\mathbf{y}) + \\mathcal{L}_{\\text{txt-cls}}(g_t(T_{rp}),\\, c)\\big)",
-      chips: ["ReasonPro-16M", "1 epoch", "γ = 0.10 (CLIP) · 0.05 (SigLIP)", "heads: Linear(D, 5)"],
-    },
+  /* ---------------- Method pipeline: steps <-> loss terms ---------------- */
+  const EQ = {
+    s1: String.raw`\begin{aligned}\mathcal{L}^{(1)} = \;& \htmlClass{tm tm-1}{\htmlClass{tm tm-3}{\lambda(t)}\,\mathcal{L}_{\text{align}}(x, T_b)} \\ +\;& \htmlClass{tm tm-2}{\htmlClass{tm tm-3}{\big(1-\lambda(t)\big)}\,\mathcal{L}_{\text{align}}(x, T_{rl})} \\ +\;& \htmlClass{tm tm-4}{\beta\,\lVert \theta-\theta_0 \rVert_2^2}\end{aligned}`,
+    s2: String.raw`\begin{aligned}\mathcal{L}^{(2)} = \;& \htmlClass{tm tm-1}{\mathcal{L}_{\text{align}}(x, T_{rp})} \\ +\;& \htmlClass{tm tm-4}{\gamma\,\big(\htmlClass{tm tm-2}{\mathcal{L}_{\text{img-cls}}(g_v(x),\, \mathbf{y})} + \htmlClass{tm tm-3}{\mathcal{L}_{\text{txt-cls}}(g_t(T_{rp}),\, c)}\big)}\end{aligned}`,
   };
-  const stageCard = $("#stageCard");
-  const renderStage = (k) => {
-    const s = STAGES[k];
-    stageCard.innerHTML = `
-      <span class="kicker">${s.kicker}</span>
-      <h4>${s.title}</h4>
-      <p>${s.body}</p>
-      <div class="eq" data-tex="${esc(s.eq)}"></div>
-      <div class="stage-meta">${s.chips.map((c) => `<span class="chip">${c}</span>`).join("")}</div>`;
-    const eq = $(".eq", stageCard);
-    if (window.katex) katex.render(s.eq, eq, { displayMode: true, throwOnError: false });
-    else eq.textContent = s.eq;
-    $$("#stageTabs button").forEach((b) => b.classList.toggle("is-active", b.dataset.stage === k));
-    $("#schedCard").style.display = k === "s1" ? "" : "none";
-  };
-  $("#stageTabs").addEventListener("click", (e) => {
-    const b = e.target.closest("button");
-    if (b) renderStage(b.dataset.stage);
-  });
-  // KaTeX loads with `defer`-like timing; render once it is ready
-  if (window.katex) renderStage("s1");
-  else window.addEventListener("load", () => renderStage("s1"));
+  const renderEqs = () =>
+    $$(".eq[data-eq]").forEach((el) => {
+      const tex = EQ[el.dataset.eq];
+      if (window.katex) katex.render(tex, el, { displayMode: true, throwOnError: false, trust: true, strict: false });
+      else el.textContent = tex;
+    });
+  if (window.katex) renderEqs();
+  else window.addEventListener("load", renderEqs);
+
+  (function pipe() {
+    const stages = $$(".stage");
+    const steps = stages.flatMap((st) => $$(".steps li", st).map((li) => ({ st, t: li.dataset.t })));
+    const highlight = (st, t) => {
+      stages.forEach((s) => {
+        const on = s === st;
+        $$("[data-t]", s).forEach((el) => el.classList.toggle("hl", on && el.dataset.t === t));
+        const eq = $(".eq", s);
+        $$(".tm", eq).forEach((m) => m.classList.toggle("hl", on && m.classList.contains("tm-" + t)));
+        eq.classList.toggle("has-hl", on && !!t);
+      });
+    };
+    let auto = 0, timer = null, paused = false;
+    const tick = () => {
+      if (paused) return;
+      const s = steps[auto % steps.length];
+      highlight(s.st, s.t);
+      auto++;
+      timer = setTimeout(tick, 2600);
+    };
+    stages.forEach((st) => {
+      st.addEventListener("mouseover", (e) => {
+        const el = e.target.closest("[data-t]");
+        paused = true;
+        clearTimeout(timer);
+        if (el) highlight(st, el.dataset.t);
+      });
+      st.addEventListener("mouseleave", () => {
+        highlight(null, null);
+        paused = false;
+        clearTimeout(timer);
+        timer = setTimeout(tick, 2000);
+      });
+    });
+    if (!reduceMotion) onVisible($("#pipe"), () => setTimeout(tick, 600), { threshold: 0.3 });
+  })();
 
   /* ---------------- Stage 1 schedule chart ---------------- */
   const SCHED = {
@@ -191,7 +195,7 @@
   let schedKey = "clip";
   const lam = (p, s) => (p <= T1 ? s.start : p <= T2 ? s.start + (s.mid - s.start) * ((p - T1) / (T2 - T1)) : s.end);
   const svg = $("#sched");
-  const W = 640, H = 230, M = { l: 40, r: 14, t: 14, b: 30 };
+  const W = 460, H = 180, M = { l: 32, r: 8, t: 10, b: 24 };
   const X = (p) => M.l + p * (W - M.l - M.r);
   const Y = (v) => M.t + (1 - v) * (H - M.t - M.b);
   const pathFor = (fn) => {
@@ -201,7 +205,7 @@
   };
   const drawSched = () => {
     const s = SCHED[schedKey];
-    const grid = [0, 0.25, 0.5, 0.75, 1]
+    const grid = [0, 0.5, 1]
       .map((v) => `<line x1="${M.l}" x2="${W - M.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${M.l - 8}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(2)}</text>`)
       .join("");
     const xt = [0, 0.2, 0.4, 0.6, 0.8, 1].map((p) => `<text x="${X(p)}" y="${H - 8}" text-anchor="middle">${Math.round(p * 100)}%</text>`).join("");
@@ -210,7 +214,7 @@
       <rect class="phase" x="${X(T2)}" y="${M.t}" width="${X(1) - X(T2)}" height="${H - M.t - M.b}"/>
       <g class="grid">${grid}</g>${xt}
       <text x="${(X(0) + X(T1)) / 2}" y="${M.t + 14}" text-anchor="middle">hold</text>
-      <text x="${(X(T1) + X(T2)) / 2}" y="${M.t + 14}" text-anchor="middle">shift toward reasoning</text>
+      <text x="${(X(T1) + X(T2)) / 2}" y="${M.t + 14}" text-anchor="middle">shift to reasoning</text>
       <text x="${(X(T2) + X(1)) / 2}" y="${M.t + 14}" text-anchor="middle">settle</text>
       <path class="l-tb" d="${pathFor((p) => lam(p, s))}"/>
       <path class="l-tr" d="${pathFor((p) => 1 - lam(p, s))}"/>
@@ -230,7 +234,7 @@
     $("#k1", svg).setAttribute("cy", Y(l));
     $("#k2", svg).setAttribute("cx", X(p));
     $("#k2", svg).setAttribute("cy", Y(1 - l));
-    $("#schedReadout").innerHTML = `${Math.round(p * 100)}% of training → descriptive <b>${l.toFixed(2)}</b> · reasoning <b>${(1 - l).toFixed(2)}</b>`;
+    $("#schedReadout").innerHTML = `${Math.round(p * 100)}% of training · T<sub>b</sub> <b>${l.toFixed(2)}</b> · T<sub>rl</sub> (dashed) <b>${(1 - l).toFixed(2)}</b>`;
   };
   const pointer = (e) => {
     const r = svg.getBoundingClientRect();
@@ -492,11 +496,12 @@
   /* ---------------- Model zoo ---------------- */
   (function zoo() {
     const hf = (id) => (id ? `<a href="https://huggingface.co/RISys-Lab/${id}">${id}</a>` : "");
+    const list = (...ids) => ids.filter(Boolean).map(hf).join("<br/>");
     $("#zooTable tbody").innerHTML = R.zoo
       .map(
         (z) => `<tr>
           <td><span style="font-weight:500">${z.label}</span><br/><span class="muted" style="font-size:11px">${z.base}</span></td>
-          <td>${hf(z.s1)}</td><td>${hf(z.s2)}${z.extra ? `<br/>${hf(z.extra)}` : ""}</td><td>${hf(z.rea)}</td><td>${hf(z.des)}</td>
+          <td>${hf(z.s1)}</td><td>${list(z.s2, z.extra)}</td><td>${list(z.rea, z.des)}</td>
         </tr>`
       )
       .join("");
